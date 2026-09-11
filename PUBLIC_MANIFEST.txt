@@ -60,6 +60,8 @@ packages/api/src/modules/auth/auth.test.ts
 packages/api/src/modules/blockchain/blockchain.routes.ts
 packages/api/src/modules/feedback/feedback.routes.ts
 packages/api/src/modules/feedback/feedback.service.ts
+packages/api/src/modules/governance/governance.routes.ts
+packages/api/src/modules/governance/governance.service.ts
 packages/api/src/modules/health/health.routes.ts
 packages/api/src/modules/health/health.test.ts
 packages/api/src/modules/marketplace/marketplace.routes.ts
@@ -71,6 +73,8 @@ packages/api/src/modules/passport/passport.test.ts
 packages/api/src/modules/quality/quality.routes.ts
 packages/api/src/modules/quality/quality.service.ts
 packages/api/src/modules/quality/quality.test.ts
+packages/api/src/modules/tokens/tokens.routes.ts
+packages/api/src/modules/tokens/tokens.service.ts
 packages/api/src/server.ts
 packages/api/src/test-setup.ts
 packages/api/src/test-utils.ts
@@ -84,6 +88,7 @@ packages/contracts/contracts/CircularBuildToken.sol
 packages/contracts/contracts/CircularMarketplace.sol
 packages/contracts/contracts/MaterialRegistry.sol
 packages/contracts/contracts/QualityAssurance.sol
+packages/contracts/contracts/TraceGovernance.sol
 packages/contracts/hardhat.config.ts
 packages/contracts/package.json
 packages/contracts/scripts/deploy.ts
@@ -100,6 +105,7 @@ packages/core/src/errors.ts
 packages/core/src/index.ts
 packages/core/src/logger.ts
 packages/core/src/types/audit.ts
+packages/core/src/types/governance.ts
 packages/core/src/types/hub.ts
 packages/core/src/types/listing.ts
 packages/core/src/types/passport.ts
@@ -107,6 +113,7 @@ packages/core/src/types/quality.ts
 packages/core/src/types/user.ts
 packages/core/src/validators/access-request.schema.ts
 packages/core/src/validators/auth.schema.ts
+packages/core/src/validators/governance.schema.ts
 packages/core/src/validators/listing.schema.ts
 packages/core/src/validators/passport.schema.ts
 packages/core/src/validators/quality.schema.ts
@@ -128,9 +135,11 @@ packages/db/migrations/0003_audit_event_origin.sql
 packages/db/migrations/0004_cultured_overlord.sql
 packages/db/migrations/0005_warm_cargill.sql
 packages/db/migrations/0006_unit_of_measure.sql
+packages/db/migrations/0007_faithful_vapor.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
+packages/db/migrations/meta/0007_snapshot.json
 packages/db/migrations/meta/_journal.json
 packages/db/package.json
 packages/db/scripts/demo-restore.ts
@@ -197,6 +206,9 @@ packages/web/src/app/(dashboard)/admin/access-requests/page.tsx
 packages/web/src/app/(dashboard)/admin/activity/page.tsx
 packages/web/src/app/(dashboard)/admin/feedback/page.tsx
 packages/web/src/app/(dashboard)/dashboard/page.tsx
+packages/web/src/app/(dashboard)/governance/[id]/page.tsx
+packages/web/src/app/(dashboard)/governance/new/page.tsx
+packages/web/src/app/(dashboard)/governance/page.tsx
 packages/web/src/app/(dashboard)/listings/new/page.tsx
 packages/web/src/app/(dashboard)/listings/page.tsx
 packages/web/src/app/(dashboard)/passports/[id]/edit/page.tsx
@@ -205,6 +217,7 @@ packages/web/src/app/(dashboard)/passports/new/page.tsx
 packages/web/src/app/(dashboard)/passports/page.tsx
 packages/web/src/app/(dashboard)/quality/new/page.tsx
 packages/web/src/app/(dashboard)/quality/page.tsx
+packages/web/src/app/(dashboard)/tokens/page.tsx
 packages/web/src/app/(dashboard)/transactions/page.tsx
 packages/web/src/app/access-request/page.tsx
 packages/web/src/app/apple-icon.png

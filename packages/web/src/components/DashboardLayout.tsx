@@ -63,6 +63,8 @@ export default function DashboardLayout({ children }: Props) {
       { href: '/listings', label: 'Listings' },
       { href: '/transactions', label: 'Orders' },
       { href: '/quality', label: 'Quality' },
+      { href: '/tokens', label: 'CBT' },
+      { href: '/governance', label: 'Governance' },
       { href: '/scan', label: 'Scan QR' },
     ];
   }

@@ -437,6 +437,65 @@ export const feedbackSubmissions = pgTable(
 export type FeedbackSubmission = typeof feedbackSubmissions.$inferSelect;
 export type NewFeedbackSubmission = typeof feedbackSubmissions.$inferInsert;
 
+// ── Governance Proposals ──────────────────────────────────────────────────────
+
+export const governanceProposals = pgTable(
+  'governance_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creatorId: uuid('creator_id')
+      .notNull()
+      .references(() => users.id),
+    organisationId: uuid('organisation_id').references(() => organisations.id),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    status: text('status').notNull().default('active'),
+    // active | passed | rejected | executed | cancelled
+    votingEndsAt: timestamp('voting_ends_at', { withTimezone: true }).notNull(),
+    forVotes: numeric('for_votes').notNull().default('0'),
+    againstVotes: numeric('against_votes').notNull().default('0'),
+    quorumSnapshot: numeric('quorum_snapshot').notNull().default('0'),
+    quorumReached: boolean('quorum_reached').notNull().default(false),
+    blockchainTxHash: text('blockchain_tx_hash'),
+    blockchainProposalId: text('blockchain_proposal_id'), // bytes32 hex
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_gov_proposals_status').on(table.status),
+    index('idx_gov_proposals_creator').on(table.creatorId),
+  ],
+);
+
+export type GovernanceProposalRow = typeof governanceProposals.$inferSelect;
+export type NewGovernanceProposal = typeof governanceProposals.$inferInsert;
+
+// ── Governance Votes ──────────────────────────────────────────────────────────
+
+export const governanceVotes = pgTable(
+  'governance_votes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    proposalId: uuid('proposal_id')
+      .notNull()
+      .references(() => governanceProposals.id),
+    voterId: uuid('voter_id')
+      .notNull()
+      .references(() => users.id),
+    support: boolean('support').notNull(),
+    weight: numeric('weight').notNull().default('1'),
+    blockchainTxHash: text('blockchain_tx_hash'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_gov_votes_proposal').on(table.proposalId),
+    unique('gov_votes_unique').on(table.proposalId, table.voterId),
+  ],
+);
+
+export type GovernanceVoteRow = typeof governanceVotes.$inferSelect;
+export type NewGovernanceVote = typeof governanceVotes.$inferInsert;
+
 // ── Relations ────────────────────────────────────────────────────────────────
 
 export const organisationsRelations = relations(organisations, ({ many }) => ({
@@ -582,6 +641,29 @@ export const sensorReadingsRelations = relations(sensorReadings, ({ one }) => ({
 export const feedbackSubmissionsRelations = relations(feedbackSubmissions, ({ one }) => ({
   user: one(users, {
     fields: [feedbackSubmissions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const governanceProposalsRelations = relations(governanceProposals, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [governanceProposals.creatorId],
+    references: [users.id],
+  }),
+  organisation: one(organisations, {
+    fields: [governanceProposals.organisationId],
+    references: [organisations.id],
+  }),
+  votes: many(governanceVotes),
+}));
+
+export const governanceVotesRelations = relations(governanceVotes, ({ one }) => ({
+  proposal: one(governanceProposals, {
+    fields: [governanceVotes.proposalId],
+    references: [governanceProposals.id],
+  }),
+  voter: one(users, {
+    fields: [governanceVotes.voterId],
     references: [users.id],
   }),
 }));

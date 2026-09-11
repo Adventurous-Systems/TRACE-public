@@ -12,6 +12,8 @@ import { accessRequestRoutes } from './modules/access-request/access-request.rou
 import { passportRoutes } from './modules/passport/passport.routes.js';
 import { marketplaceRoutes } from './modules/marketplace/marketplace.routes.js';
 import { qualityRoutes } from './modules/quality/quality.routes.js';
+import { tokenRoutes } from './modules/tokens/tokens.routes.js';
+import { governanceRoutes } from './modules/governance/governance.routes.js';
 import { feedbackRoutes } from './modules/feedback/feedback.routes.js';
 import { auditRoutes } from './modules/audit/audit.routes.js';
 import { blockchainRoutes } from './modules/blockchain/blockchain.routes.js';
@@ -72,6 +74,8 @@ export async function buildApp() {
   await app.register(passportRoutes, { prefix: '/api/v1/passports' });
   await app.register(marketplaceRoutes, { prefix: '/api/v1/marketplace' });
   await app.register(qualityRoutes, { prefix: '/api/v1/quality' });
+  await app.register(tokenRoutes, { prefix: '/api/v1/tokens' });
+  await app.register(governanceRoutes, { prefix: '/api/v1/governance' });
   await app.register(feedbackRoutes, { prefix: '/api/v1/feedback' });
   await app.register(auditRoutes, { prefix: '/api/v1/audit' });
   await app.register(blockchainRoutes, { prefix: '/api/v1/blockchain' });

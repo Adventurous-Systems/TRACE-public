@@ -14,6 +14,8 @@ export {
   qualityReports,
   sensorReadings,
   feedbackSubmissions,
+  governanceProposals,
+  governanceVotes,
 } from '../drizzle/schema.js';
 
 export type {
@@ -41,6 +43,10 @@ export type {
   NewSensorReading,
   FeedbackSubmission,
   NewFeedbackSubmission,
+  GovernanceProposalRow,
+  NewGovernanceProposal,
+  GovernanceVoteRow,
+  NewGovernanceVote,
 } from '../drizzle/schema.js';
 
 // Canonical passport fingerprinting — shared by the API (anchoring + the public

@@ -664,3 +664,112 @@ export const feedback = {
 
   list: (token: string) => request<FeedbackEntry[]>('/api/v1/feedback', { token }),
 };
+
+// ─── Tokens ────────────────────────────────────────────────────────────────
+
+export interface CbtBalanceResponse {
+  address: string | null;
+  balance: string;
+}
+
+export interface CbtStats {
+  totalSupply: string;
+  rewards: {
+    passportRegistration: string;
+    qualityReport: string;
+    marketplaceSale: string;
+  };
+  symbol: string;
+  name: string;
+  decimals: number;
+}
+
+export const tokens = {
+  myBalance: (token: string) => request<CbtBalanceResponse>('/api/v1/tokens/me', { token }),
+
+  balanceOf: (address: string) => request<CbtBalanceResponse>(`/api/v1/tokens/balance/${address}`),
+
+  stats: () => request<CbtStats>('/api/v1/tokens/stats'),
+
+  mint: (data: { toAddress: string; amountCbt: number; reason: string }, token: string) =>
+    request<{ txId: string | null; toAddress: string; amountCbt: number; reason: string }>(
+      '/api/v1/tokens/mint',
+      { method: 'POST', body: JSON.stringify(data), token },
+    ),
+};
+
+// ─── Governance ────────────────────────────────────────────────────────────
+
+export interface ProposalSummary {
+  id: string;
+  title: string;
+  description: string;
+  creatorId: string;
+  creator?: { name: string };
+  status: 'active' | 'passed' | 'rejected' | 'executed' | 'cancelled';
+  votingEndsAt: string;
+  forVotes: string;
+  againstVotes: string;
+  quorumReached: boolean;
+  voteCount: number;
+  blockchainTxHash: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProposalVote {
+  id: string;
+  proposalId: string;
+  voterId: string;
+  voter?: { name: string };
+  support: boolean;
+  weight: string;
+  blockchainTxHash: string | null;
+  createdAt: string;
+}
+
+export interface ProposalDetail extends ProposalSummary {
+  votes: ProposalVote[];
+}
+
+export interface ProposalListResponse {
+  data: ProposalSummary[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export const governance = {
+  list: (params?: URLSearchParams) =>
+    request<ProposalListResponse>(
+      `/api/v1/governance/proposals${params ? '?' + params.toString() : ''}`,
+    ),
+
+  get: (id: string) => request<ProposalDetail>(`/api/v1/governance/proposals/${id}`),
+
+  create: (data: { title: string; description: string }, token: string) =>
+    request<ProposalSummary>('/api/v1/governance/proposals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      token,
+    }),
+
+  vote: (proposalId: string, support: boolean, token: string) =>
+    request<ProposalVote>(`/api/v1/governance/proposals/${proposalId}/vote`, {
+      method: 'POST',
+      body: JSON.stringify({ support }),
+      token,
+    }),
+
+  cancel: (proposalId: string, token: string) =>
+    request<{ message: string }>(`/api/v1/governance/proposals/${proposalId}/cancel`, {
+      method: 'POST',
+      token,
+    }),
+
+  finalize: (proposalId: string, token: string) =>
+    request<{ status: string }>(`/api/v1/governance/proposals/${proposalId}/finalize`, {
+      method: 'POST',
+      token,
+    }),
+};

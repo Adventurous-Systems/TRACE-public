@@ -50,6 +50,13 @@
       "when": 1780490000000,
       "tag": "0006_unit_of_measure",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789122551917,
+      "tag": "0007_faithful_vapor",
+      "breakpoints": true
     }
   ]
 }

@@ -43,6 +43,15 @@ async function main() {
   await tx2.wait();
   console.log('MINTER_ROLE granted to deployer for dev');
 
+  // ── TRACE Governance ──────────────────────────────────────────────────────
+
+  console.log('\nDeploying TraceGovernance...');
+  const GovernanceFactory = await hre.ethers.getContractFactory('TraceGovernance');
+  const governance = await GovernanceFactory.deploy(deployer.address);
+  await governance.waitForDeployment();
+  const governanceAddress = await governance.getAddress();
+  console.log('TraceGovernance deployed to:', governanceAddress);
+
   // ── CircularMarketplace ────────────────────────────────────────────────────
 
   console.log('\nDeploying CircularMarketplace...');
@@ -71,6 +80,7 @@ async function main() {
   const addresses = {
     MaterialRegistry: registryAddress,
     CircularBuildToken: cbtAddress,
+    TraceGovernance: governanceAddress,
     CircularMarketplace: marketplaceAddress,
     QualityAssurance: qaAddress,
     network: process.env['HARDHAT_NETWORK'] ?? 'vechain_solo',
@@ -85,6 +95,7 @@ async function main() {
   console.log('\n─── Add these to your .env ───────────────────────');
   console.log(`MATERIAL_REGISTRY_ADDRESS=${registryAddress}`);
   console.log(`CBT_ADDRESS=${cbtAddress}`);
+  console.log(`GOVERNANCE_ADDRESS=${governanceAddress}`);
   console.log(`MARKETPLACE_ADDRESS=${marketplaceAddress}`);
   console.log(`QUALITY_ASSURANCE_ADDRESS=${qaAddress}`);
   console.log('──────────────────────────────────────────────────');

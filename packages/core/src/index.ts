@@ -26,6 +26,8 @@ export type { OrganisationType, OrganisationBranding, Organisation } from './typ
 
 export type { QualityGrade, QualityReport } from './types/quality.js';
 
+export type { ProposalStatus, GovernanceProposal, GovernanceVote } from './types/governance.js';
+
 export type {
   AuditEventStatus,
   BlockchainTransactionStatus,
@@ -104,6 +106,17 @@ export type {
 
 export { CreateQualityReportSchema, QualityQuerySchema } from './validators/quality.schema.js';
 export type { CreateQualityReportInput, QualityQueryInput } from './validators/quality.schema.js';
+
+export {
+  CreateProposalSchema,
+  CastVoteSchema,
+  GovernanceQuerySchema,
+} from './validators/governance.schema.js';
+export type {
+  CreateProposalInput,
+  CastVoteInput,
+  GovernanceQueryInput,
+} from './validators/governance.schema.js';
 
 export {
   AccessRequestRoleSchema,
