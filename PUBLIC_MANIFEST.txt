@@ -80,12 +80,14 @@ packages/api/tsconfig.build.json
 packages/api/tsconfig.json
 packages/api/vitest.config.ts
 packages/contracts/.solhint.json
+packages/contracts/contracts/CircularBuildToken.sol
 packages/contracts/contracts/CircularMarketplace.sol
 packages/contracts/contracts/MaterialRegistry.sol
 packages/contracts/contracts/QualityAssurance.sol
 packages/contracts/hardhat.config.ts
 packages/contracts/package.json
 packages/contracts/scripts/deploy.ts
+packages/contracts/test/CircularBuildToken.test.ts
 packages/contracts/test/CircularMarketplace.test.ts
 packages/contracts/test/MaterialRegistry.test.ts
 packages/contracts/test/QualityAssurance.test.ts
