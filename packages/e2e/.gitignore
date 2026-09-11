@@ -1,0 +1,8 @@
+.auth/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+qa-report.md
+qa-report.json
+qa-findings-*.md

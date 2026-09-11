@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "rootDir": "../..",
+    "paths": {
+      "@trace/core": ["../core/src/index.ts"],
+      "@trace/core/*": ["../core/src/*"]
+    }
+  },
+  "include": ["src", "scripts", "drizzle", "../core/src"]
+}

@@ -1,0 +1,42 @@
+{
+  "name": "@trace/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/jwt": "^10.2.2",
+    "@fastify/multipart": "^9.0.0",
+    "@fastify/rate-limit": "^10.1.1",
+    "@trace/core": "workspace:*",
+    "@trace/db": "workspace:*",
+    "@vechain/sdk-core": "^1.0.0",
+    "@vechain/sdk-network": "^1.0.0",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.13.0",
+    "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.45.2",
+    "ethers": "^6.16.0",
+    "fastify": "^5.12.3",
+    "ioredis": "^5.4.1",
+    "minio": "^8.0.7",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.34.5",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
+  }
+}

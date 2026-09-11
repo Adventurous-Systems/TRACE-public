@@ -1,0 +1,26 @@
+{
+  "name": "@trace/e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:smoke": "E2E_READ_ONLY=1 playwright test --grep @smoke",
+    "e2e:visual": "RUN_VISUAL=1 playwright test tests/visual",
+    "e2e:update": "RUN_VISUAL=1 playwright test tests/visual --update-snapshots",
+    "explore": "tsx explore/explore.ts",
+    "check:smoke-isolation": "tsx scripts/assert-smoke-isolation.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@trace/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.1",
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": [
+        "DATABASE_URL",
+        "REDIS_URL",
+        "MINIO_ENDPOINT",
+        "MINIO_PORT",
+        "MINIO_PUBLIC_URL",
+        "JWT_SECRET",
+        "JWT_EXPIRY",
+        "API_PORT",
+        "WEB_URL",
+        "API_URL",
+        "NODE_ENV",
+        "DEPLOYER_PRIVATE_KEY",
+        "DEMO_SIMULATE_ANCHOR",
+        "DEMO_PLATFORM_ADMIN_PASSWORD",
+        "DEMO_HUB_ADMIN_PASSWORD",
+        "DEMO_HUB_STAFF_PASSWORD",
+        "DEMO_INSPECTOR_PASSWORD",
+        "DEMO_BUYER_PASSWORD",
+        "DEMO_SUPPLIER_PASSWORD",
+        "DEMO_SUPPLIER2_PASSWORD",
+        "DEMO_APPLICANT_PASSWORD"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^build"]
+    }
+  }
+}

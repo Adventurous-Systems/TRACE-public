@@ -1,0 +1,39 @@
+{
+  "launchTime": 1526400000,
+  "gasLimit": 10000000,
+  "extraData": "0x",
+  "accounts": [
+    {
+      "address": "0xE2F62A5f55c4707669dF015cA3A5d2aD29172dfF",
+      "balance": "0x152d02c7e14af6800000",
+      "energy": "0x152d02c7e14af6800000",
+      "storage": {}
+    }
+  ],
+  "authority": [
+    {
+      "masterAddress": "0xE2F62A5f55c4707669dF015cA3A5d2aD29172dfF",
+      "endorsorAddress": "0xE2F62A5f55c4707669dF015cA3A5d2aD29172dfF",
+      "identity": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    }
+  ],
+  "params": {
+    "rewardRatio": "0x400000000000000000",
+    "baseGasPrice": "0x5af3107a4000",
+    "proposerEndorsement": "0x152d02c7e14af6800000",
+    "executorAddress": "0x0000000000000000000000004578656375746f72"
+  },
+  "executor": {
+    "approvers": []
+  },
+  "forkConfig": {
+    "VIP191": 0,
+    "ETH_CONST": 2,
+    "BLOCKLIST": 4,
+    "ETH_IST": 5214,
+    "VIP214": 10,
+    "FINALITY": 0,
+    "GALACTICA": 0,
+    "HAYABUSA": 0
+  }
+}

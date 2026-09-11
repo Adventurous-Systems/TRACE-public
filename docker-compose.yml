@@ -1,0 +1,135 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file: .env
+    # Loopback-only (audit D-02, 9 Sept): dual-stack so nginx's `proxy_pass
+    # http://localhost:PORT` keeps working — this host resolves "localhost" to
+    # ::1 first, and a v4-only binding here would 502 the moment nginx tries
+    # the IPv6 leg and bypassing the container firewall rule.
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-3004}:3001"
+      - "[::1]:${API_HOST_PORT:-3004}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      thor-solo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    env_file: .env
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-3003}:3000"
+      - "[::1]:${WEB_HOST_PORT:-3003}:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  thor-solo:
+    image: vechain/thor:latest
+    command: solo --genesis /genesis.json --on-demand --persist --api-cors '*' --api-addr 0.0.0.0:8669
+    ports:
+      - "127.0.0.1:${THOR_HOST_PORT:-8669}:8669"
+      - "[::1]:${THOR_HOST_PORT:-8669}:8669"
+    volumes:
+      - thor-data:/home/thor
+      - ./genesis.json:/genesis.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8669/blocks/best || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: trace
+      POSTGRES_USER: trace
+      POSTGRES_PASSWORD: trace
+    # Loopback-only (audit D-02). Nothing outside the compose network needs this
+    # published at all — it exists for ad-hoc `psql` access, which
+    # `docker compose exec postgres psql` already covers without a host port.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trace -d trace"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Loopback-only (audit D-02). Same rationale as postgres above.
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-16379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    # Loopback-only, dual-stack (audit D-02) — nginx proxies /minio/ to
+    # localhost:MINIO_HOST_PORT, same v6-first rationale as api/web above. The
+    # console (9001) has no proxy route and needs no v6 leg, but binding it the
+    # same way costs nothing and keeps this block uniform.
+    ports:
+      - "127.0.0.1:${MINIO_HOST_PORT:-19000}:9000"
+      - "[::1]:${MINIO_HOST_PORT:-19000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-19001}:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  meilisearch:
+    # Unused by all application code (D-39) — slated for removal, not touched
+    # in this change. Loopback-only in the meantime.
+    image: getmeili/meilisearch:latest
+    ports:
+      - "127.0.0.1:${MEILI_HOST_PORT:-17700}:7700"
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-masterKey}
+      MEILI_ENV: ${MEILI_ENV:-development}
+    volumes:
+      - meili-data:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7700/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  thor-data:
+  pg-data:
+  redis-data:
+  minio-data:
+  meili-data:

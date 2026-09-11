@@ -1,0 +1,166 @@
+name: E2E
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Browser tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 # 16.15-alpine3.24
+        env:
+          POSTGRES_DB: trace_test
+          POSTGRES_USER: trace
+          POSTGRES_PASSWORD: trace
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trace -d trace_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf # 7.4.11-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
+      REDIS_URL: redis://localhost:6379
+      MINIO_ENDPOINT: localhost
+      MINIO_PORT: '9000'
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      JWT_SECRET: test-secret-min-16-chars-long
+      JWT_EXPIRY: 1h
+      NODE_ENV: development
+      API_PORT: '3001'
+      WEB_URL: http://localhost:3000
+      API_URL: http://localhost:3001
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      # Deterministic trust layer — no real VeChain dependency in CI.
+      DEMO_SIMULATE_ANCHOR: 'true'
+      # Guarded scripts (demo:verify, demo:restore, reset:marketplace, ...) fail
+      # closed unless --env matches this. See packages/db/scripts/lib/guard.ts.
+      TRACE_ENV: local
+      E2E_BASE_URL: http://localhost:3000
+      E2E_API_URL: http://localhost:3001
+      DEMO_PLATFORM_ADMIN_PASSWORD: ci-only-platform-admin-password
+      DEMO_HUB_ADMIN_PASSWORD: ci-only-hub-admin-password
+      DEMO_HUB_STAFF_PASSWORD: ci-only-hub-staff-password
+      DEMO_INSPECTOR_PASSWORD: ci-only-inspector-password
+      DEMO_BUYER_PASSWORD: ci-only-buyer-password
+      DEMO_SUPPLIER_PASSWORD: ci-only-supplier-password
+      DEMO_SUPPLIER2_PASSWORD: ci-only-supplier-two-password
+      DEMO_APPLICANT_PASSWORD: ci-only-applicant-password
+      WORKSHOP_PASSWORD: ci-only-workshop-password
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start MinIO
+        # Buckets are created on demand by the app (storage.ensureBucket).
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && break || sleep 2
+          done
+
+      - name: Migrate + seed the test database
+        run: |
+          pnpm --filter @trace/db migrate
+          pnpm --filter @trace/db seed
+          pnpm --filter @trace/db seed:workshop
+          # The curated demo catalogue. Run by no workflow before this, which is
+          # why CI could never assert anything about the demo.
+          pnpm --filter @trace/db seed:products
+          pnpm --filter @trace/db demo:restore -- --env local --yes
+
+      # Fails the PR if the change under review breaks seeding, the personas, or
+      # the canonical fingerprint.
+      #
+      # WHAT THIS DOES NOT CATCH (verified, not assumed): a pure catalogue edit
+      # such as renaming a product. CI builds its world from the catalogue on
+      # every run, so seeding and verifying move together and a rename is
+      # self-consistent here. Deployed environments keep the OLD rows, so the
+      # same rename is caught by demo:verify at deploy time with "carries the
+      # curated tag but is not in the catalogue". Renaming a curated product is
+      # therefore a deliberate act that needs a restore on each environment.
+      - name: Demo integrity (before the suite runs)
+        run: pnpm --filter @trace/db demo:verify -- --env local
+
+      - name: Build
+        run: pnpm build
+
+      - name: Start API + Web
+        run: |
+          pnpm --filter @trace/api exec tsx src/index.ts > /tmp/api.log 2>&1 &
+          pnpm --filter @trace/web start > /tmp/web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3001/health >/dev/null && curl -sf http://localhost:3000 >/dev/null && break || sleep 2
+          done
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @trace/e2e exec playwright install --with-deps chromium
+
+      # Functional + mobile specs. Visual specs are opt-in (RUN_VISUAL=1) and run
+      # in the pinned Playwright container locally, where rendering matches the
+      # committed baselines — so they are intentionally skipped here.
+      - name: Run E2E suite (functional + mobile)
+        run: pnpm e2e
+
+      # The E2E suite creates its own passports and listings and makes a real
+      # offer. If a new test ever does that against a CURATED listing — or edits
+      # a curated passport — the demo environment is silently broken and nobody
+      # finds out until a prospect is watching. This is the check that catches it.
+      - name: The demo must survive the E2E suite
+        run: pnpm --filter @trace/db demo:verify -- --env local
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: |
+          echo "----- API -----"; tail -n 120 /tmp/api.log || true
+          echo "----- WEB -----"; tail -n 120 /tmp/web.log || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            packages/e2e/playwright-report
+            packages/e2e/test-results
+          retention-days: 7

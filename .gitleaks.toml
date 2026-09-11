@@ -1,0 +1,21 @@
+title = "TRACE secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known non-secret test literals and public reference data"
+regexTarget = "secret"
+regexes = [
+  '''test-secret-min-16-chars-long''',
+  '''0xE5FEfcB230364ef7f9B5B0df6DA81B227726612b''',
+  '''pending/rejected/approved''',
+]
+
+[[allowlists]]
+description = "Archived guide shows intentionally empty environment variables"
+paths = [
+  '''(^|/)01May26_beta_staging_post_implementation_guide\.md$''',
+]
+
+# Ignore individual false positives narrowly. Do not add broad directory,

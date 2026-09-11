@@ -1,0 +1,85 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  # Never interrupt a deployment that has already started.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Defined once and reused by each retry attempt below.
+  DEPLOY_SCRIPT: |
+    set -euo pipefail
+    cd /opt/TRACE-staging
+    git fetch origin
+    git checkout staging
+    git reset --hard origin/staging
+    docker compose up -d postgres redis thor-solo minio meilisearch
+    docker compose run --rm --build api pnpm --filter @trace/db migrate
+    docker compose up -d --build api web
+    docker compose ps
+    # Demo readiness. Deliberately NON-FATAL: script_stop is true, so a bare
+    # non-zero exit would fail the deploy job even though the code rolled out
+    # fine — and smoke.yml only triggers on conclusion == 'success', so a hard
+    # failure here would silently suppress the smoke run. The hard gate lives at
+    # PR time (e2e.yml); this is observability.
+    docker compose exec -T -w /app api pnpm --filter @trace/db demo:restore -- --env staging --yes \
+      || echo "demo:restore reported problems — see above"
+
+jobs:
+  deploy:
+    name: Deploy over SSH
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.trace.adventurous.systems
+
+    # The SSH hop from GitHub runners to the VPS occasionally times out
+    # (intermittent upstream network drop). The deploy script is idempotent, so
+    # we retry up to 3 times; the job only fails if all three attempts fail.
+    steps:
+      - name: Deploy staging over SSH (attempt 1)
+        id: attempt1
+        continue-on-error: true
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        with:
+          host: ${{ secrets.TRACE_STAGING_SSH_HOST }}
+          username: ${{ secrets.TRACE_STAGING_SSH_USER }}
+          key: ${{ secrets.TRACE_STAGING_SSH_KEY }}
+          script_stop: true
+          script: ${{ env.DEPLOY_SCRIPT }}
+
+      - name: Wait before retry
+        if: steps.attempt1.outcome == 'failure'
+        run: sleep 20
+
+      - name: Deploy staging over SSH (attempt 2)
+        id: attempt2
+        if: steps.attempt1.outcome == 'failure'
+        continue-on-error: true
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        with:
+          host: ${{ secrets.TRACE_STAGING_SSH_HOST }}
+          username: ${{ secrets.TRACE_STAGING_SSH_USER }}
+          key: ${{ secrets.TRACE_STAGING_SSH_KEY }}
+          script_stop: true
+          script: ${{ env.DEPLOY_SCRIPT }}
+
+      - name: Wait before final retry
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        run: sleep 30
+
+      - name: Deploy staging over SSH (attempt 3)
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        with:
+          host: ${{ secrets.TRACE_STAGING_SSH_HOST }}
+          username: ${{ secrets.TRACE_STAGING_SSH_USER }}
+          key: ${{ secrets.TRACE_STAGING_SSH_KEY }}
+          script_stop: true
+          script: ${{ env.DEPLOY_SCRIPT }}

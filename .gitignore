@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# TypeScript
+*.tsbuildinfo
+*.d.ts.map
+
+# Turbo
+.turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Hardhat
+packages/contracts/cache/
+packages/contracts/artifacts/
+packages/contracts/typechain-types/
+packages/contracts/deployments.json
+
+# Docker volumes (local data)
+.docker/
+
+# Test results
+test-results/
+playwright-report/
+assets/incoming/
+
+# Local files
+.local/

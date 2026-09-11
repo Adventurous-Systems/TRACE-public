@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "paths": {
+      "@trace/core": ["../core/src/index.ts"],
+      "@trace/core/*": ["../core/src/*"],
+      "@trace/db": ["../db/src/index.ts"],
+      "@trace/db/*": ["../db/src/*"]
+    }
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src"],
+  "exclude": ["**/*.test.ts", "src/test-setup.ts", "src/test-utils.ts"],
+  "references": [{ "path": "../core" }, { "path": "../db" }]
+}

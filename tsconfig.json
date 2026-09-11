@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@trace/core": ["./packages/core/src/index.ts"],
+      "@trace/core/*": ["./packages/core/src/*"],
+      "@trace/db": ["./packages/db/src/index.ts"],
+      "@trace/db/*": ["./packages/db/src/*"],
+      "@trace/sdk": ["./packages/sdk/src/index.ts"],
+      "@trace/sdk/*": ["./packages/sdk/src/*"]
+    }
+  },
+  "include": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/db" },
+    { "path": "./packages/api" },
+    { "path": "./packages/web" },
+    { "path": "./packages/contracts" },
+    { "path": "./packages/sdk" }
+  ]
+}

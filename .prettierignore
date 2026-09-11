@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.next/
+out/
+*.tsbuildinfo
+packages/contracts/cache/
+packages/contracts/artifacts/

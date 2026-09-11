@@ -1,0 +1,40 @@
+{
+  "name": "@trace/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.scripts.json",
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx scripts/migrate.ts",
+    "seed": "tsx scripts/seed.ts",
+    "seed:products": "tsx scripts/seed-products.ts",
+    "reset:marketplace": "tsx scripts/reset-marketplace.ts",
+    "rehash:passports": "tsx scripts/rehash-passports.ts",
+    "demo:restore": "tsx scripts/demo-restore.ts",
+    "demo:verify": "tsx scripts/demo-restore.ts --verify",
+    "rotate:credentials": "tsx scripts/rotate-published-credentials.ts",
+    "studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@trace/core": "workspace:*",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.45.2",
+    "js-sha3": "^0.9.3",
+    "minio": "^8.0.7",
+    "postgres": "^3.4.4",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "drizzle-kit": "^0.28.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

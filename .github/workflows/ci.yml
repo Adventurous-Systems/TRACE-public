@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    env:
+      DEMO_PLATFORM_ADMIN_PASSWORD: UnitTestPlatformOnly!
+      DEMO_HUB_ADMIN_PASSWORD: UnitTestAdminOnly!
+      DEMO_HUB_STAFF_PASSWORD: UnitTestStaffOnly!
+      DEMO_INSPECTOR_PASSWORD: UnitTestInspectorOnly!
+      DEMO_BUYER_PASSWORD: UnitTestBuyerOnly!
+      DEMO_SUPPLIER_PASSWORD: ci-only-supplier-password
+      DEMO_SUPPLIER2_PASSWORD: ci-only-supplier-two-password
+      DEMO_APPLICANT_PASSWORD: ci-only-applicant-password
+
+    services:
+      postgres:
+        image: postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685 # 16.15-alpine3.24
+        env:
+          POSTGRES_DB: trace_test
+          POSTGRES_USER: trace
+          POSTGRES_PASSWORD: trace
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trace -d trace_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf # 7.4.11-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ~2s, no services needed. smoke.yml points the @smoke selection at LIVE
+      # production, so that selection must stay strictly read-only.
+      - name: Assert @smoke isolation
+        run: pnpm --filter @trace/e2e check:smoke-isolation
+
+      - name: Build monorepo
+        run: pnpm build
+
+      - name: Run database migrations for tests
+        env:
+          DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
+        run: pnpm --filter @trace/db migrate
+
+      - name: Seed test database
+        env:
+          DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
+        run: pnpm --filter @trace/db seed
+
+      - name: Run API tests
+        env:
+          DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret-min-16-chars-long
+          JWT_EXPIRY: 1h
+          API_PORT: 3001
+          WEB_URL: http://localhost:3000
+          API_URL: http://localhost:3001
+          NODE_ENV: test
+        run: pnpm --filter @trace/api test

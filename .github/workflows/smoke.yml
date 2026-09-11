@@ -1,0 +1,75 @@
+name: Smoke (production)
+
+# Runs the read-only @smoke checks against the live domain on a daily schedule or
+# a manual dispatch. Creates no data — safe against production.
+on:
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-production
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Public read-only smoke
+    runs-on: ubuntu-latest
+    env:
+      E2E_BASE_URL: https://trace.adventurous.systems
+      E2E_API_URL: https://trace.adventurous.systems
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        run: pnpm --filter @trace/e2e exec playwright install --with-deps chromium
+
+      # The deploy that triggers this run restarts the API container; wait until
+      # both web and API are actually serving before probing (avoids a false fail).
+      # Refuse to touch production at all if the read-only invariant is broken.
+      - name: Assert @smoke isolation
+        run: pnpm --filter @trace/e2e check:smoke-isolation
+
+      - name: Wait for production to be serving
+        run: |
+          for i in $(seq 1 30); do
+            web=$(curl -s -o /dev/null -w '%{http_code}' "$E2E_BASE_URL/")
+            api=$(curl -s -o /dev/null -w '%{http_code}' "$E2E_API_URL/api/v1/marketplace/listings")
+            echo "attempt $i: web=$web api=$api"
+            [ "$web" = "200" ] && [ "$api" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "production did not become ready in time" >&2
+          exit 1
+
+      - name: Run smoke checks against production
+        run: pnpm e2e:smoke
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-report
+          path: |
+            packages/e2e/playwright-report
+            packages/e2e/test-results
+          retention-days: 7

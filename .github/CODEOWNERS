@@ -1,0 +1,5 @@
+# Default review owner for all repository changes.
+* @HicoMcD
+
+# Security-sensitive automation requires explicit owner review.
+/.github/ @HicoMcD

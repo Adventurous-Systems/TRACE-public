@@ -1,0 +1,22 @@
+FROM node:20-alpine AS builder
+
+# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
+RUN apk add --no-cache libc6-compat
+RUN npm install -g pnpm@9.15.9 turbo
+
+WORKDIR /app
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter="@trace/api..." build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+# libc6-compat is needed by any native modules (same as builder) to prevent
+# segfaults from glibc vs musl ABI mismatch on Alpine.
+RUN apk add --no-cache libc6-compat
+RUN npm install -g pnpm@9.15.9
+COPY --from=builder /app /app
+WORKDIR /app/packages/api
+
+CMD ["npx", "tsx", "src/index.ts"]
