@@ -46,7 +46,7 @@ jobs:
       - name: Deploy staging over SSH (attempt 1)
         id: attempt1
         continue-on-error: true
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.TRACE_STAGING_SSH_HOST }}
           username: ${{ secrets.TRACE_STAGING_SSH_USER }}
@@ -62,7 +62,7 @@ jobs:
         id: attempt2
         if: steps.attempt1.outcome == 'failure'
         continue-on-error: true
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.TRACE_STAGING_SSH_HOST }}
           username: ${{ secrets.TRACE_STAGING_SSH_USER }}
@@ -76,7 +76,7 @@ jobs:
 
       - name: Deploy staging over SSH (attempt 3)
         if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.TRACE_STAGING_SSH_HOST }}
           username: ${{ secrets.TRACE_STAGING_SSH_USER }}
