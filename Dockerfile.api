@@ -1,15 +1,15 @@
-FROM node:20-alpine AS builder
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS builder
 
 # Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
 RUN apk add --no-cache libc6-compat
-RUN npm install -g pnpm@9.15.9 turbo
+RUN npm install -g pnpm@9.15.9 turbo@2.9.14
 
 WORKDIR /app
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter="@trace/api..." build
 
-FROM node:20-alpine AS runner
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS runner
 WORKDIR /app
 
 # libc6-compat is needed by any native modules (same as builder) to prevent
@@ -18,5 +18,6 @@ RUN apk add --no-cache libc6-compat
 RUN npm install -g pnpm@9.15.9
 COPY --from=builder /app /app
 WORKDIR /app/packages/api
+USER node
 
-CMD ["npx", "tsx", "src/index.ts"]
+CMD ["node", "dist/index.js"]

@@ -37,4 +37,34 @@ describe('GET /health', () => {
       expect(body.data.db).toBe(true);
     }
   });
+
+  it('provides a dependency-free liveness endpoint', async () => {
+    const res = await app.inject({ method: 'GET', url: '/health/live' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      success: true,
+      data: { status: 'live' },
+    });
+  });
+
+  it('reports dependency checks on the readiness endpoint', async () => {
+    const res = await app.inject({ method: 'GET', url: '/health/ready' });
+    expect([200, 503]).toContain(res.statusCode);
+
+    const body = res.json<{
+      success: boolean;
+      data: {
+        status: string;
+        checks: Record<string, boolean>;
+      };
+    }>();
+    expect(typeof body.success).toBe('boolean');
+    expect(['ready', 'degraded']).toContain(body.data.status);
+    expect(body.data.checks).toEqual({
+      database: expect.any(Boolean),
+      redis: expect.any(Boolean),
+      minio: expect.any(Boolean),
+      thor: expect.any(Boolean),
+    });
+  });
 });

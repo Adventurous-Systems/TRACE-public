@@ -191,3 +191,11 @@ must be unique outside local development. Never commit a populated `.env`.
 4. **Modular monolith** — single deployable, clean module boundaries, extractable to microservices later
 5. **PWA** over native apps — single codebase, no app store friction, camera + offline via browser
 6. **Material passport schema is universal** — designed for any EU DPP construction material; circular metadata is an extension layer
+
+## Operations and releases
+
+- [Deployment and migration model](docs/operations/deployment.md) describes the
+  app-only blue-green process and rollback contract.
+- [Maintaining the public evergreen demo](docs/maintainers/public-release.md)
+  describes how reviewed work can move from a private development repository
+  without copying private history or internal material.

@@ -6,6 +6,7 @@
 .github/workflows/deploy-production.yml
 .github/workflows/deploy-staging.yml
 .github/workflows/e2e.yml
+.github/workflows/publish-images.yml
 .github/workflows/security.yml
 .github/workflows/smoke.yml
 .gitignore
@@ -19,12 +20,18 @@ CONTRIBUTING.md
 Dockerfile.api
 Dockerfile.web
 LICENSE
+PUBLIC_MANIFEST.txt
 README.md
 SECURITY.md
 SPEC.md
+deploy/candidate.env.example
+deploy/compose.app.yml
+deploy/nginx/upstream-slot.conf.example
 docker-compose.yml
 docs/AccessManagement.md
+docs/maintainers/public-release.md
 docs/nginx/trace-web.same-origin-api.conf.example
+docs/operations/deployment.md
 docs/research/README.md
 docs/research/TRACE_Flow-Diagram_v0.2.drawio
 docs/research/TRACE_methods_diagram.drawio
@@ -33,6 +40,11 @@ docs/research/methods.md
 eslint.config.mjs
 genesis.json
 ops/backup_db.sh
+ops/deploy/preflight.sh
+ops/deploy/rollback-nginx.sh
+ops/deploy/start-candidate.sh
+ops/deploy/switch-nginx.sh
+ops/deploy/verify-candidate.sh
 ops/restore_db.sh
 package.json
 packages/api/package.json
@@ -75,6 +87,7 @@ packages/api/src/server.ts
 packages/api/src/test-setup.ts
 packages/api/src/test-utils.ts
 packages/api/src/types/fastify.d.ts
+packages/api/src/worker.ts
 packages/api/src/workers/anchor-passport.worker.ts
 packages/api/tsconfig.build.json
 packages/api/tsconfig.json

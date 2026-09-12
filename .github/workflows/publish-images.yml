@@ -1,0 +1,94 @@
+name: Publish deployment images
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full 40-character commit SHA to build
+        required: true
+        type: string
+      release_channel:
+        description: Branch ancestry the commit must satisfy
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+concurrency:
+  group: publish-images-${{ inputs.commit_sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Build and publish immutable images
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_SHA: ${{ inputs.commit_sha }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      API_REPOSITORY: ghcr.io/adventurous-systems/trace-api
+      WEB_REPOSITORY: ghcr.io/adventurous-systems/trace-web
+
+    steps:
+      - name: Check out complete repository history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          case "$RELEASE_CHANNEL" in
+            staging) target=origin/staging ;;
+            production) target=origin/main ;;
+            *) echo "Unsupported release channel" >&2; exit 1 ;;
+          esac
+          git merge-base --is-ancestor "$RELEASE_SHA" "$target"
+
+      - name: Build API image
+        run: |
+          docker build \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            --tag "$API_REPOSITORY:$RELEASE_SHA" \
+            --file Dockerfile.api .
+
+      - name: Build web image
+        run: |
+          docker build \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            --tag "$WEB_REPOSITORY:$RELEASE_SHA" \
+            --file Dockerfile.web .
+
+      - name: Authenticate to GitHub Container Registry
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+
+      - name: Push images and record immutable digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "$API_REPOSITORY:$RELEASE_SHA"
+          docker push "$WEB_REPOSITORY:$RELEASE_SHA"
+          api_digest="$(docker image inspect "$API_REPOSITORY:$RELEASE_SHA" --format '{{index .RepoDigests 0}}')"
+          web_digest="$(docker image inspect "$WEB_REPOSITORY:$RELEASE_SHA" --format '{{index .RepoDigests 0}}')"
+          {
+            echo '## Immutable deployment images'
+            echo
+            printf '%s\n' "- API: \`$api_digest\`"
+            printf '%s\n' "- Web: \`$web_digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove registry credentials
+        if: always()
+        run: docker logout ghcr.io || true

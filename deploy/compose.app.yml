@@ -1,0 +1,74 @@
+services:
+  api:
+    image: ${TRACE_API_IMAGE:?Set TRACE_API_IMAGE to an immutable image reference}
+    env_file:
+      - ${TRACE_ENV_FILE:?Set TRACE_ENV_FILE to the root-owned runtime environment file}
+    environment:
+      # A candidate must not consume shared jobs before traffic cutover.
+      ANCHOR_WORKER_ENABLED: 'false'
+    ports:
+      - '127.0.0.1:${TRACE_API_HOST_PORT:?Set TRACE_API_HOST_PORT}:3001'
+      - '[::1]:${TRACE_API_HOST_PORT:?Set TRACE_API_HOST_PORT}:3001'
+    networks:
+      - trace-runtime
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    image: ${TRACE_WEB_IMAGE:?Set TRACE_WEB_IMAGE to an immutable image reference}
+    env_file:
+      - ${TRACE_ENV_FILE:?Set TRACE_ENV_FILE to the root-owned runtime environment file}
+    ports:
+      - '127.0.0.1:${TRACE_WEB_HOST_PORT:?Set TRACE_WEB_HOST_PORT}:3000'
+      - '[::1]:${TRACE_WEB_HOST_PORT:?Set TRACE_WEB_HOST_PORT}:3000'
+    networks:
+      - trace-runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    image: ${TRACE_API_IMAGE:?Set TRACE_API_IMAGE to an immutable image reference}
+    command: ['node', 'dist/worker.js']
+    working_dir: /app/packages/api
+    env_file:
+      - ${TRACE_ENV_FILE:?Set TRACE_ENV_FILE to the root-owned runtime environment file}
+    networks:
+      - trace-runtime
+    profiles:
+      - worker
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  trace-runtime:
+    external: true
+    name: ${TRACE_RUNTIME_NETWORK:?Set TRACE_RUNTIME_NETWORK to the existing environment network}
