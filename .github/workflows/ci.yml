@@ -20,6 +20,14 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     env:
+      DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: test-secret-min-16-chars-long
+      JWT_EXPIRY: 1h
+      API_PORT: 3001
+      WEB_URL: http://localhost:3000
+      API_URL: http://localhost:3001
+      NODE_ENV: test
       DEMO_PLATFORM_ADMIN_PASSWORD: UnitTestPlatformOnly!
       DEMO_HUB_ADMIN_PASSWORD: UnitTestAdminOnly!
       DEMO_HUB_STAFF_PASSWORD: UnitTestStaffOnly!
@@ -77,27 +85,46 @@ jobs:
       - name: Assert @smoke isolation
         run: pnpm --filter @trace/e2e check:smoke-isolation
 
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
       - name: Build monorepo
         run: pnpm build
 
       - name: Run database migrations for tests
-        env:
-          DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
         run: pnpm --filter @trace/db migrate
 
       - name: Seed test database
-        env:
-          DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
         run: pnpm --filter @trace/db seed
 
-      - name: Run API tests
-        env:
-          DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
-          REDIS_URL: redis://localhost:6379
-          JWT_SECRET: test-secret-min-16-chars-long
-          JWT_EXPIRY: 1h
-          API_PORT: 3001
-          WEB_URL: http://localhost:3000
-          API_URL: http://localhost:3001
-          NODE_ENV: test
-        run: pnpm --filter @trace/api test
+      - name: Run all unit and contract tests
+        run: pnpm test
+
+  container-build:
+    name: Build deployment images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Compose definitions
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          TRACE_ENV_FILE="$PWD/.env" \
+            docker compose --env-file deploy/candidate.env.example \
+            -f deploy/compose.app.yml config --quiet
+
+      - name: Build API image
+        run: docker build --file Dockerfile.api --tag trace-api:ci .
+
+      - name: Build web image
+        run: docker build --file Dockerfile.web --tag trace-web:ci .

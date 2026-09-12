@@ -7,7 +7,7 @@ async function main() {
   const app = await buildApp();
 
   // Start background workers (not in test environment — avoids hanging Redis connections)
-  if (env.NODE_ENV !== 'test') {
+  if (env.NODE_ENV !== 'test' && env.ANCHOR_WORKER_ENABLED) {
     startAnchorWorker();
   }
 

@@ -2,77 +2,67 @@ name: Deploy Production
 
 on:
   workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full 40-character commit SHA from public main
+        required: true
+        type: string
 
 concurrency:
   group: deploy-production
-  # Never interrupt a deployment that has already started.
   cancel-in-progress: false
 
 permissions:
   contents: read
 
-env:
-  # Defined once and reused by each retry attempt below.
-  DEPLOY_SCRIPT: |
-    set -euo pipefail
-    cd /opt/TRACE
-    git fetch origin
-    git checkout main
-    git reset --hard origin/main
-    docker compose up -d postgres redis thor-solo minio meilisearch
-    docker compose run --rm --build api pnpm --filter @trace/db migrate
-    docker compose up -d --build api web
-    docker compose ps
-
 jobs:
+  validate:
+    name: Validate requested production release
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_SHA: ${{ inputs.commit_sha }}
+    steps:
+      - name: Check out complete main history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require an exact commit from main
+        shell: bash
+        run: |
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$DEPLOY_SHA^{commit}"
+          git merge-base --is-ancestor "$DEPLOY_SHA" origin/main
+
   deploy:
-    name: Deploy over SSH
+    name: Run private blue-green production wrapper
+    needs: validate
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://trace.adventurous.systems
+    env:
+      DEPLOY_SHA: ${{ inputs.commit_sha }}
 
-    # The SSH hop from GitHub runners to the VPS occasionally times out
-    # (intermittent upstream network drop). The deploy script is idempotent, so
-    # we retry up to 3 times; the job only fails if all three attempts fail.
     steps:
-      - name: Deploy production over SSH (attempt 1)
-        id: attempt1
-        continue-on-error: true
+      # Production remains impossible until the separately reviewed private
+      # host wrapper and production environment secrets are installed.
+      - name: Deploy production over SSH
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         with:
           host: ${{ secrets.TRACE_PRODUCTION_SSH_HOST }}
           username: ${{ secrets.TRACE_PRODUCTION_SSH_USER }}
           key: ${{ secrets.TRACE_PRODUCTION_SSH_KEY }}
+          fingerprint: ${{ secrets.TRACE_PRODUCTION_SSH_FINGERPRINT }}
+          envs: DEPLOY_SHA
           script_stop: true
-          script: ${{ env.DEPLOY_SCRIPT }}
+          script: sudo --non-interactive /usr/local/sbin/trace-deploy-production "$DEPLOY_SHA"
 
-      - name: Wait before retry
-        if: steps.attempt1.outcome == 'failure'
-        run: sleep 20
-
-      - name: Deploy production over SSH (attempt 2)
-        id: attempt2
-        if: steps.attempt1.outcome == 'failure'
-        continue-on-error: true
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
-        with:
-          host: ${{ secrets.TRACE_PRODUCTION_SSH_HOST }}
-          username: ${{ secrets.TRACE_PRODUCTION_SSH_USER }}
-          key: ${{ secrets.TRACE_PRODUCTION_SSH_KEY }}
-          script_stop: true
-          script: ${{ env.DEPLOY_SCRIPT }}
-
-      - name: Wait before final retry
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-        run: sleep 30
-
-      - name: Deploy production over SSH (attempt 3)
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
-        with:
-          host: ${{ secrets.TRACE_PRODUCTION_SSH_HOST }}
-          username: ${{ secrets.TRACE_PRODUCTION_SSH_USER }}
-          key: ${{ secrets.TRACE_PRODUCTION_SSH_KEY }}
-          script_stop: true
-          script: ${{ env.DEPLOY_SCRIPT }}
+      - name: Verify public production after the switch
+        run: |
+          curl --fail --show-error --silent --retry 6 --retry-delay 5 \
+            https://trace.adventurous.systems/ >/dev/null
+          curl --fail --show-error --silent --retry 6 --retry-delay 5 \
+            https://trace.adventurous.systems/api/v1/marketplace/listings >/dev/null

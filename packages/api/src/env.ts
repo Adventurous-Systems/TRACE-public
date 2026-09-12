@@ -8,6 +8,10 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().int().default(3001),
   WEB_URL: z.string().url().default('http://localhost:3000'),
   API_URL: z.string().url().default('http://localhost:3001'),
+  ANCHOR_WORKER_ENABLED: z
+    .string()
+    .transform((v) => v === 'true')
+    .default('true'),
 
   // Auth
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
