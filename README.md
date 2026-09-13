@@ -36,7 +36,7 @@ research methods and diagrams. Security reports should follow
                          │
 ┌────────────────────────▼────────────────────────────┐
 │  OFF-CHAIN                                          │
-│  Next.js 14 PWA → Fastify API                       │
+│  Next.js 15 PWA → Fastify API                       │
 │  PostgreSQL · Redis · MinIO                         │
 └────────────────────────┬────────────────────────────┘
                          │
@@ -57,7 +57,7 @@ research methods and diagrams. Security reports should follow
 packages/core/        → Shared types, Zod validators, constants, enums
 packages/db/          → Drizzle ORM schema, migrations, seed data
 packages/api/         → Fastify backend (modules: auth, passport, marketplace, quality)
-packages/web/         → Next.js 14 App Router frontend (PWA)
+packages/web/         → Next.js 15 App Router frontend (PWA)
 packages/contracts/   → Solidity smart contracts + Hardhat (VeChain plugin)
 packages/sdk/         → TypeScript SDK for external consumers
 ```
@@ -81,8 +81,7 @@ packages/sdk/         → TypeScript SDK for external consumers
 **Infrastructure**
 
 - Docker Compose: Thor Solo (VeChain), PostgreSQL, Redis, MinIO
-  (a Meilisearch container is also provisioned but **unused** — no application
-  code queries it; marketplace search is Postgres full-text. Slated for removal.)
+  with Postgres full-text marketplace search; Meilisearch is not required.
 - Full monorepo: pnpm workspaces, TypeScript strict mode throughout
 
 **Smart Contracts (VeChainThor)**
@@ -133,26 +132,31 @@ packages/sdk/         → TypeScript SDK for external consumers
 
 ## Quick Start
 
-Prerequisites: Docker with Compose, Node.js 20 or newer, and pnpm 9 or newer.
+Prerequisites: Docker with Compose, Node.js 24, and pnpm 9.
 
 ```bash
-# Create a local environment file. This sets COMPOSE_PROJECT_NAME=trace-dev so
-# a development checkout cannot collide with a deployed TRACE Compose project.
-cp .env.example .env
+pnpm env:init
 
-# Start infrastructure
-docker compose up -d
+# The command creates a mode-600 .env with unique local-only secrets.
+# It prints one random disposable password for all seeded demo personas.
 
-# Install exactly the locked dependency set, then migrate and seed
 pnpm install --frozen-lockfile
+docker compose up -d postgres redis minio thor-solo
 pnpm --filter @trace/db migrate
 pnpm --filter @trace/db seed
 
-# Dev servers
-pnpm --filter @trace/api dev   # http://localhost:3001
-pnpm --filter @trace/web dev   # http://localhost:3000
+# Run the full self-hosted profile behind the same-origin local gateway.
+docker compose up -d --build api web gateway
+# Open http://localhost:3003
 ```
 
+For application development, leave only the four data services running and use
+`pnpm --filter @trace/api dev` plus `pnpm --filter @trace/web dev`. The API and
+web development servers use ports 3001 and 3000 respectively.
+
+`TRACE_DEPLOYMENT_PROFILE=self_hosted` retains registration and all mutation
+flows. `public_showcase` is API-enforced read-only mode used by the hosted
+research demo. `public_sandbox` is reserved and currently also fails closed.
 **Test credentials (local dev seed):**
 
 | Role           | Email                    | Password source                |

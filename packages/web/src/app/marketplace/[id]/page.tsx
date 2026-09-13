@@ -181,7 +181,17 @@ export default function ListingDetailPage() {
 
           {/* Purchase panel */}
           <div className="space-y-4">
-            <Card>
+            <Card className="trace-showcase-only">
+              <CardContent className="p-5 space-y-3">
+                <p className="text-3xl font-bold text-brand-700">
+                  {formatPrice(listing.pricePence)}
+                </p>
+                <p className="text-sm text-gray-600">
+                  This public research showcase is read-only. Transactions and offers are disabled.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="trace-self-hosted-only">
               <CardContent className="p-5 space-y-4">
                 <div>
                   <p className="text-3xl font-bold text-brand-700">

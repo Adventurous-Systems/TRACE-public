@@ -23,10 +23,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out full history
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Validate public file boundary
+        run: node scripts/check-public-boundary.mjs
 
       - name: Gitleaks
         run: |
@@ -46,24 +49,51 @@ jobs:
           tar -xzf /tmp/trufflehog.tar.gz -C /tmp trufflehog
           /tmp/trufflehog git "file://$PWD" --only-verified --no-update --fail
 
-  dependencies:
-    name: Critical production dependencies
+  workflow-analysis:
+    name: GitHub Actions security analysis
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Zizmor high severity and confidence
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          version: v1.29.0
+          persona: auditor
+          min-severity: high
+          min-confidence: high
+
+      - name: Zizmor medium severity and confidence
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          version: v1.29.0
+          persona: auditor
+          min-severity: medium
+          min-confidence: medium
+
+  dependencies:
+    name: High and critical production dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Reject critical production advisories
-        run: pnpm audit --prod --audit-level critical
+      - name: Reject high and critical production advisories
+        run: pnpm audit --prod --audit-level high

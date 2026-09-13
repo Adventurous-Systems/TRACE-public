@@ -50,7 +50,17 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <img src="/trace-logo.png" alt="TRACE" className="mx-auto h-24 w-24" />
         </div>
-        <Card>
+        <div className="trace-showcase-only rounded-lg border border-amber-200 bg-white p-6 text-center">
+          <h1 className="text-xl font-semibold">Read-only research showcase</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Sign-in is disabled here. You can explore the synthetic marketplace and public material
+            passports.
+          </p>
+          <Link href="/marketplace" className="mt-4 inline-block text-brand-600 underline">
+            Browse marketplace
+          </Link>
+        </div>
+        <Card className="trace-self-hosted-only">
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
             <CardDescription>Access TRACE with your email and password</CardDescription>

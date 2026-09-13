@@ -6,12 +6,16 @@ const envSchema = z.object({
 
   // Server
   API_PORT: z.coerce.number().int().default(3001),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(100),
   WEB_URL: z.string().url().default('http://localhost:3000'),
   API_URL: z.string().url().default('http://localhost:3001'),
   ANCHOR_WORKER_ENABLED: z
     .string()
     .transform((v) => v === 'true')
     .default('true'),
+  TRACE_DEPLOYMENT_PROFILE: z
+    .enum(['self_hosted', 'public_showcase', 'public_sandbox'])
+    .default('self_hosted'),
 
   // Auth
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
@@ -74,7 +78,7 @@ const envSchema = z.object({
     .transform((v) => v === 'true')
     .default('false'),
   // Demo/showcase: when true, passports get a real keccak256 fingerprint marked
-  // "trust layer prepared" instead of a real on-chain VeChain transaction. Never enable in prod.
+  // "trust layer prepared" instead of a real on-chain VeChain transaction. Use only with synthetic demo data; never describe it as an on-chain anchor.
   DEMO_SIMULATE_ANCHOR: z
     .string()
     .transform((v) => v === 'true')
@@ -89,6 +93,10 @@ const envSchema = z.object({
     .string()
     .transform((v) => v === 'true')
     .default('false'),
+  MINIO_PUBLIC_READ: z
+    .string()
+    .transform((v) => v === 'true')
+    .default('false'),
   MINIO_ACCESS_KEY: z.string().default('minioadmin'),
   MINIO_SECRET_KEY: z.string().default('minioadmin'),
   MINIO_BUCKET_PASSPORTS: z.string().default('passports'),
@@ -97,10 +105,6 @@ const envSchema = z.object({
     (value) => (value === '' ? undefined : value),
     z.string().url().optional(),
   ),
-
-  // Meilisearch
-  MEILISEARCH_URL: z.string().url().default('http://localhost:7700'),
-  MEILISEARCH_KEY: z.string().default('masterKey'),
 });
 
 function parseEnv() {

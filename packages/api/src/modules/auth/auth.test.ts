@@ -1,11 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createTestApp, getAuthHeader, type TestApp } from '../../test-utils.js';
+import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
 // Uses credentials created by: pnpm db:seed
-const SEEDED_ADMIN = {
-  email: 'admin@stirlingreuse.com',
-  password: 'UnitTestAdminOnly!',
-};
+const SEEDED_ADMIN = getTestPersona('hubAdmin');
 
 describe('POST /api/v1/auth/login', () => {
   let app: TestApp;

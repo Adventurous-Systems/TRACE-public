@@ -3,8 +3,7 @@
 .github/CODEOWNERS
 .github/dependabot.yml
 .github/workflows/ci.yml
-.github/workflows/deploy-production.yml
-.github/workflows/deploy-staging.yml
+.github/workflows/deploy-demo.yml
 .github/workflows/e2e.yml
 .github/workflows/publish-images.yml
 .github/workflows/security.yml
@@ -18,6 +17,7 @@
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
 Dockerfile.api
+Dockerfile.ops
 Dockerfile.web
 LICENSE
 PUBLIC_MANIFEST.txt
@@ -26,12 +26,18 @@ SECURITY.md
 SPEC.md
 deploy/candidate.env.example
 deploy/compose.app.yml
+deploy/compose.demo-data.yml
+deploy/demo-data.env.example
+deploy/nginx/demo.conf.example
+deploy/nginx/local-gateway.conf
 deploy/nginx/upstream-slot.conf.example
 docker-compose.yml
 docs/AccessManagement.md
+docs/maintainers/parity-manifest.md
 docs/maintainers/public-release.md
 docs/nginx/trace-web.same-origin-api.conf.example
 docs/operations/deployment.md
+docs/operations/self-service-sandbox.md
 docs/research/README.md
 docs/research/TRACE_Flow-Diagram_v0.2.drawio
 docs/research/TRACE_methods_diagram.drawio
@@ -42,6 +48,7 @@ genesis.json
 ops/backup_db.sh
 ops/deploy/preflight.sh
 ops/deploy/rollback-nginx.sh
+ops/deploy/run-ops.sh
 ops/deploy/start-candidate.sh
 ops/deploy/switch-nginx.sh
 ops/deploy/verify-candidate.sh
@@ -60,6 +67,8 @@ packages/api/src/lib/vechain-transactions.ts
 packages/api/src/lib/wallet.test.ts
 packages/api/src/lib/wallet.ts
 packages/api/src/middleware/auth.ts
+packages/api/src/middleware/deployment-profile.test.ts
+packages/api/src/middleware/deployment-profile.ts
 packages/api/src/middleware/error-handler.ts
 packages/api/src/middleware/tenant.ts
 packages/api/src/modules/access-request/access-request.routes.ts
@@ -183,6 +192,7 @@ packages/e2e/tests/mobile/mobile-nav.spec.ts
 packages/e2e/tests/mobile/overflow.spec.ts
 packages/e2e/tests/photo-guard.spec.ts
 packages/e2e/tests/public-marketplace.spec.ts
+packages/e2e/tests/public-showcase.spec.ts
 packages/e2e/tests/roles.spec.ts
 packages/e2e/tests/smoke.spec.ts
 packages/e2e/tests/supplier-journey.spec.ts
@@ -266,6 +276,8 @@ packages/web/tsconfig.json
 pnpm-lock.yaml
 pnpm-workspace.yaml
 scripts/auth-smoke.sh
+scripts/check-public-boundary.mjs
+scripts/init-local-env.mjs
 scripts/smoke-test.sh
 tsconfig.base.json
 tsconfig.json

@@ -3,133 +3,164 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    env_file: .env
-    # Loopback-only (audit D-02, 9 Sept): dual-stack so nginx's `proxy_pass
-    # http://localhost:PORT` keeps working — this host resolves "localhost" to
-    # ::1 first, and a v4-only binding here would 502 the moment nginx tries
-    # the IPv6 leg and bypassing the container firewall rule.
+    env_file: ${TRACE_API_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql://trace:trace@postgres:5432/trace
+      REDIS_URL: redis://redis:6379
+      VECHAIN_NODE_URL: http://thor-solo:8669
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_PUBLIC_URL: http://localhost:${WEB_HOST_PORT:-3003}/minio
+      MINIO_PUBLIC_READ: ${MINIO_PUBLIC_READ:-false}
+      WEB_URL: http://localhost:${WEB_HOST_PORT:-3003}
+      API_URL: http://localhost:${WEB_HOST_PORT:-3003}
+      TRACE_DEPLOYMENT_PROFILE: ${TRACE_DEPLOYMENT_PROFILE:-self_hosted}
     ports:
-      - "127.0.0.1:${API_HOST_PORT:-3004}:3001"
-      - "[::1]:${API_HOST_PORT:-3004}:3001"
+      - '127.0.0.1:${API_HOST_PORT:-3004}:3001'
+      - '[::1]:${API_HOST_PORT:-3004}:3001'
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      thor-solo:
-        condition: service_healthy
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      thor-solo: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 
   web:
     build:
       context: .
       dockerfile: Dockerfile.web
-    env_file: .env
-    ports:
-      - "127.0.0.1:${WEB_HOST_PORT:-3003}:3000"
-      - "[::1]:${WEB_HOST_PORT:-3003}:3000"
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:3001
+      TRACE_DEPLOYMENT_PROFILE: ${TRACE_DEPLOYMENT_PROFILE:-self_hosted}
+      UMAMI_ENABLED: 'false'
     depends_on:
-      - api
+      api: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  gateway:
+    image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
+    user: nginx
+    ports:
+      - '127.0.0.1:${WEB_HOST_PORT:-3003}:8080'
+      - '[::1]:${WEB_HOST_PORT:-3003}:8080'
+    volumes:
+      - ./deploy/nginx/local-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      web: { condition: service_healthy }
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=32m,uid=101,gid=101,mode=0700
+      - /var/run:size=1m,uid=101,gid=101,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 
   thor-solo:
-    image: vechain/thor:latest
-    command: solo --genesis /genesis.json --on-demand --persist --api-cors '*' --api-addr 0.0.0.0:8669
+    image: vechain/thor:v2.4.3@sha256:b5fd684366a1c08b64699bd60648a3e7fa69b07b81390d6212c4760c2eb55a8d
+    command: solo --genesis /genesis.json --on-demand --persist --api-cors 'http://localhost:${WEB_HOST_PORT:-3003}' --api-addr 0.0.0.0:8669
     ports:
-      - "127.0.0.1:${THOR_HOST_PORT:-8669}:8669"
-      - "[::1]:${THOR_HOST_PORT:-8669}:8669"
+      - '127.0.0.1:${THOR_HOST_PORT:-8669}:8669'
+      - '[::1]:${THOR_HOST_PORT:-8669}:8669'
     volumes:
       - thor-data:/home/thor
       - ./genesis.json:/genesis.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8669/blocks/best || exit 1"]
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8669/blocks/best || exit 1']
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 5s
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     environment:
       POSTGRES_DB: trace
       POSTGRES_USER: trace
       POSTGRES_PASSWORD: trace
-    # Loopback-only (audit D-02). Nothing outside the compose network needs this
-    # published at all — it exists for ad-hoc `psql` access, which
-    # `docker compose exec postgres psql` already covers without a host port.
     ports:
-      - "127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432"
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432'
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trace -d trace"]
+      test: ['CMD-SHELL', 'pg_isready -U trace -d trace']
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
 
   redis:
-    image: redis:7-alpine
-    # Loopback-only (audit D-02). Same rationale as postgres above.
+    image: redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    command: ['redis-server', '--appendonly', 'yes']
     ports:
-      - "127.0.0.1:${REDIS_HOST_PORT:-16379}:6379"
+      - '127.0.0.1:${REDIS_HOST_PORT:-16379}:6379'
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
 
   minio:
-    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e # RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address ":9001"
-    # Loopback-only, dual-stack (audit D-02) — nginx proxies /minio/ to
-    # localhost:MINIO_HOST_PORT, same v6-first rationale as api/web above. The
-    # console (9001) has no proxy route and needs no v6 leg, but binding it the
-    # same way costs nothing and keeps this block uniform.
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data --console-address ':9001'
     ports:
-      - "127.0.0.1:${MINIO_HOST_PORT:-19000}:9000"
-      - "[::1]:${MINIO_HOST_PORT:-19000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-19001}:9001"
+      - '127.0.0.1:${MINIO_HOST_PORT:-19000}:9000'
+      - '[::1]:${MINIO_HOST_PORT:-19000}:9000'
+      - '127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-19001}:9001'
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      test: ['CMD-SHELL', 'curl -f http://127.0.0.1:9000/minio/health/live || exit 1']
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 10s
     restart: unless-stopped
-
-  meilisearch:
-    # Unused by all application code (D-39) — slated for removal, not touched
-    # in this change. Loopback-only in the meantime.
-    image: getmeili/meilisearch:latest
-    ports:
-      - "127.0.0.1:${MEILI_HOST_PORT:-17700}:7700"
-    environment:
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-masterKey}
-      MEILI_ENV: ${MEILI_ENV:-development}
-    volumes:
-      - meili-data:/meili_data
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:7700/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
 
 volumes:
   thor-data:
   pg-data:
   redis-data:
   minio-data:
-  meili-data:

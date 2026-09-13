@@ -11,9 +11,7 @@ on:
         description: Branch ancestry the commit must satisfy
         required: true
         type: choice
-        options:
-          - staging
-          - production
+        options: [staging, main]
 
 concurrency:
   group: publish-images-${{ inputs.commit_sha }}
@@ -21,21 +19,24 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   publish:
     name: Build and publish immutable images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       RELEASE_SHA: ${{ inputs.commit_sha }}
       RELEASE_CHANNEL: ${{ inputs.release_channel }}
       API_REPOSITORY: ghcr.io/adventurous-systems/trace-api
       WEB_REPOSITORY: ghcr.io/adventurous-systems/trace-web
-
+      OPS_REPOSITORY: ghcr.io/adventurous-systems/trace-ops
+      SOURCE_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
     steps:
       - name: Check out complete repository history
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
           fetch-depth: 0
@@ -47,26 +48,8 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-          case "$RELEASE_CHANNEL" in
-            staging) target=origin/staging ;;
-            production) target=origin/main ;;
-            *) echo "Unsupported release channel" >&2; exit 1 ;;
-          esac
-          git merge-base --is-ancestor "$RELEASE_SHA" "$target"
-
-      - name: Build API image
-        run: |
-          docker build \
-            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
-            --tag "$API_REPOSITORY:$RELEASE_SHA" \
-            --file Dockerfile.api .
-
-      - name: Build web image
-        run: |
-          docker build \
-            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
-            --tag "$WEB_REPOSITORY:$RELEASE_SHA" \
-            --file Dockerfile.web .
+          git fetch --no-tags origin main staging
+          git merge-base --is-ancestor "$RELEASE_SHA" "origin/$RELEASE_CHANNEL"
 
       - name: Authenticate to GitHub Container Registry
         env:
@@ -74,20 +57,50 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
 
-      - name: Push images and record immutable digests
+      - name: Build and publish API, web, and operations images
         shell: bash
         run: |
           set -euo pipefail
-          docker push "$API_REPOSITORY:$RELEASE_SHA"
-          docker push "$WEB_REPOSITORY:$RELEASE_SHA"
-          api_digest="$(docker image inspect "$API_REPOSITORY:$RELEASE_SHA" --format '{{index .RepoDigests 0}}')"
-          web_digest="$(docker image inspect "$WEB_REPOSITORY:$RELEASE_SHA" --format '{{index .RepoDigests 0}}')"
+          docker buildx create --name trace-release --driver docker-container --use
+          for component in api web ops; do
+            repository_var="${component^^}_REPOSITORY"
+            repository="${!repository_var}"
+            docker buildx build \
+              --file "Dockerfile.$component" \
+              --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+              --label "org.opencontainers.image.source=$SOURCE_REPOSITORY" \
+              --tag "$repository:$RELEASE_SHA" \
+              --provenance=mode=max \
+              --sbom=true \
+              --push \
+              --metadata-file "/tmp/$component-metadata.json" .
+          done
+
+      - name: Record immutable digest manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/trace-release-images.txt
+          for component in api web ops; do
+            repository_var="${component^^}_REPOSITORY"
+            repository="${!repository_var}"
+            digest="$(jq -r '."containerimage.digest"' "/tmp/$component-metadata.json")"
+            printf '%s=%s@%s\n' "${component^^}_IMAGE" "$repository" "$digest" | tee -a /tmp/trace-release-images.txt
+          done
           {
             echo '## Immutable deployment images'
             echo
-            printf '%s\n' "- API: \`$api_digest\`"
-            printf '%s\n' "- Web: \`$web_digest\`"
+            echo '```text'
+            cat /tmp/trace-release-images.txt
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release digest manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trace-release-${{ inputs.commit_sha }}
+          path: /tmp/trace-release-images.txt
+          retention-days: 30
 
       - name: Remove registry credentials
         if: always()

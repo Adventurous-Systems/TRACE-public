@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db, materialPassports, computePassportHash } from '@trace/db';
-import { createTestApp, getAuthHeader, type TestApp } from '../../test-utils.js';
+import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
 /**
  * Regression lock for a bug that broke the demo's headline moment.
@@ -15,8 +15,8 @@ import { createTestApp, getAuthHeader, type TestApp } from '../../test-utils.js'
  *
  * Uses credentials created by: pnpm db:seed
  */
-const INSPECTOR = { email: 'inspector@trace.eco', password: 'UnitTestInspectorOnly!' };
-const HUB_STAFF = { email: 'staff@stirlingreuse.com', password: 'UnitTestStaffOnly!' };
+const INSPECTOR = getTestPersona('inspector');
+const HUB_STAFF = getTestPersona('hubStaff');
 
 describe('quality reports and the passport fingerprint', () => {
   let app: TestApp;

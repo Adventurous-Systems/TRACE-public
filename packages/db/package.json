@@ -4,8 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./schema": "./src/schema.ts"
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./schema": {
+      "types": "./dist/drizzle/schema.d.ts",
+      "import": "./dist/drizzle/schema.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -36,5 +42,10 @@
     "drizzle-kit": "^0.28.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
-  }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "data"
+  ]
 }

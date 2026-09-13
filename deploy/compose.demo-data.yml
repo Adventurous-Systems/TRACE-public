@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    environment:
+      POSTGRES_DB: ${TRACE_POSTGRES_DB:?Set TRACE_POSTGRES_DB}
+      POSTGRES_USER: ${TRACE_POSTGRES_USER:?Set TRACE_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${TRACE_POSTGRES_PASSWORD:?Set TRACE_POSTGRES_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+
+  redis:
+    image: redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 384m
+    cpus: 0.5
+
+  minio:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${TRACE_MINIO_ROOT_USER:?Set TRACE_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${TRACE_MINIO_ROOT_PASSWORD:?Set TRACE_MINIO_ROOT_PASSWORD}
+    ports:
+      - '127.0.0.1:${TRACE_MINIO_HOST_PORT:-59000}:9000'
+      - '[::1]:${TRACE_MINIO_HOST_PORT:-59000}:9000'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://127.0.0.1:9000/minio/health/live || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1.0
+
+  thor-solo:
+    image: vechain/thor:v2.4.3@sha256:b5fd684366a1c08b64699bd60648a3e7fa69b07b81390d6212c4760c2eb55a8d
+    command: solo --genesis /genesis.json --on-demand --persist --api-cors 'https://demo.trace.adventurous.systems' --api-addr 0.0.0.0:8669
+    volumes:
+      - thor-data:/home/thor
+      - ${TRACE_GENESIS_FILE:?Set TRACE_GENESIS_FILE}:/genesis.json:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8669/blocks/best || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+
+volumes:
+  pg-data:
+  redis-data:
+  minio-data:
+  thor-data:

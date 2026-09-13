@@ -12,11 +12,16 @@ export const minioClient = new Minio.Client({
 /**
  * Ensure a bucket exists, creating it if needed.
  */
-export async function ensureBucket(bucket: string): Promise<void> {
+export async function ensureBucket(
+  bucket: string,
+  options: { publicRead?: boolean } = {},
+): Promise<void> {
   const exists = await minioClient.bucketExists(bucket);
-  if (!exists) {
-    await minioClient.makeBucket(bucket);
-    // Set public read policy for passport assets
+  if (!exists) await minioClient.makeBucket(bucket);
+
+  // Anonymous reads are opt-in and intended only for an isolated public demo.
+  // Reconcile the policy because a pre-created demo bucket may still be private.
+  if (options.publicRead) {
     const policy = JSON.stringify({
       Version: '2012-10-17',
       Statement: [
@@ -41,7 +46,9 @@ export async function uploadBuffer(
   buffer: Buffer,
   contentType: string,
 ): Promise<string> {
-  await ensureBucket(bucket);
+  await ensureBucket(bucket, {
+    publicRead: bucket === env.MINIO_BUCKET_PASSPORTS && env.MINIO_PUBLIC_READ,
+  });
   await minioClient.putObject(bucket, key, buffer, buffer.length, {
     'Content-Type': contentType,
   });

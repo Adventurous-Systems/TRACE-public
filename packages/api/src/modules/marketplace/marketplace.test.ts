@@ -2,7 +2,9 @@ import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { auditEvents, db, listings, materialPassports, organisations, users } from '@trace/db';
-import { createTestApp, getAuthHeader, type TestApp } from '../../test-utils.js';
+import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
+
+const HUB_STAFF = getTestPersona('hubStaff');
 
 describe('marketplace buyer flow', () => {
   let app: TestApp;
@@ -123,7 +125,7 @@ describe('D-03: transaction authorization', () => {
       where: eq(users.email, 'staff@stirlingreuse.com'),
     });
 
-    sellerAuth = await getAuthHeader(app, 'staff@stirlingreuse.com', 'UnitTestStaffOnly!');
+    sellerAuth = await getAuthHeader(app, HUB_STAFF.email, HUB_STAFF.password);
     buyerAuth = await makeUser('buyer', null, 'buyer');
     strangerAuth = await makeUser('buyer', null, 'stranger'); // no relationship to the trade
     adminAuth = await makeUser('platform_admin', null, 'admin');

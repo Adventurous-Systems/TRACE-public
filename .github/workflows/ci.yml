@@ -64,17 +64,17 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -107,24 +107,128 @@ jobs:
         run: pnpm test
 
   container-build:
-    name: Build deployment images
+    name: Build and start deployment images
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Validate the public repository boundary
+        run: node scripts/check-public-boundary.mjs
+
       - name: Validate Compose definitions
+        shell: bash
         run: |
+          set -euo pipefail
           cp .env.example .env
+          install -m 600 /dev/null /tmp/trace-api.env
+          install -m 600 /dev/null /tmp/trace-web.env
+          printf '%s\n' 'TRACE_DEPLOYMENT_PROFILE=public_showcase' 'NODE_ENV=production' > /tmp/trace-web.env
           docker compose config --quiet
-          TRACE_ENV_FILE="$PWD/.env" \
+          TRACE_API_ENV_FILE=/tmp/trace-api.env TRACE_WEB_ENV_FILE=/tmp/trace-web.env \
             docker compose --env-file deploy/candidate.env.example \
             -f deploy/compose.app.yml config --quiet
+          docker compose --env-file deploy/demo-data.env.example \
+            -f deploy/compose.demo-data.yml config --quiet
 
-      - name: Build API image
-        run: docker build --file Dockerfile.api --tag trace-api:ci .
+      - name: Build API and web images
+        run: docker compose build api web
 
-      - name: Build web image
-        run: docker build --file Dockerfile.web --tag trace-web:ci .
+      - name: Build operations image
+        run: docker build --file Dockerfile.ops --tag trace-ops:ci .
+
+      - name: Scan release images for fixable high and critical vulnerabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz \
+            --output /tmp/trivy.tar.gz
+          curl --fail --silent --show-error --location \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_checksums.txt \
+            --output /tmp/trivy-checksums.txt
+          (
+            cd /tmp
+            grep ' trivy_0.74.0_Linux-64bit.tar.gz$' trivy-checksums.txt \
+              | sed 's/trivy_0.74.0_Linux-64bit.tar.gz/trivy.tar.gz/' \
+              | sha256sum --check --strict
+            tar -xzf trivy.tar.gz trivy
+          )
+          status=0
+          for service in api web; do
+            image="$(docker compose images -q "$service")"
+            /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+              --exit-code 1 --no-progress --format json \
+              --output "/tmp/trivy-$service.json" "$image" || status=1
+          done
+          /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress --format json \
+            --output /tmp/trivy-ops.json trace-ops:ci || status=1
+          exit "$status"
+
+      - name: Upload image vulnerability reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-vulnerability-reports
+          path: /tmp/trivy-*.json
+          retention-days: 30
+
+      - name: Start isolated data services and migrate
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPOSE_PROJECT_NAME=trace-ci docker compose up -d postgres redis minio thor-solo
+          docker run --rm --network trace-ci_default --env-file .env \
+            -e DATABASE_URL=postgresql://trace:trace@postgres:5432/trace \
+            -e REDIS_URL=redis://redis:6379 \
+            -e VECHAIN_NODE_URL=http://thor-solo:8669 \
+            -e MINIO_ENDPOINT=minio -e MINIO_PORT=9000 \
+            trace-ops:ci dist/scripts/migrate.js
+
+      - name: Start built API and web images in public-showcase mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPOSE_PROJECT_NAME=trace-ci TRACE_DEPLOYMENT_PROFILE=public_showcase \
+            docker compose up -d --no-build api web gateway
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3003/ >/dev/null \
+              && curl --fail --silent http://127.0.0.1:3003/api/v1/marketplace/listings >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          COMPOSE_PROJECT_NAME=trace-ci docker compose logs api web gateway
+          exit 1
+
+      - name: Verify runtime imports, web secret isolation, and read-only enforcement
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPOSE_PROJECT_NAME=trace-ci docker compose exec -T api node -e \
+            "Promise.all([import('@trace/core'),import('@trace/db')]).then(()=>console.log('runtime imports ok'))"
+          web_id="$(COMPOSE_PROJECT_NAME=trace-ci docker compose ps -q web)"
+          if docker inspect "$web_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep -Eq '^(DATABASE_URL|JWT_SECRET|DEPLOYER_PRIVATE_KEY|WALLET_ENCRYPTION_KEY|MINIO_SECRET_KEY)='; then
+            echo 'API secret detected in web container environment' >&2
+            exit 1
+          fi
+          status="$(curl --silent --output /tmp/read-only-response --write-out '%{http_code}' \
+            --request POST http://127.0.0.1:3003/api/v1/auth/register \
+            --header 'content-type: application/json' \
+            --data '{"name":"Blocked","email":"blocked@example.com","password":"blocked-password"}')"
+          test "$status" = 403
+          grep -q 'READ_ONLY_DEPLOYMENT' /tmp/read-only-response
+          docker run --rm --entrypoint node trace-ops:ci -e \
+            "import('@trace/core').then(()=>console.log('operations runtime import ok'))"
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: COMPOSE_PROJECT_NAME=trace-ci docker compose logs --tail 150
+
+      - name: Remove disposable containers and volumes
+        if: always()
+        run: COMPOSE_PROJECT_NAME=trace-ci docker compose down --volumes --remove-orphans

@@ -1,8 +1,8 @@
-# Include this file once inside the TRACE nginx `server` block, before its
-# locations. Keep one file per A/B slot and make the active include a symlink.
-# Variables allow the same /api/, /minio/, and / locations to remain unchanged.
-set $trace_api_origin http://127.0.0.1:4104;
-set $trace_web_origin http://127.0.0.1:4103;
+# Include this file once inside the demo nginx `server` block, before locations.
+# Keep one file per A/B slot and make the active include a symlink.
+# Blue uses 5003/5004; green uses 5103/5104.
+set $trace_api_origin http://127.0.0.1:5004;
+set $trace_web_origin http://127.0.0.1:5003;
 
-# The MinIO origin remains owned by the existing stateful Compose project.
-set $trace_minio_origin http://127.0.0.1:29000;
+# MinIO belongs only to the isolated trace-demo-data Compose project.
+set $trace_minio_origin http://127.0.0.1:59000;

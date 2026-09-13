@@ -7,6 +7,7 @@
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "e2e:smoke": "E2E_READ_ONLY=1 playwright test --grep @smoke",
+    "e2e:showcase": "E2E_SHOWCASE=1 playwright test --grep @showcase",
     "e2e:visual": "RUN_VISUAL=1 playwright test tests/visual",
     "e2e:update": "RUN_VISUAL=1 playwright test tests/visual --update-snapshots",
     "explore": "tsx explore/explore.ts",

@@ -98,7 +98,7 @@ export default function MarketplacePage() {
               Marketplace
             </span>
           </Link>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="trace-self-hosted-only flex items-center gap-2 sm:gap-3">
             {user?.role === 'buyer' && (
               <>
                 {/* A buyer who has just purchased needs to reach their order.

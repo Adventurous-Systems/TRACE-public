@@ -2,10 +2,10 @@
 set -euo pipefail
 
 DEPLOY_ENV="${1:-}"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/deploy/compose.app.yml"
+CONFIG_DIR="${TRACE_DEPLOY_CONFIG_DIR:-/etc/trace-demo}"
+COMPOSE_FILE="${TRACE_DEPLOY_COMPOSE_FILE:-$CONFIG_DIR/compose.app.yml}"
 
-"$ROOT_DIR/ops/deploy/preflight.sh" "$DEPLOY_ENV"
+"${TRACE_DEPLOY_PREFLIGHT:-/usr/local/libexec/trace-demo/preflight.sh}" "$DEPLOY_ENV"
 docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --no-build --pull never api web
 
 for attempt in $(seq 1 36); do

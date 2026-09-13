@@ -2,8 +2,11 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "paths": {
+      "@trace/core": ["../core/dist/index.d.ts"],
+      "@trace/core/*": ["../core/dist/*"]
+    }
   },
-  "include": ["src", "drizzle"],
-  "exclude": ["scripts"]
+  "include": ["src", "drizzle", "scripts"]
 }

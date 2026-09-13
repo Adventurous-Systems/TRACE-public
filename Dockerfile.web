@@ -1,35 +1,33 @@
-FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS builder
+FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS builder
+
 RUN apk add --no-cache libc6-compat
-RUN npm install -g pnpm@9.15.9 turbo@2.9.14
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 WORKDIR /app
 COPY . .
 RUN pnpm install --frozen-lockfile
-# Ensure NEXT_TELEMETRY_DISABLED is set to disable telemetry
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter="@trace/web..." build
+RUN pnpm --filter='@trace/web...' build
 
-FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS runner
+FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS runner
+
+RUN apk upgrade --no-cache && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-v* \
+  /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+  /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Set the correct permission for prerender cache
-# We copy from builder
-COPY --from=builder /app/packages/web/.next/standalone ./
-COPY --from=builder /app/packages/web/.next/static ./packages/web/.next/static
-# Static assets in public/ (logo, manifest, icons) — standalone does NOT bundle these.
-COPY --from=builder /app/packages/web/public ./packages/web/public
-
-# Note: standalone mode places the server.js at the root of the workspace context,
-# so the command will be `node packages/web/server.js` or `node server.js`
-USER nextjs
-
-EXPOSE 3000
 ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
+ENV HOSTNAME=0.0.0.0
 
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 --ingroup nodejs nextjs
+COPY --from=builder --chown=nextjs:nodejs /app/packages/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/packages/web/.next/static ./packages/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/packages/web/public ./packages/web/public
+# Next standalone tracing can retain build-only esbuild binaries from the workspace.
+RUN rm -rf /app/node_modules/.pnpm/@esbuild+* /app/node_modules/.pnpm/esbuild@*
+
+USER nextjs
+EXPOSE 3000
 CMD ["node", "packages/web/server.js"]

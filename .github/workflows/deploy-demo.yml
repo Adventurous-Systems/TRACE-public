@@ -1,0 +1,109 @@
+name: Deploy public evergreen demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full 40-character commit SHA from public main
+        required: true
+        type: string
+      api_image:
+        description: Immutable trace-api image including sha256 digest
+        required: true
+        type: string
+      web_image:
+        description: Immutable trace-web image including sha256 digest
+        required: true
+        type: string
+      ops_image:
+        description: Immutable trace-ops image including sha256 digest
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-public-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate requested release
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_SHA: ${{ inputs.commit_sha }}
+      API_IMAGE: ${{ inputs.api_image }}
+      WEB_IMAGE: ${{ inputs.web_image }}
+      OPS_IMAGE: ${{ inputs.ops_image }}
+    steps:
+      - name: Check out complete public history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require an exact main commit and expected immutable images
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          [[ "$API_IMAGE" =~ ^ghcr\.io/adventurous-systems/trace-api@sha256:[0-9a-f]{64}$ ]]
+          [[ "$WEB_IMAGE" =~ ^ghcr\.io/adventurous-systems/trace-web@sha256:[0-9a-f]{64}$ ]]
+          [[ "$OPS_IMAGE" =~ ^ghcr\.io/adventurous-systems/trace-ops@sha256:[0-9a-f]{64}$ ]]
+
+  deploy:
+    name: Run the installed blue-green demo harness
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: demo
+      url: https://demo.trace.adventurous.systems
+    env:
+      DEPLOY_SHA: ${{ inputs.commit_sha }}
+      API_IMAGE: ${{ inputs.api_image }}
+      WEB_IMAGE: ${{ inputs.web_image }}
+      OPS_IMAGE: ${{ inputs.ops_image }}
+      DEPLOY_HOST: ${{ secrets.TRACE_DEMO_SSH_HOST }}
+      DEPLOY_USER: ${{ secrets.TRACE_DEMO_SSH_USER }}
+      DEPLOY_KEY: ${{ secrets.TRACE_DEMO_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.TRACE_DEMO_SSH_KNOWN_HOSTS }}
+    steps:
+      - name: Configure pinned SSH host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          (umask 077; printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/trace-demo")
+          (umask 077; printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts")
+
+      - name: Deploy exact release through the forced host command
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/trace-demo" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" -- \
+            "$DEPLOY_SHA" "$API_IMAGE" "$WEB_IMAGE" "$OPS_IMAGE"
+
+      - name: Remove the ephemeral SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/trace-demo"
+
+      - name: Verify the public read-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+            https://demo.trace.adventurous.systems/ >/dev/null
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+            https://demo.trace.adventurous.systems/api/v1/marketplace/listings >/dev/null
+          status="$(curl --silent --output /tmp/login-response --write-out '%{http_code}' \
+            --request POST https://demo.trace.adventurous.systems/api/v1/auth/login \
+            --header 'content-type: application/json' \
+            --data '{"email":"invalid@example.com","password":"invalid-password"}')"
+          test "$status" = 403
