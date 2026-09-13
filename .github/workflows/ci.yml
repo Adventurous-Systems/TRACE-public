@@ -134,7 +134,7 @@ jobs:
             -f deploy/compose.demo-data.yml config --quiet
 
       - name: Build API and web images
-        run: docker compose build api web
+        run: COMPOSE_PROJECT_NAME=trace-ci docker compose build api web
 
       - name: Build operations image
         run: docker build --file Dockerfile.ops --tag trace-ops:ci .
@@ -158,7 +158,8 @@ jobs:
           )
           status=0
           for service in api web; do
-            image="$(docker compose images -q "$service")"
+            image="trace-ci-$service:latest"
+            docker image inspect "$image" >/dev/null
             /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
               --exit-code 1 --no-progress --format json \
               --output "/tmp/trivy-$service.json" "$image" || status=1
