@@ -130,9 +130,9 @@ jobs:
 
       - name: Start API + Web
         run: |
-          pnpm --filter @trace/api exec tsx src/index.ts > /tmp/api.log 2>&1 &
+          (cd packages/api && exec node_modules/.bin/tsx src/index.ts) > /tmp/api.log 2>&1 &
           echo $! > /tmp/api.pid
-          pnpm --filter @trace/web start > /tmp/web.log 2>&1 &
+          (cd packages/web && exec node_modules/.bin/next start) > /tmp/web.log 2>&1 &
           echo $! > /tmp/web.pid
           for i in $(seq 1 60); do
             curl -sf http://localhost:3001/health >/dev/null && curl -sf http://localhost:3000 >/dev/null && break || sleep 2
@@ -158,11 +158,17 @@ jobs:
         run: |
           kill "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)"
           wait "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)" 2>/dev/null || true
-          TRACE_DEPLOYMENT_PROFILE=public_showcase MINIO_PUBLIC_READ=true \
-            pnpm --filter @trace/api exec tsx src/index.ts > /tmp/api-showcase.log 2>&1 &
+          (
+            cd packages/api
+            export TRACE_DEPLOYMENT_PROFILE=public_showcase MINIO_PUBLIC_READ=true
+            exec node_modules/.bin/tsx src/index.ts
+          ) > /tmp/api-showcase.log 2>&1 &
           echo $! > /tmp/api.pid
-          TRACE_DEPLOYMENT_PROFILE=public_showcase \
-            pnpm --filter @trace/web start > /tmp/web-showcase.log 2>&1 &
+          (
+            cd packages/web
+            export TRACE_DEPLOYMENT_PROFILE=public_showcase
+            exec node_modules/.bin/next start
+          ) > /tmp/web-showcase.log 2>&1 &
           echo $! > /tmp/web.pid
           for i in $(seq 1 60); do
             curl -sf http://localhost:3001/health/ready >/dev/null \
