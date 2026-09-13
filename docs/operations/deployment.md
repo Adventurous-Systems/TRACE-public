@@ -72,7 +72,10 @@ label must equal the requested release SHA.
 3. Confirm the PostgreSQL, Redis, MinIO, and Thor health checks pass. Nothing
    except the MinIO object endpoint binds to a host port.
 4. Publish API, web, and operations images for one tested public commit. Record
-   the immutable digests, SBOMs, provenance, and vulnerability reports.
+   the immutable digests, SBOMs, provenance, and vulnerability reports. GHCR
+   packages may remain private during candidate validation: the publishing job
+   authenticates, pulls each exact digest back, and verifies the published
+   artifact rather than trusting the local build alone.
 5. Run migrations, the base seed, the curated-product seed, and `demo-restore`
    through the operations image, in that order. Then run `demo-verify` and
    record expected counts and hashes.
@@ -106,6 +109,14 @@ nginx edit in any private TRACE environment.
    application slot.
 
 CI deployment concurrency must never cancel an in-progress deployment.
+
+Private GHCR packages require a dedicated, read-only package credential on the
+demo host. Authenticate with that credential through standard input, pull only
+the recorded digests, and remove the registry credential after the pull. Do not
+reuse a maintainer token or store registry credentials in the repository,
+Compose files, deployment state, or command-line arguments. Package visibility
+is a separate publication decision; source-only users can always build the
+images from the public repository.
 
 ## Rollback
 

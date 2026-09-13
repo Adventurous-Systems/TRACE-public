@@ -34,6 +34,7 @@ jobs:
       WEB_REPOSITORY: ghcr.io/adventurous-systems/trace-web
       OPS_REPOSITORY: ghcr.io/adventurous-systems/trace-ops
       SOURCE_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
+      VERIFY_SUFFIX: ${{ github.run_id }}
     steps:
       - name: Check out complete repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,12 +96,165 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload release digest manifest
+      - name: Verify published image identity and attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/trace-release-verification.txt
+          for component in api web ops; do
+            repository_var="${component^^}_REPOSITORY"
+            repository="${!repository_var}"
+            digest="$(jq -r '."containerimage.digest"' "/tmp/$component-metadata.json")"
+            image="$repository@$digest"
+
+            docker pull "$image"
+            revision="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            user="$(docker image inspect "$image" --format '{{.Config.User}}')"
+            test "$revision" = "$RELEASE_SHA"
+            test -n "$user"
+            case "$user" in
+              root | 0 | 0:0) echo "$component image is configured to run as root" >&2; exit 1 ;;
+            esac
+
+            docker buildx imagetools inspect "$image" --format '{{json .Provenance}}' \
+              > "/tmp/$component-provenance.json"
+            docker buildx imagetools inspect "$image" --format '{{json .SBOM}}' \
+              > "/tmp/$component-sbom.json"
+            jq -e 'type == "object" and length > 0' "/tmp/$component-provenance.json" >/dev/null
+            jq -e 'type == "object" and length > 0' "/tmp/$component-sbom.json" >/dev/null
+
+            printf '%s image=%s revision=%s user=%s attestations=present\n' \
+              "$component" "$image" "$revision" "$user" \
+              | tee -a /tmp/trace-release-verification.txt
+          done
+
+      - name: Scan the exact published images
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz \
+            --output /tmp/trivy.tar.gz
+          curl --fail --silent --show-error --location \
+            https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_checksums.txt \
+            --output /tmp/trivy-checksums.txt
+          (
+            cd /tmp
+            grep ' trivy_0.74.0_Linux-64bit.tar.gz$' trivy-checksums.txt \
+              | sed 's/trivy_0.74.0_Linux-64bit.tar.gz/trivy.tar.gz/' \
+              | sha256sum --check --strict
+            tar -xzf trivy.tar.gz trivy
+          )
+          status=0
+          while IFS='=' read -r key image; do
+            component="$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]' | sed 's/_image$//')"
+            /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+              --exit-code 1 --no-progress --format json \
+              --output "/tmp/trivy-release-$component.json" "$image" || status=1
+          done < /tmp/trace-release-images.txt
+          exit "$status"
+
+      - name: Start the exact published images
+        shell: bash
+        run: |
+          set -euo pipefail
+          network="trace-release-$VERIFY_SUFFIX"
+          minio="trace-release-minio-$VERIFY_SUFFIX"
+          api="trace-release-api-$VERIFY_SUFFIX"
+          web="trace-release-web-$VERIFY_SUFFIX"
+          api_image="$(sed -n 's/^API_IMAGE=//p' /tmp/trace-release-images.txt)"
+          web_image="$(sed -n 's/^WEB_IMAGE=//p' /tmp/trace-release-images.txt)"
+          ops_image="$(sed -n 's/^OPS_IMAGE=//p' /tmp/trace-release-images.txt)"
+
+          docker network create "$network"
+          docker run --detach --name "$minio" --network "$network" \
+            --read-only --tmpfs /tmp:size=64m --tmpfs /data:size=128m \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --env MINIO_ROOT_USER=traceverify \
+            --env MINIO_ROOT_PASSWORD=trace-verify-disposable-password \
+            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
+            server /data
+          for attempt in $(seq 1 30); do
+            if docker exec "$minio" curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              break
+            fi
+            if test "$attempt" = 30; then
+              docker logs "$minio"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker run --detach --name "$api" --network "$network" \
+            --read-only --tmpfs /tmp:size=64m,uid=1000,gid=1000,mode=0700 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --env NODE_ENV=production --env LOG_LEVEL=silent \
+            --env TRACE_DEPLOYMENT_PROFILE=public_showcase \
+            --env ANCHOR_WORKER_ENABLED=false \
+            --env JWT_SECRET=trace-release-verification-only \
+            --env DATABASE_URL=postgresql://trace:trace@unused:5432/trace \
+            --env REDIS_URL=redis://unused:6379 \
+            --env MINIO_ENDPOINT="$minio" --env MINIO_PORT=9000 \
+            --env MINIO_ACCESS_KEY=traceverify \
+            --env MINIO_SECRET_KEY=trace-verify-disposable-password \
+            --env WEB_URL=http://localhost:3000 --env API_URL=http://localhost:3001 \
+            "$api_image"
+          for attempt in $(seq 1 30); do
+            if docker exec "$api" node -e \
+              "fetch('http://127.0.0.1:3001/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"; then
+              break
+            fi
+            if test "$attempt" = 30; then
+              docker logs "$api"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker run --detach --name "$web" --network "$network" \
+            --read-only --tmpfs /tmp:size=64m,uid=1001,gid=1001,mode=0700 \
+            --tmpfs /app/packages/web/.next/cache:size=64m,uid=1001,gid=1001,mode=0700 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --env NODE_ENV=production --env TRACE_DEPLOYMENT_PROFILE=public_showcase \
+            --env API_URL="http://$api:3001" "$web_image"
+          for attempt in $(seq 1 30); do
+            if docker exec "$web" node -e \
+              "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"; then
+              break
+            fi
+            if test "$attempt" = 30; then
+              docker logs "$web"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker run --rm --read-only --tmpfs /tmp:size=32m,uid=1000,gid=1000,mode=0700 \
+            --cap-drop ALL --security-opt no-new-privileges --entrypoint node "$ops_image" \
+            -e "Promise.all([import('@trace/core'),import('@trace/db')]).then(()=>console.log('operations runtime imports ok'))"
+          printf '%s\n' 'runtime=passed' | tee -a /tmp/trace-release-verification.txt
+
+      - name: Upload release verification evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trace-release-${{ inputs.commit_sha }}
-          path: /tmp/trace-release-images.txt
+          path: |
+            /tmp/trace-release-images.txt
+            /tmp/trace-release-verification.txt
+            /tmp/trivy-release-*.json
+          if-no-files-found: warn
           retention-days: 30
+
+      - name: Remove disposable verification containers
+        if: always()
+        shell: bash
+        run: |
+          docker rm --force \
+            "trace-release-web-$VERIFY_SUFFIX" \
+            "trace-release-api-$VERIFY_SUFFIX" \
+            "trace-release-minio-$VERIFY_SUFFIX" 2>/dev/null || true
+          docker network rm "trace-release-$VERIFY_SUFFIX" 2>/dev/null || true
 
       - name: Remove registry credentials
         if: always()
