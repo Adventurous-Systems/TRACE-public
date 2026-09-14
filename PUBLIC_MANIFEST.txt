@@ -52,6 +52,10 @@ ops/deploy/start-candidate.sh
 ops/deploy/switch-nginx.sh
 ops/deploy/verify-candidate.sh
 ops/restore_db.sh
+ops/release/prepare-release.sh
+ops/release/release-lib.sh
+ops/release/test-release-tooling.sh
+ops/release/verify-release.sh
 package.json
 packages/api/package.json
 packages/api/src/env.ts

@@ -25,11 +25,16 @@ private data into it.
 - `deploy/compose.demo-data.yml` owns the isolated data plane. Its images are
   pinned by digest and it intentionally contains no Meilisearch service.
 - `deploy/compose.app.yml` starts an API/web slot from locally named images whose
-  immutable image IDs are recorded and checked against the transfer receipt.
+  immutable image IDs are recorded in the source-release receipt.
   An optional worker profile exists for future write-enabled deployments.
 - `Dockerfile.ops` supplies migrations, deterministic synthetic seeding,
   catalogue verification, backup checks, and restore-time operations.
-- `ops/deploy/preflight.sh` validates the exact SHA, image IDs and revision
+- `ops/release/prepare-release.sh` fetches the exact current public `staging`
+  SHA into a fresh detached checkout, builds the three images sequentially, and
+  atomically records their IDs.
+- `ops/release/verify-release.sh` revalidates the clean source, receipt, tags,
+  IDs, OCI labels, and configured non-root users.
+- `ops/deploy/preflight.sh` validates the exact SHA, release receipt, image IDs and revision
   labels, environment separation, network, resources, and unused slot ports.
 - `ops/deploy/start-candidate.sh` and `verify-candidate.sh` start and probe an
   inactive slot without pulling or building.
@@ -61,11 +66,49 @@ configuration directory:
   state, and timestamps.
 
 The web preflight rejects unexpected environment keys. Each release is fetched
-fresh from the public GitHub repository at an exact tested commit, built locally
-without runtime secrets, and tagged with that full commit SHA. The build records
-the resulting immutable image IDs in a root-owned release receipt. Deployment
-preflight requires both the release-specific tags and recorded IDs to match, so
-a retargeted local tag cannot pass validation.
+fresh from the public GitHub repository at the exact current `staging` commit,
+built locally without runtime secrets, and tagged with that full commit SHA. The
+build records the resulting immutable image IDs in a root-owned release receipt.
+Deployment preflight requires the candidate values, release-specific tags,
+recorded IDs, local image IDs, and OCI revision labels all to agree, so a
+retargeted local tag or altered candidate file cannot pass validation.
+
+## Trusted host installation
+
+Review the exact public commit before installation. Install fixed copies with
+`install`; do not run an installer from the Git checkout as root. The trusted
+directory is `/usr/local/libexec/trace-demo`, owned by root and not writable by
+the deployment user. Install `release-lib.sh`, `prepare-release.sh`,
+`verify-release.sh`, and the reviewed `ops/deploy/*.sh` primitives there with
+mode 755. Record SHA-256 checksums of those installed copies in the private
+deployment record.
+
+The preparation interface accepts one argument only:
+
+```text
+sudo /usr/local/libexec/trace-demo/prepare-release.sh <40-character-staging-sha>
+sudo /usr/local/libexec/trace-demo/verify-release.sh <40-character-staging-sha>
+```
+
+The command rejects branch names, abbreviated or uppercase SHAs, any SHA other
+than the exact remote `staging` tip, an existing release/tag, a secret-bearing
+build environment, a dirty or ignored release source, Git remotes/hooks,
+symlinks/submodules, manifest drift, confidential paths/content, label/user mismatches,
+and a `staging` tip that changes while images are building. Docker receives an
+allowlisted empty process environment and a fresh credential-free client
+configuration. A failed build removes only its temporary release and exact new
+tags.
+
+Successful preparation creates:
+
+```text
+/opt/trace-public-demo/releases/<sha>/source
+/opt/trace-public-demo/releases/<sha>/images.env
+```
+
+The detached source has no remotes, hooks, credentials, ignored files, or local
+modifications. The receipt is root-owned, mode 400, and records the exact local
+tags and immutable image IDs. Treat a completed release directory as read-only.
 
 ## Initial installation
 
@@ -75,10 +118,10 @@ a retargeted local tag cannot pass validation.
    `deploy/compose.demo-data.yml` under the `trace-demo-data` project.
 3. Confirm the PostgreSQL, Redis, MinIO, and Thor health checks pass. Nothing
    except the MinIO object endpoint binds to a host port.
-4. Fetch the exact tested staging commit into a new immutable release directory.
-   Build API, web, and operations images sequentially, record their IDs, scan the
-   images, and verify revision labels and non-root users. Runtime secrets must
-   not be present in the source checkout or Docker build environment.
+4. Run the installed preparation command for the exact tested staging commit.
+   It creates the immutable release directory, builds API, web, and operations
+   images sequentially, records their IDs, and verifies revision/source labels
+   and non-root users. Scan the resulting exact IDs before use.
 5. Run migrations, the base seed, the curated-product seed, and `demo-restore`
    through the operations image, in that order. Then run `demo-verify` and
    record expected counts and hashes.
@@ -99,7 +142,8 @@ nginx edit in any private TRACE environment.
 ## Release procedure
 
 1. Test the public `staging` SHA in CI and a clean-room clone.
-2. Build all three images on GitHub-hosted runners and capture their digests.
+2. Run the installed source-release preparation command. Verify the immutable
+   source and local image receipt, then scan the three exact image IDs.
 3. Create and validate PostgreSQL and MinIO recovery points. Restore the
    PostgreSQL backup into a disposable database; merely listing it is not a
    restore test.

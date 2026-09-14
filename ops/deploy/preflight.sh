@@ -25,10 +25,17 @@ api_env="$(value "$DEPLOY_ENV" TRACE_API_ENV_FILE)"
 web_env="$(value "$DEPLOY_ENV" TRACE_WEB_ENV_FILE)"
 runtime_network="$(value "$DEPLOY_ENV" TRACE_RUNTIME_NETWORK)"
 release_sha="$(value "$DEPLOY_ENV" TRACE_RELEASE_SHA)"
+release_receipt="$(value "$DEPLOY_ENV" TRACE_RELEASE_RECEIPT)"
 ops_image="$(value "$DEPLOY_ENV" TRACE_OPS_IMAGE)"
 secure_file "$api_env" 'API environment'
 secure_file "$web_env" 'web environment'
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail 'TRACE_RELEASE_SHA must be a full lowercase commit SHA'
+[[ "$release_receipt" == "/opt/trace-public-demo/releases/$release_sha/images.env" ]] \
+  || fail 'TRACE_RELEASE_RECEIPT must use the exact immutable release receipt path'
+secure_file "$release_receipt" 'release receipt'
+release_verifier='/usr/local/libexec/trace-demo/verify-release.sh'
+[[ -x "$release_verifier" ]] || fail "trusted release verifier is missing: $release_verifier"
+"$release_verifier" "$release_sha"
 [[ "$(value "$api_env" TRACE_ENV)" == 'demo' ]] || fail 'API TRACE_ENV must be demo'
 [[ "$(value "$api_env" TRACE_DEPLOYMENT_PROFILE)" == 'public_showcase' ]] || fail 'API profile must be public_showcase'
 [[ "$(value "$web_env" TRACE_DEPLOYMENT_PROFILE)" == 'public_showcase' ]] || fail 'web profile must be public_showcase'
@@ -49,8 +56,12 @@ verify_image() {
   local image expected_id actual_id revision configured_user
   image="$(value "$DEPLOY_ENV" "$image_key")"
   expected_id="$(value "$DEPLOY_ENV" "$id_key")"
+  [[ "$(value "$release_receipt" "$image_key")" == "$image" ]] \
+    || fail "$image_key does not match the immutable release receipt"
+  [[ "$(value "$release_receipt" "$id_key")" == "$expected_id" ]] \
+    || fail "$id_key does not match the immutable release receipt"
   [[ "$image" == "trace-demo-$component:$release_sha" ]] \
-    || fail "$image_key must use the received release tag for $release_sha"
+    || fail "$image_key must use the local release tag for $release_sha"
   [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "$id_key must be a full image ID"
   docker image inspect "$image" >/dev/null 2>&1 || fail "image is not present: $image"
   actual_id="$(docker image inspect "$image" --format '{{.Id}}')"

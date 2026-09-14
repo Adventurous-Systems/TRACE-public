@@ -20,10 +20,20 @@ api_env="$(value "$DEPLOY_ENV" TRACE_API_ENV_FILE)"
 network="$(value "$DEPLOY_ENV" TRACE_RUNTIME_NETWORK)"
 image="$(value "$DEPLOY_ENV" TRACE_OPS_IMAGE)"
 release_sha="$(value "$DEPLOY_ENV" TRACE_RELEASE_SHA)"
+release_receipt="$(value "$DEPLOY_ENV" TRACE_RELEASE_RECEIPT)"
 expected_id="$(value "$DEPLOY_ENV" TRACE_OPS_IMAGE_ID)"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Release SHA is invalid' >&2; exit 1; }
+[[ "$release_receipt" == "/opt/trace-public-demo/releases/$release_sha/images.env" ]] \
+  || { echo 'Release receipt path is invalid' >&2; exit 1; }
+release_verifier='/usr/local/libexec/trace-demo/verify-release.sh'
+[[ -x "$release_verifier" ]] || { echo 'Trusted release verifier is missing' >&2; exit 1; }
+"$release_verifier" "$release_sha"
 [[ "$image" == "trace-demo-ops:$release_sha" ]] || { echo 'Operations image tag does not match the release SHA' >&2; exit 1; }
 [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Operations image ID is invalid' >&2; exit 1; }
+[[ "$(value "$release_receipt" TRACE_OPS_IMAGE)" == "$image" ]] \
+  || { echo 'Operations image tag does not match the immutable release receipt' >&2; exit 1; }
+[[ "$(value "$release_receipt" TRACE_OPS_IMAGE_ID)" == "$expected_id" ]] \
+  || { echo 'Operations image ID does not match the immutable release receipt' >&2; exit 1; }
 [[ "$(docker image inspect "$image" --format '{{.Id}}')" == "$expected_id" ]] \
   || { echo 'Operations image ID does not match the trusted release record' >&2; exit 1; }
 
