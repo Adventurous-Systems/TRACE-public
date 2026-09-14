@@ -82,8 +82,9 @@ immutable IDs and cannot pass preflight after being retargeted.
    the immutable digests, SBOMs, provenance, and vulnerability reports. GHCR
    packages may remain private during candidate validation: the publishing job
    authenticates, pulls each exact digest back, and verifies the published
-   artifact rather than trusting the local build alone. Dispatch the restricted
-   transfer workflow with those exact digest references and retain its receipt.
+   artifact rather than trusting the local build alone. The publishing workflow
+   then transfers those exact images through the restricted receiver; retain
+   its receipt.
 5. Run migrations, the base seed, the curated-product seed, and `demo-restore`
    through the operations image, in that order. Then run `demo-verify` and
    record expected counts and hashes.

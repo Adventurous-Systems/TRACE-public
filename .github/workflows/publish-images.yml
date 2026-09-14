@@ -24,6 +24,10 @@ jobs:
   publish:
     name: Build and publish immutable images
     runs-on: ubuntu-latest
+    outputs:
+      api_image: ${{ steps.images.outputs.api_image }}
+      web_image: ${{ steps.images.outputs.web_image }}
+      ops_image: ${{ steps.images.outputs.ops_image }}
     permissions:
       contents: read
       packages: write
@@ -78,6 +82,7 @@ jobs:
           done
 
       - name: Record immutable digest manifest
+        id: images
         shell: bash
         run: |
           set -euo pipefail
@@ -87,6 +92,7 @@ jobs:
             repository="${!repository_var}"
             digest="$(jq -r '."containerimage.digest"' "/tmp/$component-metadata.json")"
             printf '%s=%s@%s\n' "${component^^}_IMAGE" "$repository" "$digest" | tee -a /tmp/trace-release-images.txt
+            printf '%s_image=%s@%s\n' "$component" "$repository" "$digest" >> "$GITHUB_OUTPUT"
           done
           {
             echo '## Immutable deployment images'
@@ -259,3 +265,108 @@ jobs:
       - name: Remove registry credentials
         if: always()
         run: docker logout ghcr.io || true
+
+  transfer:
+    name: Transfer exact images to the restricted demo receiver
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: demo-image-transfer
+    permissions:
+      contents: read
+      packages: read
+    env:
+      RELEASE_SHA: ${{ inputs.commit_sha }}
+      API_IMAGE: ${{ needs.publish.outputs.api_image }}
+      WEB_IMAGE: ${{ needs.publish.outputs.web_image }}
+      OPS_IMAGE: ${{ needs.publish.outputs.ops_image }}
+      TRANSFER_HOST: ${{ secrets.TRACE_DEMO_SSH_HOST }}
+      TRANSFER_PORT: ${{ secrets.TRACE_DEMO_SSH_PORT }}
+      TRANSFER_USER: ${{ secrets.TRACE_DEMO_SSH_USER }}
+      TRANSFER_KEY: ${{ secrets.TRACE_DEMO_SSH_KEY }}
+      TRANSFER_KNOWN_HOSTS: ${{ secrets.TRACE_DEMO_SSH_KNOWN_HOSTS }}
+    steps:
+      - name: Validate release and restricted SSH endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$API_IMAGE" =~ ^ghcr\.io/adventurous-systems/trace-api@sha256:[0-9a-f]{64}$ ]]
+          [[ "$WEB_IMAGE" =~ ^ghcr\.io/adventurous-systems/trace-web@sha256:[0-9a-f]{64}$ ]]
+          [[ "$OPS_IMAGE" =~ ^ghcr\.io/adventurous-systems/trace-ops@sha256:[0-9a-f]{64}$ ]]
+          [[ "$TRANSFER_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$TRANSFER_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$TRANSFER_PORT" =~ ^[0-9]{1,5}$ ]]
+          test "$TRANSFER_PORT" -ge 1
+          test "$TRANSFER_PORT" -le 65535
+          test -n "$TRANSFER_KEY"
+          test -n "$TRANSFER_KNOWN_HOSTS"
+
+      - name: Authenticate and pull exact private images
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" \
+            | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          docker pull "$API_IMAGE"
+          docker pull "$WEB_IMAGE"
+          docker pull "$OPS_IMAGE"
+
+      - name: Verify image identities and prepare transfer tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in api web ops; do
+            image_var="${component^^}_IMAGE"
+            image="${!image_var}"
+            revision="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            user="$(docker image inspect "$image" --format '{{.Config.User}}')"
+            test "$revision" = "$RELEASE_SHA"
+            test -n "$user"
+            case "$user" in
+              root | 0 | 0:0) echo "$component image is configured to run as root" >&2; exit 1 ;;
+            esac
+            image_id="$(docker image inspect "$image" --format '{{.Id}}')"
+            [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s=%s\n' "${component^^}_ID" "$image_id" >> "$GITHUB_ENV"
+            docker image tag "$image" "trace-transfer-$component:$RELEASE_SHA"
+          done
+
+      - name: Configure pinned SSH identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 /tmp/trace-image-transfer
+          (umask 077; printf '%s\n' "$TRANSFER_KEY" > /tmp/trace-image-transfer/id_ed25519)
+          (umask 077; printf '%s\n' "$TRANSFER_KNOWN_HOSTS" > /tmp/trace-image-transfer/known_hosts)
+
+      - name: Stream images to the restricted receiver
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$({
+            docker image save \
+              "trace-transfer-api:$RELEASE_SHA" \
+              "trace-transfer-web:$RELEASE_SHA" \
+              "trace-transfer-ops:$RELEASE_SHA" \
+              | gzip -1
+          } | ssh -F /dev/null \
+            -i /tmp/trace-image-transfer/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=/tmp/trace-image-transfer/known_hosts \
+            -p "$TRANSFER_PORT" \
+            "$TRANSFER_USER@$TRANSFER_HOST" \
+            "receive $RELEASE_SHA $API_ID $WEB_ID $OPS_ID $API_IMAGE $WEB_IMAGE $OPS_IMAGE")"
+          test "$response" = "TRANSFER_OK sha=$RELEASE_SHA"
+          printf '%s\n' "$response"
+
+      - name: Remove ephemeral credentials and registry session
+        if: always()
+        shell: bash
+        run: |
+          docker logout ghcr.io || true
+          rm -rf /tmp/trace-image-transfer
