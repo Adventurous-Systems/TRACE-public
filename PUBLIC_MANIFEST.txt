@@ -3,7 +3,6 @@
 .github/CODEOWNERS
 .github/dependabot.yml
 .github/workflows/ci.yml
-.github/workflows/deploy-demo.yml
 .github/workflows/e2e.yml
 .github/workflows/publish-images.yml
 .github/workflows/security.yml

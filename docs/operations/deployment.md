@@ -60,15 +60,12 @@ configuration directory:
 - deployment state recording active/previous slot, SHA, digests, migration
   state, and timestamps.
 
-The web preflight rejects unexpected environment keys. The private GHCR images
-are pulled by a GitHub-hosted runner using its short-lived repository token,
-then streamed over a dedicated restricted SSH key. The root-owned receiver
-accepts only the three expected repositories and exact digest references,
-checks their transferred image IDs, OCI revision labels, and non-root users,
-and records release-specific local tags. Deployment preflight requires those
-tags and IDs to match; it never pulls or builds on the host. A registry token is
-therefore never stored on the VPS. The local tags are merely names for verified
-immutable IDs and cannot pass preflight after being retargeted.
+The web preflight rejects unexpected environment keys. Each release is fetched
+fresh from the public GitHub repository at an exact tested commit, built locally
+without runtime secrets, and tagged with that full commit SHA. The build records
+the resulting immutable image IDs in a root-owned release receipt. Deployment
+preflight requires both the release-specific tags and recorded IDs to match, so
+a retargeted local tag cannot pass validation.
 
 ## Initial installation
 
@@ -78,13 +75,10 @@ immutable IDs and cannot pass preflight after being retargeted.
    `deploy/compose.demo-data.yml` under the `trace-demo-data` project.
 3. Confirm the PostgreSQL, Redis, MinIO, and Thor health checks pass. Nothing
    except the MinIO object endpoint binds to a host port.
-4. Publish API, web, and operations images for one tested public commit. Record
-   the immutable digests, SBOMs, provenance, and vulnerability reports. GHCR
-   packages may remain private during candidate validation: the publishing job
-   authenticates, pulls each exact digest back, and verifies the published
-   artifact rather than trusting the local build alone. The publishing workflow
-   then transfers those exact images through the restricted receiver; retain
-   its receipt.
+4. Fetch the exact tested staging commit into a new immutable release directory.
+   Build API, web, and operations images sequentially, record their IDs, scan the
+   images, and verify revision labels and non-root users. Runtime secrets must
+   not be present in the source checkout or Docker build environment.
 5. Run migrations, the base seed, the curated-product seed, and `demo-restore`
    through the operations image, in that order. Then run `demo-verify` and
    record expected counts and hashes.
@@ -119,12 +113,10 @@ nginx edit in any private TRACE environment.
 
 CI deployment concurrency must never cancel an in-progress deployment.
 
-Private GHCR packages do not require any registry credential on the demo host.
-The transfer workflow receives `packages: read` only for its GitHub-hosted job,
-and its dedicated SSH key is forced to an image-receiver command that cannot
-start containers or alter routing. Package visibility is a separate publication
-decision; source-only users can always build the images from the public
-repository.
+The optional publishing workflow may continue to create private GHCR packages,
+but the demo host neither pulls nor deploys them and stores no registry token.
+The source-based demo build uses only the exact public commit fetched into its
+release directory.
 
 ## Rollback
 
