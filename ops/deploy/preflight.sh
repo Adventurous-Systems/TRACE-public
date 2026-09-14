@@ -44,14 +44,26 @@ while IFS='=' read -r key _; do
   esac
 done < "$web_env"
 
-images="$(docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" config --images)"$'\n'"$ops_image"
-while IFS= read -r image; do
-  [[ -n "$image" ]] || continue
-  [[ "$image" == *@sha256:* ]] || fail "image is not pinned by digest: $image"
+verify_image() {
+  local component="$1" image_key="$2" id_key="$3" expected_user="$4"
+  local image expected_id actual_id revision configured_user
+  image="$(value "$DEPLOY_ENV" "$image_key")"
+  expected_id="$(value "$DEPLOY_ENV" "$id_key")"
+  [[ "$image" == "trace-demo-$component:$release_sha" ]] \
+    || fail "$image_key must use the received release tag for $release_sha"
+  [[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "$id_key must be a full image ID"
   docker image inspect "$image" >/dev/null 2>&1 || fail "image is not present: $image"
+  actual_id="$(docker image inspect "$image" --format '{{.Id}}')"
+  [[ "$actual_id" == "$expected_id" ]] || fail "image ID mismatch for $image"
   revision="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
   [[ "$revision" == "$release_sha" ]] || fail "image revision mismatch for $image"
-done < <(printf '%s\n' "$images" | sort -u)
+  configured_user="$(docker image inspect "$image" --format '{{.Config.User}}')"
+  [[ "$configured_user" == "$expected_user" ]] || fail "unexpected configured user for $image"
+}
+
+verify_image api TRACE_API_IMAGE TRACE_API_IMAGE_ID node
+verify_image web TRACE_WEB_IMAGE TRACE_WEB_IMAGE_ID nextjs
+verify_image ops TRACE_OPS_IMAGE TRACE_OPS_IMAGE_ID node
 
 for key in TRACE_API_HOST_PORT TRACE_WEB_HOST_PORT; do
   port="$(value "$DEPLOY_ENV" "$key")"

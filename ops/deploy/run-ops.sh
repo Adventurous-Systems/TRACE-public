@@ -19,7 +19,13 @@ esac
 api_env="$(value "$DEPLOY_ENV" TRACE_API_ENV_FILE)"
 network="$(value "$DEPLOY_ENV" TRACE_RUNTIME_NETWORK)"
 image="$(value "$DEPLOY_ENV" TRACE_OPS_IMAGE)"
-[[ "$image" == *@sha256:* ]] || { echo 'Operations image must be pinned by digest' >&2; exit 1; }
+release_sha="$(value "$DEPLOY_ENV" TRACE_RELEASE_SHA)"
+expected_id="$(value "$DEPLOY_ENV" TRACE_OPS_IMAGE_ID)"
+[[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Release SHA is invalid' >&2; exit 1; }
+[[ "$image" == "trace-demo-ops:$release_sha" ]] || { echo 'Operations image tag does not match the release SHA' >&2; exit 1; }
+[[ "$expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Operations image ID is invalid' >&2; exit 1; }
+[[ "$(docker image inspect "$image" --format '{{.Id}}')" == "$expected_id" ]] \
+  || { echo 'Operations image ID does not match the trusted release record' >&2; exit 1; }
 
 exec docker run --rm --init --network "$network" --env-file "$api_env" \
   --read-only --tmpfs /tmp:size=64m,mode=1777 --cap-drop ALL \

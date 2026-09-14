@@ -24,11 +24,12 @@ private data into it.
 
 - `deploy/compose.demo-data.yml` owns the isolated data plane. Its images are
   pinned by digest and it intentionally contains no Meilisearch service.
-- `deploy/compose.app.yml` starts an API/web slot from immutable image digests.
+- `deploy/compose.app.yml` starts an API/web slot from locally named images whose
+  immutable image IDs are recorded and checked against the transfer receipt.
   An optional worker profile exists for future write-enabled deployments.
 - `Dockerfile.ops` supplies migrations, deterministic synthetic seeding,
   catalogue verification, backup checks, and restore-time operations.
-- `ops/deploy/preflight.sh` validates the exact SHA, image digests and revision
+- `ops/deploy/preflight.sh` validates the exact SHA, image IDs and revision
   labels, environment separation, network, resources, and unused slot ports.
 - `ops/deploy/start-candidate.sh` and `verify-candidate.sh` start and probe an
   inactive slot without pulling or building.
@@ -59,9 +60,15 @@ configuration directory:
 - deployment state recording active/previous slot, SHA, digests, migration
   state, and timestamps.
 
-The web preflight rejects unexpected environment keys. All releases use
-`image@sha256:...`; mutable tags are never deployed. The image OCI revision
-label must equal the requested release SHA.
+The web preflight rejects unexpected environment keys. The private GHCR images
+are pulled by a GitHub-hosted runner using its short-lived repository token,
+then streamed over a dedicated restricted SSH key. The root-owned receiver
+accepts only the three expected repositories and exact digest references,
+checks their transferred image IDs, OCI revision labels, and non-root users,
+and records release-specific local tags. Deployment preflight requires those
+tags and IDs to match; it never pulls or builds on the host. A registry token is
+therefore never stored on the VPS. The local tags are merely names for verified
+immutable IDs and cannot pass preflight after being retargeted.
 
 ## Initial installation
 
@@ -75,7 +82,8 @@ label must equal the requested release SHA.
    the immutable digests, SBOMs, provenance, and vulnerability reports. GHCR
    packages may remain private during candidate validation: the publishing job
    authenticates, pulls each exact digest back, and verifies the published
-   artifact rather than trusting the local build alone.
+   artifact rather than trusting the local build alone. Dispatch the restricted
+   transfer workflow with those exact digest references and retain its receipt.
 5. Run migrations, the base seed, the curated-product seed, and `demo-restore`
    through the operations image, in that order. Then run `demo-verify` and
    record expected counts and hashes.
@@ -110,13 +118,12 @@ nginx edit in any private TRACE environment.
 
 CI deployment concurrency must never cancel an in-progress deployment.
 
-Private GHCR packages require a dedicated, read-only package credential on the
-demo host. Authenticate with that credential through standard input, pull only
-the recorded digests, and remove the registry credential after the pull. Do not
-reuse a maintainer token or store registry credentials in the repository,
-Compose files, deployment state, or command-line arguments. Package visibility
-is a separate publication decision; source-only users can always build the
-images from the public repository.
+Private GHCR packages do not require any registry credential on the demo host.
+The transfer workflow receives `packages: read` only for its GitHub-hosted job,
+and its dedicated SSH key is forced to an image-receiver command that cannot
+start containers or alter routing. Package visibility is a separate publication
+decision; source-only users can always build the images from the public
+repository.
 
 ## Rollback
 
