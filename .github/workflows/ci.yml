@@ -16,6 +16,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-tooling:
+    name: Exact-SHA source release tooling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test source release tooling
+        run: |
+          bash -n ops/release/*.sh
+          bash ops/release/test-release-tooling.sh
+
   build-and-test:
     name: Build and test
     runs-on: ubuntu-latest
@@ -67,11 +81,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Test exact-SHA source release tooling
-        run: |
-          bash -n ops/release/*.sh
-          bash ops/release/test-release-tooling.sh
 
       - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0

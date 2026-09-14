@@ -127,12 +127,12 @@ common_env=(
   PATH="$fake_bin:$PATH"
 )
 
-expect_failure 'floating branch name is rejected' env "${common_env[@]}" "$PREPARE" staging
-expect_failure 'uppercase SHA is rejected' env "${common_env[@]}" "$PREPARE" "${release_sha^^}"
+expect_failure 'floating branch name is rejected' env -i "${common_env[@]}" "$PREPARE" staging
+expect_failure 'uppercase SHA is rejected' env -i "${common_env[@]}" "$PREPARE" "${release_sha^^}"
 expect_failure 'secret-bearing build environment is rejected' \
-  env "${common_env[@]}" JWT_SECRET=not-for-build "$PREPARE" "$release_sha"
+  env -i "${common_env[@]}" JWT_SECRET=not-for-build "$PREPARE" "$release_sha"
 
-env "${common_env[@]}" "$PREPARE" "$release_sha"
+env -i "${common_env[@]}" "$PREPARE" "$release_sha"
 release_dir="$releases/$release_sha"
 receipt="$release_dir/images.env"
 test -d "$release_dir/source"
@@ -145,26 +145,26 @@ test -z "$(find "$release_dir/source/.git/hooks" -mindepth 1 -print -quit)"
 test "$(stat -c '%a' "$receipt")" = 400
 test "$(paste -sd, "$fake_state/build-order")" = api,web,ops
 grep -q 'env -i PATH=' "$PREPARE"
-env "${common_env[@]}" "$VERIFY" "$release_sha"
+env -i "${common_env[@]}" "$VERIFY" "$release_sha"
 printf 'ok - exact remote SHA creates a clean immutable release\n'
 
 chmod u+w "$release_dir"
 chmod u+w "$receipt"
 cp "$receipt" "$TEST_ROOT/images.env.good"
 sed -i 's/^TRACE_API_IMAGE=.*/TRACE_API_IMAGE=trace-demo-api:changed/' "$receipt"
-expect_failure 'changed release tag is rejected' env "${common_env[@]}" "$VERIFY" "$release_sha"
+expect_failure 'changed release tag is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
 cp "$TEST_ROOT/images.env.good" "$receipt"
 chmod 400 "$receipt"
 
 api_state="$fake_state/trace-demo-api_$release_sha"
 cp "$api_state" "$TEST_ROOT/api-state.good"
 sed -i 's/^ID=.*/ID=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/' "$api_state"
-expect_failure 'image ID mismatch is rejected' env "${common_env[@]}" "$VERIFY" "$release_sha"
+expect_failure 'image ID mismatch is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
 cp "$TEST_ROOT/api-state.good" "$api_state"
 
 chmod u+w "$release_dir/source/committed.txt"
 printf 'dirty\n' >> "$release_dir/source/committed.txt"
-expect_failure 'dirty release source is rejected' env "${common_env[@]}" "$VERIFY" "$release_sha"
+expect_failure 'dirty release source is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
 
 printf 'second\n' >> "$fixture/committed.txt"
 git -C "$fixture" add committed.txt
@@ -172,7 +172,7 @@ git -C "$fixture" commit --quiet -m 'Second public fixture'
 git -C "$fixture" push --quiet origin staging
 second_sha="$(git -C "$fixture" rev-parse HEAD)"
 expect_failure 'failed sequential build leaves no release or image tag' \
-  env "${common_env[@]}" TRACE_FAKE_FAIL_COMPONENT=web "$PREPARE" "$second_sha"
+  env -i "${common_env[@]}" TRACE_FAKE_FAIL_COMPONENT=web "$PREPARE" "$second_sha"
 test ! -e "$releases/$second_sha"
 test ! -e "$fake_state/trace-demo-api_$second_sha"
 
