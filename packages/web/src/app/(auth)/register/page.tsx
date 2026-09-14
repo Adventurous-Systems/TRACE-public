@@ -79,6 +79,10 @@ export default function RegisterPage() {
             <CardDescription>
               Get started with a buyer account for TRACE marketplace access
             </CardDescription>
+            <p className="trace-public-buyer-demo-only rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+              This retained public demo does not send verification or password-recovery email. Use a
+              fictitious email address and a password that you do not use elsewhere.
+            </p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

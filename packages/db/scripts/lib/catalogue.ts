@@ -22,6 +22,7 @@ export type SeedPassport = Omit<
 >;
 export interface Product {
   image: string;
+  key: string;
   passport: SeedPassport;
   listing: { pricePence: number; quantity: number; note?: string };
 }
@@ -34,6 +35,7 @@ const RECLAIMED = {
 
 export const CATALOG: Product[] = [
   {
+    key: 'kbriq-medero-dark-grey',
     image: 'kbriq-medero-dark-grey.jpg',
     passport: {
       productName: 'K-BRIQ® — Medero Dark Grey',
@@ -86,6 +88,7 @@ export const CATALOG: Product[] = [
     },
   },
   {
+    key: 'sisalwool-100',
     image: 'sisalwool-100.jpg',
     passport: {
       productName: 'Sisalwool 100 — Natural Fibre Insulation',
@@ -125,6 +128,7 @@ export const CATALOG: Product[] = [
     },
   },
   {
+    key: 'reclaimed-aerated-concrete-blocks',
     image: 'aerated-concrete-blocks.jpg',
     passport: {
       productName: 'Reclaimed Aerated Concrete Blocks',
@@ -145,6 +149,7 @@ export const CATALOG: Product[] = [
     listing: { pricePence: 150, quantity: 30 },
   },
   {
+    key: 'reclaimed-concrete-lintels',
     image: 'concrete-lintels.jpg',
     passport: {
       productName: 'Reclaimed Concrete Lintels',
@@ -165,6 +170,7 @@ export const CATALOG: Product[] = [
     listing: { pricePence: 1000, quantity: 14 },
   },
   {
+    key: 'reclaimed-facing-bricks',
     image: 'facing-bricks.jpg',
     passport: {
       productName: 'Reclaimed Facing Bricks',
@@ -185,6 +191,7 @@ export const CATALOG: Product[] = [
     listing: { pricePence: 100, quantity: 150 },
   },
   {
+    key: 'reclaimed-prefabricated-staircase',
     image: 'prefabricated-staircase.jpg',
     passport: {
       productName: 'Reclaimed Prefabricated Staircase',
@@ -214,6 +221,7 @@ export const CATALOG: Product[] = [
     listing: { pricePence: 15000, quantity: 2 },
   },
   {
+    key: 'reclaimed-aluminium-stud-walling',
     image: 'aluminium-stud-walling.jpg',
     passport: {
       productName: 'Reclaimed Aluminium Stud Walling',

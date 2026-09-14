@@ -30,12 +30,15 @@ deploy/demo-data.env.example
 deploy/nginx/demo.conf.example
 deploy/nginx/local-gateway.conf
 deploy/nginx/upstream-slot.conf.example
+deploy/systemd/trace-demo-replenish.service
+deploy/systemd/trace-demo-replenish.timer
 docker-compose.yml
 docs/AccessManagement.md
 docs/maintainers/parity-manifest.md
 docs/maintainers/public-release.md
 docs/nginx/trace-web.same-origin-api.conf.example
 docs/operations/deployment.md
+docs/operations/public-buyer-demo.md
 docs/operations/self-service-sandbox.md
 docs/research/README.md
 docs/research/TRACE_Flow-Diagram_v0.2.drawio
@@ -51,11 +54,11 @@ ops/deploy/run-ops.sh
 ops/deploy/start-candidate.sh
 ops/deploy/switch-nginx.sh
 ops/deploy/verify-candidate.sh
-ops/restore_db.sh
 ops/release/prepare-release.sh
 ops/release/release-lib.sh
 ops/release/test-release-tooling.sh
 ops/release/verify-release.sh
+ops/restore_db.sh
 package.json
 packages/api/package.json
 packages/api/src/env.ts
@@ -156,6 +159,7 @@ packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
 packages/db/migrations/meta/_journal.json
 packages/db/package.json
+packages/db/scripts/demo-replenish.ts
 packages/db/scripts/demo-restore.ts
 packages/db/scripts/lib/catalogue.ts
 packages/db/scripts/lib/demo-content.ts

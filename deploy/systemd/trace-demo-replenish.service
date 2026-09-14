@@ -1,0 +1,13 @@
+[Unit]
+Description=TRACE public-demo catalogue replenishment
+Wants=network-online.target
+After=network-online.target docker.service
+ConditionPathExists=/var/lib/trace-demo/config/active.env
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+Environment=TRACE_DEPLOY_CONFIG_DIR=/var/lib/trace-demo/config
+ExecStart=/usr/local/libexec/trace-demo/run-ops.sh /var/lib/trace-demo/config/active.env demo-replenish --env demo --target-active 3 --yes

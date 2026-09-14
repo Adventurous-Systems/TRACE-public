@@ -4,7 +4,7 @@ import { env, type Env } from '../env.js';
 const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export function isReadOnlyProfile(profile: Env['TRACE_DEPLOYMENT_PROFILE']): boolean {
-  return profile !== 'self_hosted';
+  return profile === 'public_showcase' || profile === 'public_sandbox';
 }
 
 export function isRequestAllowed(
@@ -15,9 +15,10 @@ export function isRequestAllowed(
 }
 
 /**
- * Public exposure profiles are protected at the API boundary, independently
- * of the web UI and reverse proxy. The reserved sandbox profile deliberately
- * remains read-only until its isolated workspace API is implemented.
+ * Read-only public exposure profiles are protected at the API boundary,
+ * independently of the web UI and reverse proxy. public_buyer_demo permits
+ * normal buyer requests and relies on the existing role guards for all
+ * supplier, passport, quality, and administrative mutations.
  */
 export async function enforceDeploymentProfile(
   request: FastifyRequest,

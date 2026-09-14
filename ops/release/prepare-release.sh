@@ -27,7 +27,7 @@ fi
 readonly RELEASE_ROOT PUBLIC_GIT_URL PUBLIC_SOURCE_LABEL LOCK_FILE
 
 usage() {
-  echo "Usage: $0 <full-lowercase-40-character-staging-sha>" >&2
+  echo "Usage: $0 <full-lowercase-40-character-main-sha>" >&2
   exit 2
 }
 
@@ -49,10 +49,10 @@ fi
 exec 9>"$LOCK_FILE"
 flock -n 9 || trace_release_fail 'another source release preparation is already running'
 
-remote_line="$(git -c credential.helper= ls-remote --exit-code --refs "$PUBLIC_GIT_URL" refs/heads/staging)"
+remote_line="$(git -c credential.helper= ls-remote --exit-code --refs "$PUBLIC_GIT_URL" refs/heads/main)"
 remote_sha="${remote_line%%$'\t'*}"
-[[ "$remote_sha" == "$release_sha" && "$remote_line" == "$release_sha"$'\trefs/heads/staging' ]] \
-  || trace_release_fail 'requested SHA is not the exact current public staging tip'
+[[ "$remote_sha" == "$release_sha" && "$remote_line" == "$release_sha"$'\trefs/heads/main' ]] \
+  || trace_release_fail 'requested SHA is not the exact current public main tip'
 
 release_dir="$RELEASE_ROOT/$release_sha"
 [[ ! -e "$release_dir" ]] || trace_release_fail "release already exists: $release_dir"
@@ -82,9 +82,9 @@ trap cleanup EXIT INT TERM
 install -d -m 700 "$source_dir" "$docker_config"
 git -c init.defaultBranch=detached init --quiet "$source_dir"
 git -C "$source_dir" -c core.hooksPath=/dev/null -c credential.helper= \
-  fetch --quiet --no-tags --depth=1 "$PUBLIC_GIT_URL" refs/heads/staging
+  fetch --quiet --no-tags --depth=1 "$PUBLIC_GIT_URL" refs/heads/main
 [[ "$(git -C "$source_dir" rev-parse FETCH_HEAD)" == "$release_sha" ]] \
-  || trace_release_fail 'fetched staging commit does not match the requested SHA'
+  || trace_release_fail 'fetched main commit does not match the requested SHA'
 git -C "$source_dir" -c core.hooksPath=/dev/null checkout --quiet --detach FETCH_HEAD
 git -C "$source_dir" config --local core.hooksPath /dev/null
 git -C "$source_dir" config --local --unset-all credential.helper >/dev/null 2>&1 || true
@@ -151,9 +151,9 @@ done
 
 trace_validate_receipt "$receipt" "$release_sha" "$PUBLIC_SOURCE_LABEL"
 trace_verify_public_source "$source_dir" "$release_sha"
-remote_line="$(git -c credential.helper= ls-remote --exit-code --refs "$PUBLIC_GIT_URL" refs/heads/staging)"
-[[ "$remote_line" == "$release_sha"$'\trefs/heads/staging' ]] \
-  || trace_release_fail 'public staging changed while the release was being built'
+remote_line="$(git -c credential.helper= ls-remote --exit-code --refs "$PUBLIC_GIT_URL" refs/heads/main)"
+[[ "$remote_line" == "$release_sha"$'\trefs/heads/main' ]] \
+  || trace_release_fail 'public main changed while the release was being built'
 
 find "$docker_config" -depth -delete
 chmod -R a-w "$source_dir"
