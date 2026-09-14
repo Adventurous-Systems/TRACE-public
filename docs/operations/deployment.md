@@ -21,6 +21,9 @@ private data into it.
   must not be deployed until the separate sandbox design is implemented and
   reviewed.
 
+The retained-account policy, buyer-role boundary, catalogue replenishment, and
+nightly timer are defined in [Public buyer demo operations](public-buyer-demo.md).
+
 ## Components
 
 - `deploy/compose.demo-data.yml` owns the isolated data plane. Its images are
