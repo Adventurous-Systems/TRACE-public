@@ -54,3 +54,11 @@ body[data-deployment-profile='public_showcase'] .trace-self-hosted-only,
 body[data-deployment-profile='public_sandbox'] .trace-self-hosted-only {
   display: none;
 }
+
+.trace-public-buyer-demo-only {
+  display: none;
+}
+
+body[data-deployment-profile='public_buyer_demo'] .trace-public-buyer-demo-only {
+  display: block;
+}

@@ -31,7 +31,7 @@ fake_bin="$TEST_ROOT/bin"
 fake_state="$TEST_ROOT/docker-state"
 mkdir -p "$fixture" "$fake_bin" "$fake_state"
 
-git -C "$fixture" init --quiet --initial-branch=staging
+git -C "$fixture" init --quiet --initial-branch=main
 git -C "$fixture" config user.name 'Release Test'
 git -C "$fixture" config user.email 'release-test@example.invalid'
 for component in api web ops; do
@@ -127,7 +127,7 @@ common_env=(
   PATH="$fake_bin:$PATH"
 )
 
-expect_failure 'floating branch name is rejected' env -i "${common_env[@]}" "$PREPARE" staging
+expect_failure 'floating branch name is rejected' env -i "${common_env[@]}" "$PREPARE" main
 expect_failure 'uppercase SHA is rejected' env -i "${common_env[@]}" "$PREPARE" "${release_sha^^}"
 expect_failure 'secret-bearing build environment is rejected' \
   env -i "${common_env[@]}" JWT_SECRET=not-for-build "$PREPARE" "$release_sha"
@@ -169,7 +169,7 @@ expect_failure 'dirty release source is rejected' env -i "${common_env[@]}" "$VE
 printf 'second\n' >> "$fixture/committed.txt"
 git -C "$fixture" add committed.txt
 git -C "$fixture" commit --quiet -m 'Second public fixture'
-git -C "$fixture" push --quiet origin staging
+git -C "$fixture" push --quiet origin main
 second_sha="$(git -C "$fixture" rev-parse HEAD)"
 expect_failure 'failed sequential build leaves no release or image tag' \
   env -i "${common_env[@]}" TRACE_FAKE_FAIL_COMPONENT=web "$PREPARE" "$second_sha"

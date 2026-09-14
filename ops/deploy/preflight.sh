@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DEPLOY_ENV="${1:-}"
-CONFIG_DIR="${TRACE_DEPLOY_CONFIG_DIR:-/etc/trace-demo}"
+CONFIG_DIR="${TRACE_DEPLOY_CONFIG_DIR:-/var/lib/trace-demo/config}"
 COMPOSE_FILE="${TRACE_DEPLOY_COMPOSE_FILE:-$CONFIG_DIR/compose.app.yml}"
 
 fail() { echo "Preflight failed: $*" >&2; exit 1; }
@@ -37,8 +37,8 @@ release_verifier='/usr/local/libexec/trace-demo/verify-release.sh'
 [[ -x "$release_verifier" ]] || fail "trusted release verifier is missing: $release_verifier"
 "$release_verifier" "$release_sha"
 [[ "$(value "$api_env" TRACE_ENV)" == 'demo' ]] || fail 'API TRACE_ENV must be demo'
-[[ "$(value "$api_env" TRACE_DEPLOYMENT_PROFILE)" == 'public_showcase' ]] || fail 'API profile must be public_showcase'
-[[ "$(value "$web_env" TRACE_DEPLOYMENT_PROFILE)" == 'public_showcase' ]] || fail 'web profile must be public_showcase'
+[[ "$(value "$api_env" TRACE_DEPLOYMENT_PROFILE)" == 'public_buyer_demo' ]] || fail 'API profile must be public_buyer_demo'
+[[ "$(value "$web_env" TRACE_DEPLOYMENT_PROFILE)" == 'public_buyer_demo' ]] || fail 'web profile must be public_buyer_demo'
 
 docker network inspect "$runtime_network" >/dev/null 2>&1 || fail "runtime network is missing: $runtime_network"
 docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" config --quiet

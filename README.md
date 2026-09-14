@@ -155,8 +155,10 @@ For application development, leave only the four data services running and use
 web development servers use ports 3001 and 3000 respectively.
 
 `TRACE_DEPLOYMENT_PROFILE=self_hosted` retains registration and all mutation
-flows. `public_showcase` is API-enforced read-only mode used by the hosted
-research demo. `public_sandbox` is reserved and currently also fails closed.
+flows. `public_showcase` is API-enforced read-only mode. `public_buyer_demo`
+is the hosted evergreen demo profile: anonymous visitors can browse, newly
+registered users are buyers, and all elevated roles remain server-side and
+internally approved. `public_sandbox` is reserved and currently fails closed.
 **Test credentials (local dev seed):**
 
 | Role           | Email                    | Password source                |
@@ -178,7 +180,7 @@ must be unique outside local development. Never commit a populated `.env`.
 **Public auth notes:**
 
 - `/register` creates a public `buyer` account only.
-- Buyers can submit `/access-request` to request `hub_staff` or `hub_admin` access.
+- Buyer access requests are retained for later internal review; the demo assigns no elevated roles.
 - `platform_admin` reviews requests at `/admin/access-requests`.
 - Pending requests can be edited, approved, or rejected without hard delete.
 - Approved users can be reassigned between `hub_staff` and `hub_admin`, moved between organisations, or revoked back to `buyer`.

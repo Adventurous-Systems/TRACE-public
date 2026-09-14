@@ -13,9 +13,10 @@ private data into it.
 ## Deployment profiles
 
 - `self_hosted` retains the complete application for local operators.
-- `public_showcase` is the deployed default. The API permits only GET, HEAD, and
-  OPTIONS; authentication and every mutation fail closed with HTTP 403. The web
-  interface also hides login and mutation controls.
+- `public_buyer_demo` is the deployed default. It allows anonymous marketplace
+  reads, buyer registration/login, and buyer marketplace actions. Existing role
+  checks continue to deny seller, passport, quality, and administrative actions.
+- `public_showcase` remains available as the API-enforced read-only profile.
 - `public_sandbox` is reserved. It currently fails closed like the showcase and
   must not be deployed until the separate sandbox design is implemented and
   reviewed.
@@ -29,7 +30,7 @@ private data into it.
   An optional worker profile exists for future write-enabled deployments.
 - `Dockerfile.ops` supplies migrations, deterministic synthetic seeding,
   catalogue verification, backup checks, and restore-time operations.
-- `ops/release/prepare-release.sh` fetches the exact current public `staging`
+- `ops/release/prepare-release.sh` fetches the exact current public `main`
   SHA into a fresh detached checkout, builds the three images sequentially, and
   atomically records their IDs.
 - `ops/release/verify-release.sh` revalidates the clean source, receipt, tags,
@@ -66,7 +67,7 @@ configuration directory:
   state, and timestamps.
 
 The web preflight rejects unexpected environment keys. Each release is fetched
-fresh from the public GitHub repository at the exact current `staging` commit,
+fresh from the public GitHub repository at the exact current `main` commit,
 built locally without runtime secrets, and tagged with that full commit SHA. The
 build records the resulting immutable image IDs in a root-owned release receipt.
 Deployment preflight requires the candidate values, release-specific tags,
@@ -86,15 +87,15 @@ deployment record.
 The preparation interface accepts one argument only:
 
 ```text
-sudo /usr/local/libexec/trace-demo/prepare-release.sh <40-character-staging-sha>
-sudo /usr/local/libexec/trace-demo/verify-release.sh <40-character-staging-sha>
+sudo /usr/local/libexec/trace-demo/prepare-release.sh <40-character-main-sha>
+sudo /usr/local/libexec/trace-demo/verify-release.sh <40-character-main-sha>
 ```
 
 The command rejects branch names, abbreviated or uppercase SHAs, any SHA other
-than the exact remote `staging` tip, an existing release/tag, a secret-bearing
+than the exact remote `main` tip, an existing release/tag, a secret-bearing
 build environment, a dirty or ignored release source, Git remotes/hooks,
 symlinks/submodules, manifest drift, confidential paths/content, label/user mismatches,
-and a `staging` tip that changes while images are building. Docker receives an
+and a `main` tip that changes while images are building. Docker receives an
 allowlisted empty process environment and a fresh credential-free client
 configuration. A failed build removes only its temporary release and exact new
 tags.
@@ -118,17 +119,18 @@ tags and immutable image IDs. Treat a completed release directory as read-only.
    `deploy/compose.demo-data.yml` under the `trace-demo-data` project.
 3. Confirm the PostgreSQL, Redis, MinIO, and Thor health checks pass. Nothing
    except the MinIO object endpoint binds to a host port.
-4. Run the installed preparation command for the exact tested staging commit.
+4. Run the installed preparation command for the exact reviewed main commit.
    It creates the immutable release directory, builds API, web, and operations
    images sequentially, records their IDs, and verifies revision/source labels
    and non-root users. Scan the resulting exact IDs before use.
-5. Run migrations, the base seed, the curated-product seed, and `demo-restore`
-   through the operations image, in that order. Then run `demo-verify` and
+5. Run migrations and the base seed, then run `demo-replenish --env demo`
+   through the operations image with `--target-active 3 --yes`. Do not schedule
+   `demo-restore`; run the non-destructive replenisher thereafter and
    record expected counts and hashes.
 6. Populate the inactive slot file. Blue uses web/API ports 5003/5004 and green
    uses 5103/5104.
 7. Run preflight, start the candidate, and verify its loopback endpoints.
-   Explicitly prove login and representative mutations return 403.
+   Prove invalid login returns 401, buyer registration works, and buyer role guards hold.
 8. Install the nginx rate-limit zones and demo server template, provision the
    demo hostname certificate, run `nginx -t`, and reload gracefully.
 9. Point the active upstream symlink at the candidate and re-run public health,
@@ -141,7 +143,7 @@ nginx edit in any private TRACE environment.
 
 ## Release procedure
 
-1. Test the public `staging` SHA in CI and a clean-room clone.
+1. Test the reviewed public `main` SHA in CI and a clean-room clone.
 2. Run the installed source-release preparation command. Verify the immutable
    source and local image receipt, then scan the three exact image IDs.
 3. Create and validate PostgreSQL and MinIO recovery points. Restore the
@@ -149,7 +151,7 @@ nginx edit in any private TRACE environment.
    restore test.
 4. Run only expand/contract-compatible migrations through the operations image.
 5. Start the inactive slot and probe it directly on loopback.
-6. Fast-forward public `main` to the exact tested `staging` SHA.
+6. Confirm public `main` still points to the exact tested SHA before deployment.
 7. Acquire the host deployment lock, verify SHA/digests/revision labels, switch
    nginx, gracefully reload, and run public probes.
 8. Record the release state and monitor it for 24 hours before removing the old

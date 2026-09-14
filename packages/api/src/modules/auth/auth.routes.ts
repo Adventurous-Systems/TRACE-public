@@ -3,9 +3,11 @@ import { LoginSchema, RegisterSchema } from '@trace/core';
 import { authenticate } from '../../middleware/auth.js';
 import { loginUser, registerUser } from './auth.service.js';
 
+const LOGIN_RATE_LIMIT = { max: 10, timeWindow: '1 minute' } as const;
+const REGISTER_RATE_LIMIT = { max: 20, timeWindow: '1 hour' } as const;
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/v1/auth/login
-  app.post('/login', async (request, reply) => {
+  app.post('/login', { config: { rateLimit: LOGIN_RATE_LIMIT } }, async (request, reply) => {
     const input = LoginSchema.parse(request.body);
     const payload = await loginUser(input);
     const token = app.jwt.sign(payload);
@@ -25,7 +27,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /api/v1/auth/register
-  app.post('/register', async (request, reply) => {
+  app.post('/register', { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
     const input = RegisterSchema.parse(request.body);
     const payload = await registerUser(input);
     const token = app.jwt.sign(payload);
