@@ -38,8 +38,10 @@ for component in api web ops; do
   printf 'FROM scratch\n' > "$fixture/Dockerfile.$component"
 done
 printf 'committed\n' > "$fixture/committed.txt"
+printf '/opt/trace-public-demo/releases/<sha>\n' > "$fixture/public-deployment-path.txt"
 printf '%s\n' \
   Dockerfile.api Dockerfile.ops Dockerfile.web PUBLIC_MANIFEST.txt committed.txt \
+  public-deployment-path.txt \
   > "$fixture/PUBLIC_MANIFEST.txt"
 git -C "$fixture" add .
 git -C "$fixture" commit --quiet -m 'Public fixture'
@@ -175,5 +177,16 @@ expect_failure 'failed sequential build leaves no release or image tag' \
   env -i "${common_env[@]}" TRACE_FAKE_FAIL_COMPONENT=web "$PREPARE" "$second_sha"
 test ! -e "$releases/$second_sha"
 test ! -e "$fake_state/trace-demo-api_$second_sha"
+
+printf '/opt/%s\n' TRACE > "$fixture/private-checkout-path.txt"
+printf 'private-checkout-path.txt\n' >> "$fixture/PUBLIC_MANIFEST.txt"
+git -C "$fixture" add PUBLIC_MANIFEST.txt private-checkout-path.txt
+git -C "$fixture" commit --quiet -m 'Add forbidden private checkout path'
+git -C "$fixture" push --quiet origin staging
+private_path_sha="$(git -C "$fixture" rev-parse HEAD)"
+expect_failure 'exact private checkout path is rejected' \
+  env -i "${common_env[@]}" "$PREPARE" "$private_path_sha"
+test ! -e "$releases/$private_path_sha"
+test ! -e "$fake_state/trace-demo-api_$private_path_sha"
 
 printf 'All source release tooling tests passed.\n'
