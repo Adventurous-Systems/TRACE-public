@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DEPLOY_ENV="${1:-}"
-CONFIG_DIR="${TRACE_DEPLOY_CONFIG_DIR:-/etc/trace-demo}"
+CONFIG_DIR="${TRACE_DEPLOY_CONFIG_DIR:-/var/lib/trace-demo/config}"
 COMPOSE_FILE="${TRACE_DEPLOY_COMPOSE_FILE:-$CONFIG_DIR/compose.app.yml}"
 
 "${TRACE_DEPLOY_PREFLIGHT:-/usr/local/libexec/trace-demo/preflight.sh}" "$DEPLOY_ENV"

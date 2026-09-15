@@ -5,7 +5,7 @@ DEPLOY_ENV="${1:-}"
 OPERATION="${2:-}"
 shift 2 || true
 
-[[ -f "$DEPLOY_ENV" ]] || { echo "Usage: $0 <candidate-deploy.env> <migrate|seed|seed-products|demo-restore|demo-verify> [args]" >&2; exit 2; }
+[[ -f "$DEPLOY_ENV" ]] || { echo "Usage: $0 <candidate-deploy.env> <migrate|seed|seed-products|demo-restore|demo-verify|demo-replenish> [args]" >&2; exit 2; }
 value() { awk -F= -v key="$2" '$1 == key {print substr($0, index($0, "=") + 1)}' "$1" | tail -1; }
 case "$OPERATION" in
   migrate) script=dist/scripts/migrate.js ;;
@@ -13,6 +13,7 @@ case "$OPERATION" in
   seed-products) script=dist/scripts/seed-products.js ;;
   demo-restore) script=dist/scripts/demo-restore.js ;;
   demo-verify) script=dist/scripts/demo-restore.js; set -- --verify "$@" ;;
+  demo-replenish) script=dist/scripts/demo-replenish.js ;;
   *) echo "Unsupported operation: $OPERATION" >&2; exit 2 ;;
 esac
 

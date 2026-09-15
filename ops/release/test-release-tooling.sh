@@ -31,7 +31,7 @@ fake_bin="$TEST_ROOT/bin"
 fake_state="$TEST_ROOT/docker-state"
 mkdir -p "$fixture" "$fake_bin" "$fake_state"
 
-git -C "$fixture" init --quiet --initial-branch=staging
+git -C "$fixture" init --quiet --initial-branch=main
 git -C "$fixture" config user.name 'Release Test'
 git -C "$fixture" config user.email 'release-test@example.invalid'
 for component in api web ops; do
@@ -119,6 +119,28 @@ echo "Unsupported fake Docker invocation: $*" >&2
 exit 2
 FAKE_DOCKER
 chmod 755 "$fake_bin/docker"
+cat > "$fake_bin/scan-image.sh" <<'FAKE_SCAN'
+#!/usr/bin/env bash
+set -euo pipefail
+image="$1"; image_id="$2"; output_dir="$3"
+component="${image#trace-demo-}"; component="${component%%:*}"
+[[ "${TRACE_FAKE_SCAN_FAIL_COMPONENT:-}" != "$component" ]] || exit 43
+mkdir -p "$output_dir"
+printf '{"bomFormat":"CycloneDX","component":"%s"}\n' "$component" > "$output_dir/sbom.cdx.json"
+printf '{"Results":[]}\n' > "$output_dir/scan.json"
+sbom_hash="$(sha256sum "$output_dir/sbom.cdx.json" | awk '{print $1}')"
+scan_hash="$(sha256sum "$output_dir/scan.json" | awk '{print $1}')"
+{
+  printf 'TRACE_SCANNER=trivy\n'
+  printf 'TRACE_SCANNER_VERSION=0.74.0\n'
+  printf 'TRACE_SCANNER_DB_UPDATED_AT=2026-09-15T00:00:00Z\n'
+  printf 'TRACE_IMAGE_ID=%s\n' "$image_id"
+  printf 'TRACE_SBOM_SHA256=%s\n' "$sbom_hash"
+  printf 'TRACE_SCAN_SHA256=%s\n' "$scan_hash"
+} > "$output_dir/metadata.env"
+chmod 400 "$output_dir/sbom.cdx.json" "$output_dir/scan.json" "$output_dir/metadata.env"
+FAKE_SCAN
+chmod 755 "$fake_bin/scan-image.sh"
 
 common_env=(
   TRACE_RELEASE_TEST_MODE=1
@@ -126,10 +148,11 @@ common_env=(
   TRACE_PUBLIC_REPOSITORY_URL="file://$remote"
   TRACE_PUBLIC_SOURCE_LABEL=https://example.invalid/public
   TRACE_FAKE_DOCKER_STATE="$fake_state"
+  TRACE_IMAGE_SCANNER="$fake_bin/scan-image.sh"
   PATH="$fake_bin:$PATH"
 )
 
-expect_failure 'floating branch name is rejected' env -i "${common_env[@]}" "$PREPARE" staging
+expect_failure 'floating branch name is rejected' env -i "${common_env[@]}" "$PREPARE" main
 expect_failure 'uppercase SHA is rejected' env -i "${common_env[@]}" "$PREPARE" "${release_sha^^}"
 expect_failure 'secret-bearing build environment is rejected' \
   env -i "${common_env[@]}" JWT_SECRET=not-for-build "$PREPARE" "$release_sha"
@@ -139,7 +162,7 @@ release_dir="$releases/$release_sha"
 receipt="$release_dir/images.env"
 test -d "$release_dir/source"
 test ! -e "$release_dir/source/working-tree-only.txt"
-test "$(find "$release_dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | paste -sd, -)" = images.env,source
+test "$(find "$release_dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | paste -sd, -)" = images.env,scans,source
 test "$(git -C "$release_dir/source" rev-parse HEAD)" = "$release_sha"
 test -z "$(git -C "$release_dir/source" remote)"
 test "$(git -C "$release_dir/source" config --local --get core.hooksPath)" = /dev/null
@@ -163,6 +186,12 @@ cp "$api_state" "$TEST_ROOT/api-state.good"
 sed -i 's/^ID=.*/ID=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/' "$api_state"
 expect_failure 'image ID mismatch is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
 cp "$TEST_ROOT/api-state.good" "$api_state"
+scan_report="$release_dir/scans/api/scan.json"
+chmod u+w "$scan_report"
+printf 'tampered\n' >> "$scan_report"
+expect_failure 'changed scan report is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
+chmod 400 "$scan_report"
+
 
 chmod u+w "$release_dir/source/committed.txt"
 printf 'dirty\n' >> "$release_dir/source/committed.txt"
@@ -171,18 +200,23 @@ expect_failure 'dirty release source is rejected' env -i "${common_env[@]}" "$VE
 printf 'second\n' >> "$fixture/committed.txt"
 git -C "$fixture" add committed.txt
 git -C "$fixture" commit --quiet -m 'Second public fixture'
-git -C "$fixture" push --quiet origin staging
+git -C "$fixture" push --quiet origin main
 second_sha="$(git -C "$fixture" rev-parse HEAD)"
 expect_failure 'failed sequential build leaves no release or image tag' \
   env -i "${common_env[@]}" TRACE_FAKE_FAIL_COMPONENT=web "$PREPARE" "$second_sha"
 test ! -e "$releases/$second_sha"
 test ! -e "$fake_state/trace-demo-api_$second_sha"
+expect_failure 'scanner failure leaves no release or image tag' \
+  env -i "${common_env[@]}" TRACE_FAKE_SCAN_FAIL_COMPONENT=ops "$PREPARE" "$second_sha"
+test ! -e "$releases/$second_sha"
+test ! -e "$fake_state/trace-demo-api_$second_sha"
+
 
 printf '/opt/%s\n' TRACE > "$fixture/private-checkout-path.txt"
 printf 'private-checkout-path.txt\n' >> "$fixture/PUBLIC_MANIFEST.txt"
 git -C "$fixture" add PUBLIC_MANIFEST.txt private-checkout-path.txt
 git -C "$fixture" commit --quiet -m 'Add forbidden private checkout path'
-git -C "$fixture" push --quiet origin staging
+git -C "$fixture" push --quiet origin main
 private_path_sha="$(git -C "$fixture" rev-parse HEAD)"
 expect_failure 'exact private checkout path is rejected' \
   env -i "${common_env[@]}" "$PREPARE" "$private_path_sha"

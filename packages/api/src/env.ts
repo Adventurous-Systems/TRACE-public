@@ -14,7 +14,7 @@ const envSchema = z.object({
     .transform((v) => v === 'true')
     .default('true'),
   TRACE_DEPLOYMENT_PROFILE: z
-    .enum(['self_hosted', 'public_showcase', 'public_sandbox'])
+    .enum(['self_hosted', 'public_showcase', 'public_buyer_demo', 'public_sandbox'])
     .default('self_hosted'),
 
   // Auth

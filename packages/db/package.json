@@ -24,6 +24,7 @@
     "rehash:passports": "tsx scripts/rehash-passports.ts",
     "demo:restore": "tsx scripts/demo-restore.ts",
     "demo:verify": "tsx scripts/demo-restore.ts --verify",
+    "demo:replenish": "tsx scripts/demo-replenish.ts",
     "rotate:credentials": "tsx scripts/rotate-published-credentials.ts",
     "studio": "drizzle-kit studio"
   },

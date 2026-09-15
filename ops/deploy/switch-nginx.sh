@@ -3,40 +3,53 @@ set -euo pipefail
 
 ACTIVE_LINK="${1:-}"
 CANDIDATE="${2:-}"
-STATE_DIR="${TRACE_DEPLOY_STATE_DIR:-/var/lib/trace-deploy}"
+ACTIVE_ENV_LINK="${3:-}"
+CANDIDATE_ENV="${4:-}"
+STATE_DIR="${TRACE_DEPLOY_STATE_DIR:-/var/lib/trace-demo/state}"
+LOCK_FILE="${TRACE_DEPLOY_LOCK_FILE:-/run/lock/trace-public-demo-deploy.lock}"
 
-if [[ -z "$ACTIVE_LINK" || -z "$CANDIDATE" || ! -f "$CANDIDATE" ]]; then
-  echo "Usage: $0 <active-upstream-symlink> <candidate-upstream-file>" >&2
+if [[ -z "$ACTIVE_LINK" || -z "$CANDIDATE" || -z "$ACTIVE_ENV_LINK" || -z "$CANDIDATE_ENV" || ! -f "$CANDIDATE" || ! -f "$CANDIDATE_ENV" ]]; then
+  echo "Usage: $0 <active-upstream-symlink> <candidate-upstream-file> <active-env-symlink> <candidate-env-file>" >&2
   exit 2
 fi
-
-previous="$(readlink -f "$ACTIVE_LINK")"
-[[ -n "$previous" && -f "$previous" ]] || { echo "Active upstream link is invalid" >&2; exit 1; }
+[[ "$(stat -c '%u:%a' "$CANDIDATE_ENV")" == 0:600 ]] || { echo "Candidate environment must be root-owned mode 600" >&2; exit 1; }
+previous_upstream="$(readlink -f "$ACTIVE_LINK")"
+previous_env="$(readlink -f "$ACTIVE_ENV_LINK")"
+[[ -f "$previous_upstream" && -f "$previous_env" ]] || { echo "Active deployment links are invalid" >&2; exit 1; }
 
 install -d -m 700 "$STATE_DIR"
-state_file="$STATE_DIR/$(basename "$ACTIVE_LINK").previous"
-printf '%s\n' "$previous" > "$state_file"
-chmod 600 "$state_file"
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "Another TRACE public-demo deployment is running" >&2; exit 1; }
+upstream_state="$STATE_DIR/$(basename "$ACTIVE_LINK").previous"
+env_state="$STATE_DIR/$(basename "$ACTIVE_ENV_LINK").previous"
+printf '%s\n' "$previous_upstream" > "$upstream_state"
+printf '%s\n' "$previous_env" > "$env_state"
+chmod 600 "$upstream_state" "$env_state"
 
-temporary="${ACTIVE_LINK}.new"
-ln -sfn "$CANDIDATE" "$temporary"
-mv -Tf "$temporary" "$ACTIVE_LINK"
+switch_link() {
+  local link="$1" target="$2" suffix="$3"
+  local temporary="${link}.${suffix}"
+  ln -sfn "$target" "$temporary"
+  mv -Tf "$temporary" "$link"
+}
+restore_previous() {
+  switch_link "$ACTIVE_LINK" "$previous_upstream" restore
+  switch_link "$ACTIVE_ENV_LINK" "$previous_env" restore
+}
 
+switch_link "$ACTIVE_LINK" "$CANDIDATE" new
+switch_link "$ACTIVE_ENV_LINK" "$CANDIDATE_ENV" new
 if ! nginx -t; then
-  ln -sfn "$previous" "$temporary"
-  mv -Tf "$temporary" "$ACTIVE_LINK"
+  restore_previous
   nginx -t
-  echo "Candidate nginx configuration was rejected; the previous upstream was restored." >&2
+  echo "Candidate nginx configuration was rejected; the previous deployment pair was restored." >&2
   exit 1
 fi
-
 if ! nginx -s reload; then
-  ln -sfn "$previous" "$temporary"
-  mv -Tf "$temporary" "$ACTIVE_LINK"
+  restore_previous
   nginx -t
   nginx -s reload || true
-  echo "Nginx reload failed; the previous upstream link was restored." >&2
+  echo "Nginx reload failed; the previous deployment pair was restored." >&2
   exit 1
 fi
-
-echo "Nginx now uses $CANDIDATE. Previous upstream: $previous"
+echo "Nginx now uses $CANDIDATE and $CANDIDATE_ENV."

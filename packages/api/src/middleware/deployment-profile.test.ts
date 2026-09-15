@@ -8,6 +8,11 @@ describe('deployment profile access policy', () => {
     expect(isRequestAllowed('self_hosted', 'DELETE')).toBe(true);
   });
 
+  it('allows buyer interactions while preserving role-based authorization', () => {
+    expect(isReadOnlyProfile('public_buyer_demo')).toBe(false);
+    expect(isRequestAllowed('public_buyer_demo', 'POST')).toBe(true);
+    expect(isRequestAllowed('public_buyer_demo', 'PATCH')).toBe(true);
+  });
   it.each(['GET', 'HEAD', 'OPTIONS'])('allows %s in the public showcase', (method) => {
     expect(isRequestAllowed('public_showcase', method)).toBe(true);
   });

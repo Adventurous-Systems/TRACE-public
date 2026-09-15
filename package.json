@@ -29,6 +29,7 @@
     "docker:logs": "docker compose logs -f",
     "db:migrate": "pnpm --filter @trace/db migrate",
     "db:seed": "pnpm --filter @trace/db seed",
+    "demo:replenish": "pnpm --filter @trace/db demo:replenish",
     "db:generate": "pnpm --filter @trace/db generate",
     "db:studio": "pnpm --filter @trace/db studio"
   },
