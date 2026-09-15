@@ -29,6 +29,7 @@ jobs:
         run: |
           bash -n ops/release/*.sh
           bash ops/release/test-release-tooling.sh
+          bash ops/release/test-scan-image.sh
           bash ops/deploy/test-deployment-state.sh
 
   build-and-test:
