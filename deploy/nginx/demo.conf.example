@@ -35,7 +35,7 @@ server {
 
     error_page 503 /maintenance.html;
     location = /maintenance.html {
-        root /etc/trace-demo/nginx;
+        root /var/lib/trace-demo/config/nginx;
         internal;
     }
 
@@ -82,5 +82,15 @@ server {
     listen 80;
     listen [::]:80;
     server_name demo.trace.adventurous.systems;
-    return 301 https://$host$request_uri;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/lib/trace-demo/config/nginx/acme-webroot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+
 }
