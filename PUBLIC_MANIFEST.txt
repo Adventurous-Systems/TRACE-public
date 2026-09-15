@@ -61,6 +61,7 @@ ops/release/prepare-release.sh
 ops/release/release-lib.sh
 ops/release/scan-image.sh
 ops/release/test-release-tooling.sh
+ops/release/test-scan-image.sh
 ops/release/verify-release.sh
 ops/restore_db.sh
 package.json
