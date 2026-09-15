@@ -114,6 +114,12 @@ async function main() {
   const sweep = argv.includes('--sweep');
   // Furniture is on by default; --no-furniture opts out for a bare catalogue.
   const furniture = !argv.includes('--no-furniture');
+  const targetActiveIndex = argv.indexOf('--target-active');
+  const targetActiveRaw = targetActiveIndex >= 0 ? argv[targetActiveIndex + 1] : '3';
+  const targetActive = Number(targetActiveRaw);
+  if (!Number.isInteger(targetActive) || targetActive < 1 || targetActive > 10) {
+    throw new Error('--target-active must be an integer from 1 to 10');
+  }
 
   const target = resolveTarget(argv);
 
@@ -297,6 +303,13 @@ async function main() {
 
     // ── 1. Curated passports: converge to the catalogue, then rehash ─────────
     const curated = await db.select().from(schema.materialPassports).where(curatedFilter);
+    const catalogueByKey = new Map(CATALOG.map((product) => [product.key, product]));
+    const catalogueKeyFor = (passport: (typeof curated)[number]): string | undefined => {
+      const metadata = passport.customAttributes ?? {};
+      const key = metadata['catalogueKey'];
+      if (typeof key === 'string' && catalogueByKey.has(key)) return key;
+      return CATALOG.find((product) => product.passport.productName === passport.productName)?.key;
+    };
     const byName = new Map(curated.map((p) => [p.productName, p]));
 
     console.log(`Curated catalogue (${curated.length}/${CATALOG.length} present):`);
@@ -304,8 +317,7 @@ async function main() {
     // Rows wearing the curated tag that the catalogue does not define. They are
     // never converged (the loop iterates CATALOG), so they drift silently and
     // will render "Mismatch" on the public passport page.
-    const catalogueNames = new Set(CATALOG.map((c) => c.passport.productName!));
-    for (const extra of curated.filter((p) => !catalogueNames.has(p.productName))) {
+    for (const extra of curated.filter((p) => !catalogueKeyFor(p))) {
       problems.push({
         severity: 'error',
         message:
@@ -801,9 +813,9 @@ async function main() {
       for (const s of strays) console.log(`  - ${s.name}`);
     }
 
-    // ── 5. Invariants ────────────────────────────────────────────────────────
+    // Demo verifier invariants.
     const finalListings = await db
-      .select({ id: schema.listings.id })
+      .select({ id: schema.listings.id, passportId: schema.listings.passportId })
       .from(schema.listings)
       .innerJoin(
         schema.materialPassports,
@@ -812,22 +824,34 @@ async function main() {
       .where(and(eq(schema.listings.status, 'active'), curatedFilter));
 
     const finalCurated = await db.select().from(schema.materialPassports).where(curatedFilter);
+    const finalCuratedById = new Map(finalCurated.map((passport) => [passport.id, passport]));
     const badHashes = finalCurated.filter(
       (p) => p.blockchainPassportHash !== computePassportHash(p),
     );
 
-    // These run in EVERY mode, including --verify. They were previously behind
-    // an `if (!dryRun)` guard, which meant demo:verify printed "6/7 listings"
-    // and still exited 0 — a readiness check that reports success while the
-    // demo is broken is worse than no check at all. Caught by making a real
-    // offer on staging and watching verify pass anyway.
-    if (finalListings.length !== CATALOG.length) {
-      problems.push({
-        severity: 'error',
-        message:
-          `expected ${CATALOG.length} active curated listings, found ${finalListings.length}` +
-          (dryRun ? ' — run demo:restore to fix' : ''),
-      });
+    // Replenished lots use catalogueKey, not their display name. The legacy
+    // catalogue verifies one active listing per product; the public demo
+    // verifies its configured active target per product.
+    const activeByCatalogueKey = new Map<string, number>();
+    for (const listing of finalListings) {
+      const passport = finalCuratedById.get(listing.passportId);
+      const key = passport ? catalogueKeyFor(passport) : undefined;
+      if (key) activeByCatalogueKey.set(key, (activeByCatalogueKey.get(key) ?? 0) + 1);
+    }
+    const replenishedLots = finalCurated.some(
+      (passport) => typeof (passport.customAttributes ?? {})['catalogueKey'] === 'string',
+    );
+    const expectedPerProduct = replenishedLots ? targetActive : 1;
+    for (const product of CATALOG) {
+      const actual = activeByCatalogueKey.get(product.key) ?? 0;
+      if (actual !== expectedPerProduct) {
+        problems.push({
+          severity: 'error',
+          message:
+            `${product.key}: expected ${expectedPerProduct} active catalogue listing(s), found ${actual}` +
+            (dryRun ? ' - run demo:replenish to fix' : ''),
+        });
+      }
     }
     // Runs in every mode. Previously this was !dryRun-only, so a curated-tagged
     // passport that is NOT in the catalogue (a duplicate, or a hand-tagged row)

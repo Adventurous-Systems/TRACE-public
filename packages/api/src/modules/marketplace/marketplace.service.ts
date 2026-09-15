@@ -374,56 +374,60 @@ export async function cancelListing(listingId: string, organisationId: string): 
 // ─── Transaction: Make Offer ─────────────────────────────────────────────────
 
 export async function makeOffer(input: MakeOfferInput, buyerId: string): Promise<Transaction> {
-  const listing = await db.query.listings.findFirst({
-    where: eq(listings.id, input.listingId),
+  return db.transaction(async (tx) => {
+    const listing = await tx.query.listings.findFirst({
+      where: eq(listings.id, input.listingId),
+    });
+
+    if (!listing) throw new NotFoundError(`Listing ${input.listingId} not found`);
+    if (listing.status !== 'active') {
+      throw new ConflictError(`Listing is not available (status: ${listing.status})`);
+    }
+    if (listing.sellerId === buyerId) {
+      throw new ForbiddenError('Cannot buy your own listing');
+    }
+
+    if (listing.expiresAt && listing.expiresAt < new Date()) {
+      await tx.update(listings).set({ status: 'expired' }).where(eq(listings.id, listing.id));
+      throw new ConflictError('Listing has expired');
+    }
+
+    // Claim the active listing before creating its transaction. The status
+    // predicate makes this a compare-and-set: concurrent buyers cannot each
+    // turn the same listing into a retained pending transaction.
+    const [reserved] = await tx
+      .update(listings)
+      .set({ status: 'reserved' })
+      .where(and(eq(listings.id, listing.id), eq(listings.status, 'active')))
+      .returning();
+
+    if (!reserved) {
+      throw new ConflictError('Listing is no longer available');
+    }
+
+    const [transaction] = await tx
+      .insert(transactions)
+      .values({
+        listingId: reserved.id,
+        buyerId,
+        sellerId: reserved.sellerId,
+        amountPence: input.offerPence ?? reserved.pricePence,
+        status: 'pending',
+        disputeDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        notes: input.notes ?? null,
+      })
+      .returning();
+
+    if (!transaction) throw new Error('Failed to create transaction');
+
+    await tx
+      .update(materialPassports)
+      .set({ status: 'reserved', updatedAt: new Date() })
+      .where(eq(materialPassports.id, reserved.passportId));
+
+    return transaction;
   });
-
-  if (!listing) throw new NotFoundError(`Listing ${input.listingId} not found`);
-  if (listing.status !== 'active') {
-    throw new ConflictError(`Listing is not available (status: ${listing.status})`);
-  }
-  if (listing.sellerId === buyerId) {
-    throw new ForbiddenError('Cannot buy your own listing');
-  }
-
-  // Check for expired listing
-  if (listing.expiresAt && listing.expiresAt < new Date()) {
-    await db.update(listings).set({ status: 'expired' }).where(eq(listings.id, listing.id));
-    throw new ConflictError('Listing has expired');
-  }
-
-  const amountPence = input.offerPence ?? listing.pricePence;
-
-  // Dispute deadline: 48 hours after offer
-  const disputeDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000);
-
-  const [tx] = await db
-    .insert(transactions)
-    .values({
-      listingId: input.listingId,
-      buyerId,
-      sellerId: listing.sellerId,
-      amountPence,
-      status: 'pending',
-      disputeDeadline,
-      notes: input.notes ?? null,
-    })
-    .returning();
-
-  if (!tx) throw new Error('Failed to create transaction');
-
-  // Reserve the listing
-  await db.update(listings).set({ status: 'reserved' }).where(eq(listings.id, listing.id));
-
-  // Reserve passport
-  await db
-    .update(materialPassports)
-    .set({ status: 'reserved', updatedAt: new Date() })
-    .where(eq(materialPassports.id, listing.passportId));
-
-  return tx;
 }
-
 // ─── Transaction: Update Status ──────────────────────────────────────────────
 
 export async function updateTransaction(
