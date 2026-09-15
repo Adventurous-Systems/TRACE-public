@@ -9,6 +9,12 @@ EXPECTED_ID="${2:-}"
 OUTPUT_DIR="${3:-}"
 TRIVY_BIN="${TRACE_TRIVY_BIN:-/usr/local/bin/trivy}"
 
+# Trusted release preparation runs as root and can be started by a transient
+# systemd unit, which intentionally has no HOME in its environment. Trivy uses
+# HOME to find its root-owned vulnerability database cache; make that runtime
+# contract explicit rather than silently scanning with an uninitialised cache.
+export HOME="${HOME:-/root}"
+
 fail() { echo "Image scan failed: $*" >&2; exit 1; }
 
 [[ -n "$IMAGE" && "$EXPECTED_ID" =~ ^sha256:[0-9a-f]{64}$ && -n "$OUTPUT_DIR" ]] \
