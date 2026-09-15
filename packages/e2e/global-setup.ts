@@ -136,8 +136,9 @@ function assertSafeTarget(config: FullConfig): void {
 export default async function globalSetup(config: FullConfig): Promise<void> {
   assertSafeTarget(config);
 
-  // The public showcase denies login by design; its suite is fully logged out.
-  if (process.env.E2E_SHOWCASE === '1') return;
+  // Public showcase and read-only smoke suites are fully logged out. Avoid
+  // coupling anonymous production probes to privileged demo-persona secrets.
+  if (process.env.E2E_SHOWCASE === '1' || process.env.E2E_READ_ONLY === '1') return;
 
   const { ACCOUNTS, API_URL, STATE_DIR, statePath } = await import('./fixtures/accounts');
 
