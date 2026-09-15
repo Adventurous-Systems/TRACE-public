@@ -26,10 +26,15 @@ source_dir="$release_dir/source"
 receipt="$release_dir/images.env"
 
 [[ -d "$release_dir" ]] || trace_release_fail "release directory is missing: $release_dir"
+source_mode="$(stat -c '%a' "$source_dir")"
+source_mode="${source_mode: -3}"
+[[ "$source_mode" =~ ^[0-7]{3}$ ]] || trace_release_fail 'release source mode is invalid'
+for digit in "${source_mode:0:1}" "${source_mode:1:1}" "${source_mode:2:1}"; do
+  [[ "$digit" =~ [2367] ]] && trace_release_fail 'release source must be read-only'
+done
 if [[ "${TRACE_RELEASE_TEST_MODE:-0}" != 1 || "$EUID" == 0 ]]; then
   [[ "$(stat -c '%u:%g' "$release_dir")" == 0:0 ]] \
     || trace_release_fail 'release directory must be owned by root'
-  [[ ! -w "$source_dir" ]] || trace_release_fail 'release source must be read-only'
   [[ "$(stat -c '%u:%g:%a' "$receipt")" == 0:0:400 ]] \
     || trace_release_fail 'release receipt must be root-owned with mode 400'
 fi

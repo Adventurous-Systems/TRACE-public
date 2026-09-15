@@ -171,6 +171,9 @@ test "$(stat -c '%a' "$receipt")" = 400
 test "$(paste -sd, "$fake_state/build-order")" = api,web,ops
 grep -q 'env -i PATH=' "$PREPARE"
 env -i "${common_env[@]}" "$VERIFY" "$release_sha"
+chmod u+w "$release_dir/source"
+expect_failure 'writable release source is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
+chmod u-w "$release_dir/source"
 printf 'ok - exact remote SHA creates a clean immutable release\n'
 
 chmod u+w "$release_dir"
