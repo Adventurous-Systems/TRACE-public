@@ -4,6 +4,7 @@
 .github/dependabot.yml
 .github/workflows/ci.yml
 .github/workflows/e2e.yml
+.github/workflows/promotion-source.yml
 .github/workflows/publish-images.yml
 .github/workflows/security.yml
 .github/workflows/smoke.yml
