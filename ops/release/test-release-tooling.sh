@@ -182,7 +182,7 @@ printf '/opt/%s\n' TRACE > "$fixture/private-checkout-path.txt"
 printf 'private-checkout-path.txt\n' >> "$fixture/PUBLIC_MANIFEST.txt"
 git -C "$fixture" add PUBLIC_MANIFEST.txt private-checkout-path.txt
 git -C "$fixture" commit --quiet -m 'Add forbidden private checkout path'
-git -C "$fixture" push --quiet origin staging
+git -C "$fixture" push --quiet origin main
 private_path_sha="$(git -C "$fixture" rev-parse HEAD)"
 expect_failure 'exact private checkout path is rejected' \
   env -i "${common_env[@]}" "$PREPARE" "$private_path_sha"
