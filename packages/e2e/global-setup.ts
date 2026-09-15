@@ -1,6 +1,6 @@
 import { request, type FullConfig } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { ACCOUNTS, API_URL, STATE_DIR, statePath, type Account } from './fixtures/accounts';
+import type { Account } from './fixtures/accounts';
 
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
 
@@ -9,8 +9,8 @@ const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
  * The web app authenticates from `localStorage` (trace_token / trace_user) plus
  * a `trace_auth` cookie used by the Next.js middleware — we set both.
  */
-async function mintState(account: Account): Promise<void> {
-  const ctx = await request.newContext({ baseURL: API_URL });
+async function mintState(account: Account, apiUrl: string, storagePath: string): Promise<void> {
+  const ctx = await request.newContext({ baseURL: apiUrl });
 
   // Retry: the API may be mid-restart right after a deploy (smoke runs eagerly).
   let lastError = '';
@@ -34,7 +34,7 @@ async function mintState(account: Account): Promise<void> {
   if (!res) {
     throw new Error(
       `[e2e global-setup] login failed for persona "${account.role}" (${account.email}) ` +
-        `against ${API_URL} after retries (${lastError}).\n` +
+        `against ${apiUrl} after retries (${lastError}).\n` +
         '  This is usually a missing demo persona rather than a broken platform.\n' +
         '  Fix with:  pnpm --filter @trace/db demo:restore -- --env <env> --yes\n' +
         '  Locally:   pnpm --filter @trace/db seed',
@@ -67,7 +67,7 @@ async function mintState(account: Account): Promise<void> {
     ],
   };
 
-  await writeFile(statePath(account.role), JSON.stringify(state, null, 2));
+  await writeFile(storagePath, JSON.stringify(state, null, 2));
   await ctx.dispose();
 }
 
@@ -136,8 +136,13 @@ function assertSafeTarget(config: FullConfig): void {
 export default async function globalSetup(config: FullConfig): Promise<void> {
   assertSafeTarget(config);
 
+  // The public showcase denies login by design; its suite is fully logged out.
+  if (process.env.E2E_SHOWCASE === '1') return;
+
+  const { ACCOUNTS, API_URL, STATE_DIR, statePath } = await import('./fixtures/accounts');
+
   await mkdir(STATE_DIR, { recursive: true });
   for (const account of Object.values(ACCOUNTS)) {
-    await mintState(account);
+    await mintState(account, API_URL, statePath(account.role));
   }
 }

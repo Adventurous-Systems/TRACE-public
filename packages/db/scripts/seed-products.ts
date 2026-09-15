@@ -22,7 +22,6 @@
  */
 import { config as loadEnv } from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -33,8 +32,7 @@ import { computePassportHash } from '../src/passport-hash.js';
 import { resolveTarget } from './lib/guard.js';
 import { CATALOG, SEED_TAG } from './lib/catalogue.js';
 
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, '..');
+const PACKAGE_ROOT = process.cwd();
 loadEnv({ path: path.resolve(PACKAGE_ROOT, '../../.env') });
 
 const SELLER_EMAIL = (process.env['SEED_SELLER_EMAIL'] ?? 'admin@stirlingreuse.com').toLowerCase();
@@ -87,23 +85,24 @@ function makeMinio() {
  * (unseed + re-seed after a MinIO volume reset) self-sufficient.
  */
 async function ensureBucket(minio: ReturnType<typeof makeMinio>): Promise<void> {
-  if (await minio.client.bucketExists(minio.bucket)) return;
-  await minio.client.makeBucket(minio.bucket);
-  await minio.client.setBucketPolicy(
-    minio.bucket,
-    JSON.stringify({
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Effect: 'Allow',
-          Principal: '*',
-          Action: ['s3:GetObject'],
-          Resource: [`arn:aws:s3:::${minio.bucket}/*`],
-        },
-      ],
-    }),
-  );
-  console.log(`  created MinIO bucket "${minio.bucket}"`);
+  const exists = await minio.client.bucketExists(minio.bucket);
+  if (!exists) await minio.client.makeBucket(minio.bucket);
+  if ((process.env['MINIO_PUBLIC_READ'] ?? 'false') === 'true')
+    await minio.client.setBucketPolicy(
+      minio.bucket,
+      JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: '*',
+            Action: ['s3:GetObject'],
+            Resource: [`arn:aws:s3:::${minio.bucket}/*`],
+          },
+        ],
+      }),
+    );
+  if (!exists) console.log(`  created MinIO bucket "${minio.bucket}"`);
 }
 
 async function uploadImage(

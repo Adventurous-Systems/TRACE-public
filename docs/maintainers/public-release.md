@@ -15,7 +15,7 @@ For each public release:
 1. Start a fresh branch from public `staging`.
 2. Review the private commit with `git show --stat` and `git show` before copying
    anything.
-3. Cherry-pick without committing: `git cherry-pick --no-commit <sha>`.
+3. Generate a reviewed patch without commit metadata and apply only the approved hunks.
 4. Remove private-only files and rewrite contextual documentation, fixtures, and
    commit metadata as needed.
 5. Inspect the complete staged patch and scan the entire resulting public
@@ -39,7 +39,7 @@ as a public remote.
 - No `.env`, `.local`, agent instructions, private runbooks, prompts, audits,
   proposals, contact lists, database dumps, logs, backups, or generated keys.
 - No personal email addresses, attendee data, customer names, private domains,
-  VPS addresses, usernames, filesystem inventory, sales leads, or account data.
+  host addresses, usernames, filesystem inventory, sales leads, or account data.
 - No sensitive information in commit messages, authorship emails, binary assets,
   Git LFS objects, submodules, workflow artifacts, or generated source maps.
 - Development credentials are clearly synthetic and disposable.
@@ -61,7 +61,7 @@ Until repository rules are available, maintainers follow this manual invariant:
 - Force-pushes and branch deletion are never used on the three long-lived
   branches.
 
-Keep the private repository and its VPS checkouts under their existing name. A
+Keep the private repository and its deployment checkouts under their existing name. A
 name exchange can cause stale private clones to target a new public repository;
 without enforced branch protection, avoiding that exchange is the safer model.
 

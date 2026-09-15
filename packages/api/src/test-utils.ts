@@ -1,6 +1,16 @@
 import { buildApp } from './server.js';
+import { DEMO_PERSONAS, type DemoPersonaKey } from '@trace/core/constants/demo-personas';
 
 export type TestApp = Awaited<ReturnType<typeof buildApp>>;
+
+export function getTestPersona(key: DemoPersonaKey): { email: string; password: string } {
+  const persona = DEMO_PERSONAS[key];
+  const password = process.env[persona.passwordEnv];
+  if (!password) {
+    throw new Error(`${persona.passwordEnv} is required for API integration tests`);
+  }
+  return { email: persona.email, password };
+}
 
 /**
  * Creates a fully initialised Fastify app for integration tests.

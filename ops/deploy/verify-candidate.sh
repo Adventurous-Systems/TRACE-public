@@ -2,8 +2,8 @@
 set -euo pipefail
 
 DEPLOY_ENV="${1:-}"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/deploy/compose.app.yml"
+CONFIG_DIR="${TRACE_DEPLOY_CONFIG_DIR:-/var/lib/trace-demo/config}"
+COMPOSE_FILE="${TRACE_DEPLOY_COMPOSE_FILE:-$CONFIG_DIR/compose.app.yml}"
 
 if [[ -z "$DEPLOY_ENV" || ! -f "$DEPLOY_ENV" ]]; then
   echo "Usage: $0 <candidate-deploy.env>" >&2
@@ -27,9 +27,9 @@ auth_status="$(curl --silent --output "$auth_body" --write-out '%{http_code}' \
   --request POST "$api/api/v1/auth/login" \
   --header 'content-type: application/json' \
   --data '{"email":"invalid@example.com","password":"invalid-password"}')"
-[[ "$auth_status" == "400" || "$auth_status" == "401" ]] || {
-  echo "Unexpected invalid-login response: HTTP $auth_status" >&2
+[[ "$auth_status" == "401" ]] || {
+  echo "Buyer-demo authentication boundary failed; login response: HTTP $auth_status" >&2
   exit 1
 }
 
-echo "Candidate read-only verification passed at API port $api_port and web port $web_port."
+echo "Candidate buyer-demo verification passed at API port $api_port and web port $web_port."

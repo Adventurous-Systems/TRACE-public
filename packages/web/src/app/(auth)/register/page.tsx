@@ -63,12 +63,26 @@ export default function RegisterPage() {
         <div className="text-center mb-8">
           <img src="/trace-logo.png" alt="TRACE" className="mx-auto h-24 w-24" />
         </div>
-        <Card>
+        <div className="trace-showcase-only rounded-lg border border-amber-200 bg-white p-6 text-center">
+          <h1 className="text-xl font-semibold">Read-only research showcase</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Account creation is disabled here. A separately isolated workspace demo is planned for
+            hands-on testing.
+          </p>
+          <Link href="/marketplace" className="mt-4 inline-block text-brand-600 underline">
+            Browse marketplace
+          </Link>
+        </div>
+        <Card className="trace-self-hosted-only">
           <CardHeader>
             <CardTitle>Create account</CardTitle>
             <CardDescription>
               Get started with a buyer account for TRACE marketplace access
             </CardDescription>
+            <p className="trace-public-buyer-demo-only rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+              This retained public demo does not send verification or password-recovery email. Use a
+              fictitious email address and a password that you do not use elsewhere.
+            </p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

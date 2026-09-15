@@ -16,6 +16,7 @@ import { feedbackRoutes } from './modules/feedback/feedback.routes.js';
 import { auditRoutes } from './modules/audit/audit.routes.js';
 import { blockchainRoutes } from './modules/blockchain/blockchain.routes.js';
 import { registerAuditFailureHooks } from './lib/audit.js';
+import { enforceDeploymentProfile } from './middleware/deployment-profile.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -40,10 +41,13 @@ export async function buildApp() {
   // Rate limit is not applied in test environment to keep tests fast
   if (env.NODE_ENV !== 'test') {
     await app.register(rateLimit, {
-      max: 100,
+      max: env.RATE_LIMIT_MAX,
       timeWindow: '1 minute',
     });
   }
+
+  // Public exposure profiles fail closed before body parsing or route handlers.
+  app.addHook('onRequest', enforceDeploymentProfile);
 
   await app.register(multipart, {
     limits: {
@@ -55,7 +59,7 @@ export async function buildApp() {
   // ── Storage ────────────────────────────────────────────────────────────────
   // Pre-create buckets at startup to avoid lazy-init race conditions
   if (env.NODE_ENV !== 'test') {
-    await ensureBucket(env.MINIO_BUCKET_PASSPORTS);
+    await ensureBucket(env.MINIO_BUCKET_PASSPORTS, { publicRead: env.MINIO_PUBLIC_READ });
     await ensureBucket(env.MINIO_BUCKET_REPORTS);
   }
 

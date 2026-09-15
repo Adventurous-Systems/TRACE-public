@@ -2,9 +2,8 @@ services:
   api:
     image: ${TRACE_API_IMAGE:?Set TRACE_API_IMAGE to an immutable image reference}
     env_file:
-      - ${TRACE_ENV_FILE:?Set TRACE_ENV_FILE to the root-owned runtime environment file}
+      - ${TRACE_API_ENV_FILE:?Set TRACE_API_ENV_FILE to the mode-600 API environment file}
     environment:
-      # A candidate must not consume shared jobs before traffic cutover.
       ANCHOR_WORKER_ENABLED: 'false'
     ports:
       - '127.0.0.1:${TRACE_API_HOST_PORT:?Set TRACE_API_HOST_PORT}:3001'
@@ -13,23 +12,33 @@ services:
       - trace-runtime
     healthcheck:
       test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
     init: true
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1.0
 
   web:
     image: ${TRACE_WEB_IMAGE:?Set TRACE_WEB_IMAGE to an immutable image reference}
     env_file:
-      - ${TRACE_ENV_FILE:?Set TRACE_ENV_FILE to the root-owned runtime environment file}
+      - ${TRACE_WEB_ENV_FILE:?Set TRACE_WEB_ENV_FILE to the minimal mode-600 web environment file}
+    environment:
+      API_URL: http://api:3001
     ports:
       - '127.0.0.1:${TRACE_WEB_HOST_PORT:?Set TRACE_WEB_HOST_PORT}:3000'
       - '[::1]:${TRACE_WEB_HOST_PORT:?Set TRACE_WEB_HOST_PORT}:3000'
@@ -40,35 +49,48 @@ services:
         condition: service_healthy
     healthcheck:
       test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
     init: true
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/packages/web/.next/cache:size=64m,mode=0755,uid=1001,gid=1001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
 
   worker:
     image: ${TRACE_API_IMAGE:?Set TRACE_API_IMAGE to an immutable image reference}
     command: ['node', 'dist/worker.js']
-    working_dir: /app/packages/api
     env_file:
-      - ${TRACE_ENV_FILE:?Set TRACE_ENV_FILE to the root-owned runtime environment file}
+      - ${TRACE_API_ENV_FILE:?Set TRACE_API_ENV_FILE to the mode-600 API environment file}
     networks:
       - trace-runtime
-    profiles:
-      - worker
+    profiles: [worker]
     init: true
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 0.5
 
 networks:
   trace-runtime:
     external: true
-    name: ${TRACE_RUNTIME_NETWORK:?Set TRACE_RUNTIME_NETWORK to the existing environment network}
+    name: ${TRACE_RUNTIME_NETWORK:?Set TRACE_RUNTIME_NETWORK to the isolated runtime network}

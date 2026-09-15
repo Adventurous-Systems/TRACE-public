@@ -7,9 +7,11 @@ import { defineConfig, devices } from '@playwright/test';
  *     For the deployed domain both are the same origin (nginx proxies /api/).
  */
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
+const showcaseOnly = process.env.E2E_SHOWCASE === '1';
 
 export default defineConfig({
   testDir: './tests',
+  testMatch: showcaseOnly ? ['**/public-showcase.spec.ts'] : undefined,
   globalSetup: './global-setup.ts',
   snapshotDir: './__screenshots__',
   outputDir: './test-results',
@@ -39,7 +41,9 @@ export default defineConfig({
     {
       // 375px mobile: hamburger/overflow checks + visual snapshots.
       name: 'mobile-375',
-      testMatch: ['**/mobile/**/*.spec.ts', '**/visual/**/*.spec.ts'],
+      testMatch: showcaseOnly
+        ? ['**/public-showcase.spec.ts']
+        : ['**/mobile/**/*.spec.ts', '**/visual/**/*.spec.ts'],
       use: {
         browserName: 'chromium',
         viewport: { width: 375, height: 812 },

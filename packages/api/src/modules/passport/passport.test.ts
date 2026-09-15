@@ -1,13 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { auditEvents, blockchainTransactions, db, materialPassports } from '@trace/db';
-import { createTestApp, getAuthHeader, type TestApp } from '../../test-utils.js';
+import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
 // Uses credentials created by: pnpm db:seed
-const SEEDED_ADMIN = {
-  email: 'admin@stirlingreuse.com',
-  password: 'UnitTestAdminOnly!',
-};
+const SEEDED_ADMIN = getTestPersona('hubAdmin');
 
 const VALID_PASSPORT_PAYLOAD = {
   productName: 'Reclaimed Steel I-Beam',

@@ -4,8 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./schema": "./src/schema.ts"
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./schema": {
+      "types": "./dist/drizzle/schema.d.ts",
+      "import": "./dist/drizzle/schema.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -18,6 +24,7 @@
     "rehash:passports": "tsx scripts/rehash-passports.ts",
     "demo:restore": "tsx scripts/demo-restore.ts",
     "demo:verify": "tsx scripts/demo-restore.ts --verify",
+    "demo:replenish": "tsx scripts/demo-replenish.ts",
     "rotate:credentials": "tsx scripts/rotate-published-credentials.ts",
     "studio": "drizzle-kit studio"
   },
@@ -36,5 +43,10 @@
     "drizzle-kit": "^0.28.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
-  }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "data"
+  ]
 }

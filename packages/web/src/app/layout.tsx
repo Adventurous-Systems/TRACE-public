@@ -24,6 +24,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // client component instead.
   const umamiWebsiteId = process.env.UMAMI_WEBSITE_ID;
   const umamiEnabled = process.env.UMAMI_ENABLED !== 'false';
+  const configuredProfile = process.env.TRACE_DEPLOYMENT_PROFILE;
+  const deploymentProfile =
+    configuredProfile === 'public_showcase' ||
+    configuredProfile === 'public_buyer_demo' ||
+    configuredProfile === 'public_sandbox'
+      ? configuredProfile
+      : 'self_hosted';
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -35,7 +42,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="font-sans antialiased overflow-x-clip">
+      <body
+        className="font-sans antialiased overflow-x-clip"
+        data-deployment-profile={deploymentProfile}
+      >
+        <div className="trace-showcase-only border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900">
+          Public research showcase — synthetic data and read-only interactions.
+        </div>
+        <div className="trace-public-buyer-demo-only border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-sm text-sky-950">
+          Public buyer demo — marketplace data is synthetic; use a fictitious email and a password
+          you do not use elsewhere.
+        </div>
         {children}
         <Toaster />
         {umamiEnabled && umamiWebsiteId ? <Analytics websiteId={umamiWebsiteId} /> : null}

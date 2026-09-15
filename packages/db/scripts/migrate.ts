@@ -3,13 +3,12 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = process.cwd();
 
 // Load the repo-root .env for local dev. In containers the env is injected by
 // docker compose and no .env file is present, so dotenv silently no-ops there.
-loadEnv({ path: path.resolve(__dirname, '../../../.env') });
+loadEnv({ path: path.resolve(PACKAGE_ROOT, '../../.env') });
 
 async function main() {
   const url = process.env['DATABASE_URL'];
@@ -23,7 +22,7 @@ async function main() {
   const db = drizzle(client);
 
   await migrate(db, {
-    migrationsFolder: path.join(__dirname, '../migrations'),
+    migrationsFolder: path.resolve(PACKAGE_ROOT, 'migrations'),
   });
 
   await client.end();

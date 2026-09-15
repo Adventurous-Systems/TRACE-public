@@ -1,0 +1,21 @@
+name: Promotion source
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  staging-only:
+    name: Promotion source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require staging as the PR head
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          test "$HEAD_REF" = staging

@@ -33,6 +33,32 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
   }
+}
+
+/* Runtime deployment profile controls presentation only. The API independently
+   enforces the public read-only boundary. */
+.trace-showcase-only {
+  display: none;
+}
+
+body[data-deployment-profile='public_showcase'] .trace-showcase-only,
+body[data-deployment-profile='public_sandbox'] .trace-showcase-only {
+  display: block;
+}
+
+body[data-deployment-profile='public_showcase'] .trace-self-hosted-only,
+body[data-deployment-profile='public_sandbox'] .trace-self-hosted-only {
+  display: none;
+}
+
+.trace-public-buyer-demo-only {
+  display: none;
+}
+
+body[data-deployment-profile='public_buyer_demo'] .trace-public-buyer-demo-only {
+  display: block;
 }

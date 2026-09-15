@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly TRACE public-demo catalogue replenishment
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 Africa/Johannesburg
+RandomizedDelaySec=10m
+Persistent=true
+Unit=trace-demo-replenish.service
+
+[Install]
+WantedBy=timers.target

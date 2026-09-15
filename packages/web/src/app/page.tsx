@@ -16,12 +16,12 @@ export default function HomePage() {
               Marketplace
             </Button>
           </Link>
-          <Link href="/login">
+          <Link href="/login" className="trace-self-hosted-only">
             <Button variant="ghost" size="sm">
               Sign in
             </Button>
           </Link>
-          <Link href="/register">
+          <Link href="/register" className="trace-self-hosted-only">
             <Button size="sm">Get started</Button>
           </Link>
         </div>
@@ -41,7 +41,7 @@ export default function HomePage() {
           enabling circular economy hubs to buy and sell with trust and compliance.
         </p>
         <div className="flex items-center justify-center gap-4 flex-wrap">
-          <Link href="/register">
+          <Link href="/register" className="trace-self-hosted-only">
             <Button size="lg" className="bg-brand-600 hover:bg-brand-700">
               Create account
             </Button>

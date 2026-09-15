@@ -1,41 +1,20 @@
 /**
  * Target guard for destructive database scripts.
  *
- * WHY THIS EXISTS
- * `reset:marketplace --yes` truncates material_passports, listings,
- * transactions, quality_reports, passport_events and sensor_readings. It had no
- * environment check of any kind: a stale DATABASE_URL in a shell, or a copied
- * command run from the wrong directory, truncates production in one keystroke.
+ * `reset:marketplace --yes` removes marketplace data. The guard makes the
+ * target explicit and fails closed:
  *
- * The guard makes the target explicit and fails closed:
- *   - the operator must pass `--env <name>`;
- *   - the deployment must declare `TRACE_ENV` (in its .env);
- *   - the two must match, or nothing runs.
+ * - the operator must pass `--env <name>`;
+ * - the deployment must declare the same `TRACE_ENV`;
+ * - a missing or mismatched value exits before any write.
  *
- * Saying the environment out loud is the point. It cannot be inferred from
- * DATABASE_URL, because every deployment on the VPS uses the same database
- * name (`trace`) on the same host — only the port differs.
+ * The connection string is printed only with credentials masked. Environment
+ * identity is never inferred from a hostname, port, checkout path, or database
+ * name because those details are not reliable safety boundaries.
  *
- * Add to .env:
- *   TRACE_ENV=local            # a developer machine
- *   TRACE_ENV=staging          # shared test environment
- *   TRACE_ENV=demo-production  # public demonstration environment
- *   TRACE_ENV=demo             # the standalone showcase on its own subdomain
- *
- * NAMING — `demo-production` and `demo` are two different deployments, and the
- * names are unfortunately close. `demo-production` is the long-standing name
- * for an environment containing non-fixture data, so destructive demo tools
- * require an explicit matching environment name.
- * from the `demo` branch. It is kept rather than renamed because renaming it
- * means editing production's .env and deploy workflow — a riskier change than
- * the confusion warrants (D-05).
- *
- * The guard is what makes the similarity safe: it requires --env and TRACE_ENV
- * to AGREE, so typing `--env demo` at the client-facing box does not run
- * against it — it exits 1 with WRONG TARGET. Being a valid name is never on
- * its own permission to write anywhere.
+ * Supported names retain compatibility with existing self-hosted installations:
+ * `local`, `staging`, `demo-production`, and `demo`.
  */
-
 export type TraceEnv = 'local' | 'staging' | 'demo-production' | 'demo';
 
 const VALID: readonly TraceEnv[] = ['local', 'staging', 'demo-production', 'demo'];
