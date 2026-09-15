@@ -127,8 +127,14 @@ modifications. The receipt is root-owned, mode 400, and records the exact local 
    uses 5103/5104.
 7. Run preflight, start the candidate, and verify its loopback endpoints.
    Prove invalid login returns 401, buyer registration works, and buyer role guards hold.
-8. Install the nginx rate-limit zones and demo server template, provision the
-   demo hostname certificate, run `nginx -t`, and reload gracefully.
+8. Install the HTTP-only `deploy/nginx/demo-acme.conf.example` through
+   `etcedit`, validate and reload nginx, and issue the separate demo hostname
+   certificate with Certbot webroot mode using
+   `/var/lib/trace-demo/config/nginx/acme-webroot`. Replace the temporary vhost
+   with `demo.conf.example` through `etcedit`, validate and reload again. The
+   permanent HTTP vhost preserves the ACME challenge path so renewal continues
+   to work. Install `maintenance.html` under
+   `/var/lib/trace-demo/config/nginx` before enabling the HTTPS vhost.
 9. Point the active upstream symlink at the candidate and re-run public health,
    marketplace, passport, QR, image, and responsive-browser checks.
 10. Observe for at least 24 hours. Preserve the prior application slot and its
@@ -193,4 +199,7 @@ restore drills and record recovery point and recovery time results.
 Alert on uptime, API 5xx rate, container health/restarts, certificate expiry,
 disk and volume usage, backup age, catalogue counts/hashes, broken image or QR
 links, and deployed image-digest drift. The emergency maintenance switch in the
-nginx template can return 503 without touching containers.
+nginx template can return 503 without touching containers. For an initial launch,
+retain the dedicated demo vhost and certificate and use this maintenance switch
+rather than removing the vhost; this prevents the hostname falling through to an
+unrelated AS site.
