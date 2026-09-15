@@ -28,9 +28,11 @@ deploy/candidate.env.example
 deploy/compose.app.yml
 deploy/compose.demo-data.yml
 deploy/demo-data.env.example
+deploy/nginx/demo-acme.conf.example
 deploy/nginx/demo.conf.example
 deploy/nginx/local-gateway.conf
 deploy/nginx/upstream-slot.conf.example
+deploy/nginx/maintenance.html
 deploy/systemd/trace-demo-replenish.service
 deploy/systemd/trace-demo-replenish.timer
 docker-compose.yml
