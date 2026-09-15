@@ -1,5 +1,5 @@
 # Install this file in nginx's `http` context after reviewing certificate paths.
-# The active upstream include is a symlink switched by ops/deploy/switch-nginx.sh.
+# The active upstream include is mutable deployment state outside /etc.
 limit_req_zone $binary_remote_addr zone=trace_demo_read:10m rate=20r/s;
 limit_conn_zone $binary_remote_addr zone=trace_demo_conn:10m;
 
@@ -11,7 +11,7 @@ server {
     ssl_certificate /etc/letsencrypt/live/demo.trace.adventurous.systems/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/demo.trace.adventurous.systems/privkey.pem;
 
-    include /etc/trace-demo/nginx/active.conf;
+    include /var/lib/trace-demo/config/nginx/active.conf;
 
     client_max_body_size 20m;
     client_body_timeout 10s;
@@ -29,7 +29,7 @@ server {
     add_header X-Frame-Options SAMEORIGIN always;
     add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
 
-    if (-f /etc/trace-demo/maintenance.enabled) {
+    if (-f /var/lib/trace-demo/state/maintenance.enabled) {
         return 503;
     }
 
