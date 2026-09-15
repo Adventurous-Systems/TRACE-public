@@ -6,23 +6,23 @@ import { statePath } from '../fixtures/accounts';
  * They create NO data; they only confirm the deploy is healthy end-to-end
  * (web render + nginx `/api` routing + auth round-trip).
  */
-test.describe('@smoke deploy health', () => {
-  test('home renders', async ({ page }) => {
+test.describe('deploy health', () => {
+  test('@smoke home renders', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByText('Get started').first()).toBeVisible();
   });
 
-  test('marketplace renders', async ({ page }) => {
+  test('@smoke marketplace renders', async ({ page }) => {
     await page.goto('/marketplace');
     await expect(page.getByPlaceholder(/search materials/i)).toBeVisible();
   });
 
-  test('login renders', async ({ page }) => {
+  test('@smoke login renders', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible();
   });
 
-  test('register renders', async ({ page }) => {
+  test('@smoke register renders', async ({ page }) => {
     await page.goto('/register');
     await expect(page.getByRole('button', { name: /create account/i })).toBeVisible();
   });
