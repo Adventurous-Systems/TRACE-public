@@ -175,6 +175,9 @@ chmod u+w "$release_dir/source"
 expect_failure 'writable release source is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
 chmod u-w "$release_dir/source"
 printf 'ok - exact remote SHA creates a clean immutable release\n'
+chmod u+w "$release_dir/scans/api/scan.json"
+expect_failure 'writable scan artifact is rejected' env -i "${common_env[@]}" "$VERIFY" "$release_sha"
+chmod u-w "$release_dir/scans/api/scan.json"
 
 chmod u+w "$release_dir"
 chmod u+w "$receipt"
