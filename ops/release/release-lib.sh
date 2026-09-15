@@ -110,8 +110,9 @@ trace_verify_public_source() {
 
   historical_name='re''loop'
   private_checkout='/opt/'"TRACE"
-  if git -C "$source_dir" grep -I -i -q -e "$historical_name" -e "$private_checkout" \
-    -e 'BEGIN [A-Z ]*PRIVATE KEY' -- .; then
+  if git -C "$source_dir" grep -I -i -q -e "$historical_name" -- . \
+    || git -C "$source_dir" grep -I -q -e "$private_checkout" \
+      -e 'BEGIN [A-Z ]*PRIVATE KEY' -- .; then
     trace_release_fail 'release source contains a forbidden confidential pattern'
     return 1
   fi
