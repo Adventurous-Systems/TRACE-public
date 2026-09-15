@@ -14,6 +14,13 @@ secure_file() {
   [[ "$(stat -c '%u' "$path")" == "0" ]] || fail "$label must be owned by root"
 }
 
+immutable_receipt() {
+  local path="$1"
+  [[ -f "$path" ]] || fail "release receipt file is missing: $path"
+  [[ "$(stat -c '%a' "$path")" == "400" ]] || fail 'release receipt must have mode 400'
+  [[ "$(stat -c '%u' "$path")" == "0" ]] || fail 'release receipt must be owned by root'
+}
+
 [[ -n "$DEPLOY_ENV" && -f "$DEPLOY_ENV" ]] || { echo "Usage: $0 <candidate-deploy.env>" >&2; exit 2; }
 [[ -f "$COMPOSE_FILE" ]] || fail "trusted Compose file is missing: $COMPOSE_FILE"
 for command in awk curl df docker grep ss stat; do
@@ -32,7 +39,7 @@ secure_file "$web_env" 'web environment'
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail 'TRACE_RELEASE_SHA must be a full lowercase commit SHA'
 [[ "$release_receipt" == "/opt/trace-public-demo/releases/$release_sha/images.env" ]] \
   || fail 'TRACE_RELEASE_RECEIPT must use the exact immutable release receipt path'
-secure_file "$release_receipt" 'release receipt'
+immutable_receipt "$release_receipt"
 release_verifier='/usr/local/libexec/trace-demo/verify-release.sh'
 [[ -x "$release_verifier" ]] || fail "trusted release verifier is missing: $release_verifier"
 "$release_verifier" "$release_sha"
