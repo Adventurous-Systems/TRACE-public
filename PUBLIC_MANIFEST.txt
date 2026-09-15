@@ -51,11 +51,14 @@ ops/backup_db.sh
 ops/deploy/preflight.sh
 ops/deploy/rollback-nginx.sh
 ops/deploy/run-ops.sh
+ops/deploy/run-replenish.sh
 ops/deploy/start-candidate.sh
 ops/deploy/switch-nginx.sh
+ops/deploy/test-deployment-state.sh
 ops/deploy/verify-candidate.sh
 ops/release/prepare-release.sh
 ops/release/release-lib.sh
+ops/release/scan-image.sh
 ops/release/test-release-tooling.sh
 ops/release/verify-release.sh
 ops/restore_db.sh

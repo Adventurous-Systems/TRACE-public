@@ -29,6 +29,7 @@ jobs:
         run: |
           bash -n ops/release/*.sh
           bash ops/release/test-release-tooling.sh
+          bash ops/deploy/test-deployment-state.sh
 
   build-and-test:
     name: Build and test
@@ -153,7 +154,7 @@ jobs:
       - name: Build operations image
         run: docker build --file Dockerfile.ops --tag trace-ops:ci .
 
-      - name: Scan release images for fixable high and critical vulnerabilities
+      - name: Scan release images for all high and critical vulnerabilities
         shell: bash
         run: |
           set -euo pipefail
@@ -174,13 +175,15 @@ jobs:
           for service in api web; do
             image="trace-ci-$service:latest"
             docker image inspect "$image" >/dev/null
-            /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL \
               --exit-code 1 --no-progress --format json \
               --output "/tmp/trivy-$service.json" "$image" || status=1
+            /tmp/trivy image --format cyclonedx --output "/tmp/trivy-$service.cdx.json" "$image"
           done
-          /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+          /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL \
             --exit-code 1 --no-progress --format json \
             --output /tmp/trivy-ops.json trace-ops:ci || status=1
+          /tmp/trivy image --format cyclonedx --output /tmp/trivy-ops.cdx.json trace-ops:ci
           exit "$status"
 
       - name: Upload image vulnerability reports
@@ -188,7 +191,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image-vulnerability-reports
-          path: /tmp/trivy-*.json
+          path: |
+            /tmp/trivy-*.json
+            /tmp/trivy-*.cdx.json
           retention-days: 30
 
       - name: Start isolated data services and migrate

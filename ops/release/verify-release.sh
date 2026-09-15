@@ -35,6 +35,7 @@ if [[ "${TRACE_RELEASE_TEST_MODE:-0}" != 1 || "$EUID" == 0 ]]; then
 fi
 
 trace_verify_public_source "$source_dir" "$release_sha"
+command -v sha256sum >/dev/null || trace_release_fail 'missing sha256sum'
 trace_validate_receipt "$receipt" "$release_sha" "$PUBLIC_SOURCE_LABEL"
 
 for component in api web ops; do
@@ -51,6 +52,16 @@ for component in api web ops; do
   [[ "$revision" == "$release_sha" ]] || trace_release_fail "revision label mismatch for $image"
   [[ "$source_label" == "$PUBLIC_SOURCE_LABEL" ]] || trace_release_fail "source label mismatch for $image"
   [[ "$configured_user" == "$expected_user" ]] || trace_release_fail "configured user mismatch for $image"
+  scan_dir="$release_dir/scans/$component"
+  sbom="$scan_dir/sbom.cdx.json"
+  report="$scan_dir/scan.json"
+  metadata="$scan_dir/metadata.env"
+  [[ -f "$sbom" && -f "$report" && -f "$metadata" ]] \
+    || trace_release_fail "scan artifacts are missing for $component"
+  [[ ! -w "$sbom" && ! -w "$report" && ! -w "$metadata" ]] \
+    || trace_release_fail "scan artifacts must be read-only for $component"
+  [[ "$(sha256sum "$sbom" | awk '{print $1}')" == "$(trace_receipt_value "$receipt" "TRACE_${upper}_SBOM_SHA256")" ]] \
+    || trace_release_fail "SBOM hash mismatch for $component"
 done
 
 echo "Source release verification passed: $release_sha"

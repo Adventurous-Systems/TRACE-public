@@ -148,9 +148,11 @@ jobs:
           status=0
           while IFS='=' read -r key image; do
             component="$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]' | sed 's/_image$//')"
-            /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            /tmp/trivy image --scanners vuln --severity HIGH,CRITICAL \
               --exit-code 1 --no-progress --format json \
               --output "/tmp/trivy-release-$component.json" "$image" || status=1
+            /tmp/trivy image --scanners vuln --format cyclonedx \
+              --output "/tmp/trivy-release-$component.cdx.json" "$image"
           done < /tmp/trace-release-images.txt
           exit "$status"
 
@@ -243,6 +245,7 @@ jobs:
             /tmp/trace-release-images.txt
             /tmp/trace-release-verification.txt
             /tmp/trivy-release-*.json
+            /tmp/trivy-release-*.cdx.json
           if-no-files-found: warn
           retention-days: 30
 

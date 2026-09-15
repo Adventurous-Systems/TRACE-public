@@ -20,9 +20,13 @@ trace_validate_receipt() {
   local key value count
   local -a keys=(
     TRACE_RELEASE_SHA TRACE_SOURCE_REPOSITORY
+    TRACE_SCANNER TRACE_SCANNER_VERSION TRACE_SCANNER_DB_UPDATED_AT
     TRACE_API_IMAGE TRACE_API_IMAGE_ID
+    TRACE_API_SBOM_SHA256 TRACE_API_SCAN_SHA256
     TRACE_WEB_IMAGE TRACE_WEB_IMAGE_ID
+    TRACE_WEB_SBOM_SHA256 TRACE_WEB_SCAN_SHA256
     TRACE_OPS_IMAGE TRACE_OPS_IMAGE_ID
+    TRACE_OPS_SBOM_SHA256 TRACE_OPS_SCAN_SHA256
   )
 
   trace_require_sha "$release_sha" || return 1
@@ -32,7 +36,10 @@ trace_validate_receipt() {
     [[ -n "$key" && "$key" =~ ^[A-Z0-9_]+$ && -n "$value" ]] \
       || trace_release_fail 'release receipt contains a malformed line' || return 1
     case "$key" in
-      TRACE_RELEASE_SHA|TRACE_SOURCE_REPOSITORY|TRACE_API_IMAGE|TRACE_API_IMAGE_ID|TRACE_WEB_IMAGE|TRACE_WEB_IMAGE_ID|TRACE_OPS_IMAGE|TRACE_OPS_IMAGE_ID) ;;
+      TRACE_RELEASE_SHA|TRACE_SOURCE_REPOSITORY|TRACE_SCANNER|TRACE_SCANNER_VERSION|TRACE_SCANNER_DB_UPDATED_AT|\
+      TRACE_API_IMAGE|TRACE_API_IMAGE_ID|TRACE_API_SBOM_SHA256|TRACE_API_SCAN_SHA256|\
+      TRACE_WEB_IMAGE|TRACE_WEB_IMAGE_ID|TRACE_WEB_SBOM_SHA256|TRACE_WEB_SCAN_SHA256|\
+      TRACE_OPS_IMAGE|TRACE_OPS_IMAGE_ID|TRACE_OPS_SBOM_SHA256|TRACE_OPS_SCAN_SHA256) ;;
       *) trace_release_fail "release receipt contains an unexpected key: $key" || return 1 ;;
     esac
   done < "$receipt"
@@ -46,6 +53,12 @@ trace_validate_receipt() {
     || trace_release_fail 'release receipt SHA does not match the requested release' || return 1
   [[ "$(trace_receipt_value "$receipt" TRACE_SOURCE_REPOSITORY)" == "$source_repository" ]] \
     || trace_release_fail 'release receipt source repository is unexpected' || return 1
+  [[ "$(trace_receipt_value "$receipt" TRACE_SCANNER)" == trivy ]] \
+    || trace_release_fail 'release receipt scanner is unexpected' || return 1
+  [[ "$(trace_receipt_value "$receipt" TRACE_SCANNER_VERSION)" == 0.74.0 ]] \
+    || trace_release_fail 'release receipt scanner version is unexpected' || return 1
+  [[ "$(trace_receipt_value "$receipt" TRACE_SCANNER_DB_UPDATED_AT)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] \
+    || trace_release_fail 'release receipt scanner database timestamp is invalid' || return 1
 
   for component in API WEB OPS; do
     value="$(trace_receipt_value "$receipt" "TRACE_${component}_IMAGE")"
@@ -54,6 +67,11 @@ trace_validate_receipt() {
     value="$(trace_receipt_value "$receipt" "TRACE_${component}_IMAGE_ID")"
     [[ "$value" =~ ^sha256:[0-9a-f]{64}$ ]] \
       || trace_release_fail "release receipt has an invalid ${component} image ID" || return 1
+    for suffix in SBOM_SHA256 SCAN_SHA256; do
+      value="$(trace_receipt_value "$receipt" "TRACE_${component}_${suffix}")"
+      [[ "$value" =~ ^[0-9a-f]{64}$ ]] \
+        || trace_release_fail "release receipt has an invalid ${component} ${suffix}" || return 1
+    done
   done
 }
 

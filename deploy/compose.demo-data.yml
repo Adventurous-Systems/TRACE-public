@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ${TRACE_POSTGRES_USER:?Set TRACE_POSTGRES_USER}
       POSTGRES_PASSWORD: ${TRACE_POSTGRES_PASSWORD:?Set TRACE_POSTGRES_PASSWORD}
     volumes:
-      - pg-data:/var/lib/postgresql/data
+      - ${TRACE_DATA_ROOT:?Set TRACE_DATA_ROOT}/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 10s
@@ -23,7 +23,7 @@ services:
     image: redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1']
     volumes:
-      - redis-data:/data
+      - ${TRACE_DATA_ROOT:?Set TRACE_DATA_ROOT}/redis:/data
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
@@ -45,7 +45,7 @@ services:
       - '127.0.0.1:${TRACE_MINIO_HOST_PORT:-59000}:9000'
       - '[::1]:${TRACE_MINIO_HOST_PORT:-59000}:9000'
     volumes:
-      - minio-data:/data
+      - ${TRACE_DATA_ROOT:?Set TRACE_DATA_ROOT}/minio:/data
     healthcheck:
       test: ['CMD-SHELL', 'curl -f http://127.0.0.1:9000/minio/health/live || exit 1']
       interval: 15s
@@ -62,7 +62,7 @@ services:
     image: vechain/thor:v2.4.3@sha256:b5fd684366a1c08b64699bd60648a3e7fa69b07b81390d6212c4760c2eb55a8d
     command: solo --genesis /genesis.json --on-demand --persist --api-cors 'https://demo.trace.adventurous.systems' --api-addr 0.0.0.0:8669
     volumes:
-      - thor-data:/home/thor
+      - ${TRACE_DATA_ROOT:?Set TRACE_DATA_ROOT}/thor:/home/thor
       - ${TRACE_GENESIS_FILE:?Set TRACE_GENESIS_FILE}:/genesis.json:ro
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8669/blocks/best || exit 1']
@@ -75,9 +75,3 @@ services:
     pids_limit: 256
     mem_limit: 1g
     cpus: 1.0
-
-volumes:
-  pg-data:
-  redis-data:
-  minio-data:
-  thor-data:

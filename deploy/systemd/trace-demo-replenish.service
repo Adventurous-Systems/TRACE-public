@@ -10,4 +10,4 @@ User=root
 Group=root
 UMask=0077
 Environment=TRACE_DEPLOY_CONFIG_DIR=/var/lib/trace-demo/config
-ExecStart=/usr/local/libexec/trace-demo/run-ops.sh /var/lib/trace-demo/config/active.env demo-replenish --env demo --target-active 3 --yes
+ExecStart=/usr/local/libexec/trace-demo/run-replenish.sh /var/lib/trace-demo/config/active.env
