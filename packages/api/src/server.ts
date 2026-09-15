@@ -23,6 +23,8 @@ export async function buildApp() {
     logger: {
       level: env.LOG_LEVEL,
     },
+    // nginx overwrites X-Forwarded-For with its immediate client address before
+    // proxying, so Fastify never receives a caller-supplied address chain.
     trustProxy: true,
   });
 
