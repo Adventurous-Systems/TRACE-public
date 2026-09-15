@@ -16,9 +16,16 @@ Run replenishment through the trusted wrapper. It holds the deployment lock and 
 
 The timer template runs this at 02:15 Africa/Johannesburg with a randomized
 delay. The command holds a PostgreSQL advisory lock, counts active lots only,
-and tops up each of the seven catalogue products to three active listings.
+and tops up each of the seven catalogue products to one active listing.
 New lots are independently numbered, serialized, photographed, and tagged with
 catalogueKey, catalogueName, demoLotNumber, demoBatch, and the curated
 seed-source marker. It never deletes or changes visitor data.
+
+To converge an older multi-lot deployment, first preview and then run the guarded trim command through the exact operations image:
+
+    demo-trim-active --env demo --target-active 1 --dry-run
+    demo-trim-active --env demo --target-active 1 --yes
+
+It cancels only surplus active listings whose passports carry the curated seed marker, a known catalogue key, and a valid demo lot number. The lowest-numbered lot remains active. Transaction-linked, reserved, sold, unmarked, and visitor data remain untouched. The trim and replenishment commands share one PostgreSQL advisory lock.
 
 Keep secrets in /var/lib/trace-demo/secrets, mutable non-secret configuration in /var/lib/trace-demo/config, mutable deployment state in /var/lib/trace-demo/state, bind-mounted data in /var/lib/trace-demo/data, immutable releases in /opt/trace-public-demo/releases, and only static nginx/systemd material in /etc.

@@ -13,4 +13,4 @@ ENV_FILE="$(readlink -f -- "$ENV_LINK")"
 [[ -f "$ENV_FILE" ]] || { echo "Active deployment environment is not a regular file: $ENV_LINK" >&2; exit 1; }
 [[ "$(stat -c '%u:%a' "$ENV_FILE")" == 0:600 ]] || { echo 'Active deployment environment must be root-owned mode 600' >&2; exit 1; }
 
-exec "$SCRIPT_DIR/run-ops.sh" "$ENV_FILE" demo-replenish --env demo --target-active 3 --yes
+exec "$SCRIPT_DIR/run-ops.sh" "$ENV_FILE" demo-replenish --env demo --target-active 1 --yes

@@ -13,6 +13,7 @@
 import type { NewMaterialPassport } from '../../drizzle/schema.js';
 
 export const SEED_TAG = 'workshop-curated-2026-06';
+export const CATALOGUE_LOCK_NAME = 'trace-demo-catalogue-v1';
 
 const DAY = 24 * 60 * 60 * 1000;
 

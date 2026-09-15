@@ -30,6 +30,7 @@
     "db:migrate": "pnpm --filter @trace/db migrate",
     "db:seed": "pnpm --filter @trace/db seed",
     "demo:replenish": "pnpm --filter @trace/db demo:replenish",
+    "demo:trim-active": "pnpm --filter @trace/db demo:trim-active",
     "db:generate": "pnpm --filter @trace/db generate",
     "db:studio": "pnpm --filter @trace/db studio"
   },
