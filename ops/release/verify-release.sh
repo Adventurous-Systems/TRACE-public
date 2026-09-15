@@ -21,17 +21,23 @@ readonly RELEASE_ROOT PUBLIC_SOURCE_LABEL
 [[ "$#" == 1 ]] || { echo "Usage: $0 <full-lowercase-40-character-sha>" >&2; exit 2; }
 release_sha="$1"
 trace_require_sha "$release_sha"
+require_read_only() {
+  local path="$1" mode digit
+  mode="$(stat -c '%a' "$path")"
+  mode="${mode: -3}"
+  [[ "$mode" =~ ^[0-7]{3}$ ]] || trace_release_fail "mode is invalid: $path"
+  for digit in "${mode:0:1}" "${mode:1:1}" "${mode:2:1}"; do
+    [[ "$digit" =~ [2367] ]] && trace_release_fail "must be read-only: $path"
+  done
+  return 0
+}
+
 release_dir="$RELEASE_ROOT/$release_sha"
 source_dir="$release_dir/source"
 receipt="$release_dir/images.env"
 
 [[ -d "$release_dir" ]] || trace_release_fail "release directory is missing: $release_dir"
-source_mode="$(stat -c '%a' "$source_dir")"
-source_mode="${source_mode: -3}"
-[[ "$source_mode" =~ ^[0-7]{3}$ ]] || trace_release_fail 'release source mode is invalid'
-for digit in "${source_mode:0:1}" "${source_mode:1:1}" "${source_mode:2:1}"; do
-  [[ "$digit" =~ [2367] ]] && trace_release_fail 'release source must be read-only'
-done
+require_read_only "$source_dir"
 if [[ "${TRACE_RELEASE_TEST_MODE:-0}" != 1 || "$EUID" == 0 ]]; then
   [[ "$(stat -c '%u:%g' "$release_dir")" == 0:0 ]] \
     || trace_release_fail 'release directory must be owned by root'
@@ -63,8 +69,7 @@ for component in api web ops; do
   metadata="$scan_dir/metadata.env"
   [[ -f "$sbom" && -f "$report" && -f "$metadata" ]] \
     || trace_release_fail "scan artifacts are missing for $component"
-  [[ ! -w "$sbom" && ! -w "$report" && ! -w "$metadata" ]] \
-    || trace_release_fail "scan artifacts must be read-only for $component"
+  require_read_only "$sbom"; require_read_only "$report"; require_read_only "$metadata"
   [[ "$(sha256sum "$sbom" | awk '{print $1}')" == "$(trace_receipt_value "$receipt" "TRACE_${upper}_SBOM_SHA256")" ]] \
     || trace_release_fail "SBOM hash mismatch for $component"
 done
