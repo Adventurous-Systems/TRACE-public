@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CountUp } from '@/components/ui/count-up';
 import { Logo } from '@/components/ui/Logo';
+import { DemoGuide } from '@/components/DemoGuide';
 import { Recycle, Leaf } from 'lucide-react';
 
 const CONDITION_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
@@ -94,6 +95,7 @@ export default function MarketplacePage() {
   }, [page, q, categoryL1, conditionGrade]);
 
   const totalPages = Math.ceil(total / 20);
+  const hasActiveFilters = Boolean(q || categoryL1 || conditionGrade || page > 1);
 
   function handleSignOut() {
     clearSession();
@@ -167,6 +169,8 @@ export default function MarketplacePage() {
             Browse verified reclaimed construction materials from Scottish reuse hubs.
           </p>
         </div>
+
+        <DemoGuide />
 
         {stats && stats.totalCarbonSavedKg > 0 && (
           <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-800 motion-safe:animate-fade-in-up">
@@ -244,8 +248,32 @@ export default function MarketplacePage() {
             ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-gray-400">No listings match your search.</p>
+          <div className="py-16 text-center space-y-3">
+            {hasActiveFilters ? (
+              <>
+                <p className="text-gray-400">No listings match your search.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setQ('');
+                    setCategoryL1('');
+                    setConditionGrade('');
+                    setPage(1);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-400">No listings right now.</p>
+                <p className="trace-public-buyer-demo-only text-sm text-gray-400 max-w-md mx-auto">
+                  Someone likely just reserved the last lot of every product — the catalogue
+                  replenishes automatically, so check back soon.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <>

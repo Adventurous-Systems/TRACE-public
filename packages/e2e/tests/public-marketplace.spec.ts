@@ -57,4 +57,23 @@ test.describe('Public marketplace (logged out)', () => {
     await expect(options).not.toHaveCount(11); // 10 categories + "All categories"
     await expect(page.getByLabel('Filter by category')).toContainText('Structural Steel');
   });
+
+  // A search with no matches distinguishes "no results for these filters"
+  // (recoverable — offer a way out) from "nothing is listed at all" (the
+  // marketplace/page.tsx branch this is NOT exercising). Category/grade
+  // dropdowns can no longer reach this state on their own now that they're
+  // narrowed to options with stock, so the free-text search is the reliable
+  // way to reach it regardless of what the live catalogue contains.
+  test('a search with no matches offers a way to clear it', async ({ page }) => {
+    await page.goto('/marketplace');
+    await page.getByPlaceholder(/search materials/i).fill('no-such-material-zzqx9');
+    await expect(page.getByText('No listings match your search.')).toBeVisible();
+
+    const clear = page.getByRole('button', { name: /clear filters/i });
+    await expect(clear).toBeVisible();
+    await clear.click();
+
+    await expect(page.getByPlaceholder(/search materials/i)).toHaveValue('');
+    await expect(page.getByText(productName).first()).toBeVisible();
+  });
 });

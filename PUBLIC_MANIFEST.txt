@@ -258,6 +258,7 @@ packages/web/src/app/passport/[id]/page.tsx
 packages/web/src/app/scan/page.tsx
 packages/web/src/components/Analytics.tsx
 packages/web/src/components/DashboardLayout.tsx
+packages/web/src/components/DemoGuide.tsx
 packages/web/src/components/FeedbackWidget.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx

@@ -29,3 +29,19 @@ To converge an older multi-lot deployment, first preview and then run the guarde
 It cancels only surplus active listings whose passports carry the curated seed marker, a known catalogue key, and a valid demo lot number. The lowest-numbered lot remains active. Transaction-linked, reserved, sold, unmarked, and visitor data remain untouched. The trim and replenishment commands share one PostgreSQL advisory lock.
 
 Keep secrets in /var/lib/trace-demo/secrets, mutable non-secret configuration in /var/lib/trace-demo/config, mutable deployment state in /var/lib/trace-demo/state, bind-mounted data in /var/lib/trace-demo/data, immutable releases in /opt/trace-public-demo/releases, and only static nginx/systemd material in /etc.
+
+## Visitor-facing guidance
+
+The landing page and marketplace show a "What to try" panel
+(components/DemoGuide.tsx), visible only under public_buyer_demo: browse the
+marketplace, open a listing and its passport, click "Verify integrity" to see
+the fingerprint recompute live, then create a free account to make an offer.
+The register page's demo banner states what an account is for, and the
+marketplace's empty state distinguishes "no results for these filters" (with
+a clear-filters action) from "no listings are active right now" (attributed
+to replenishment catching up, without naming a specific cadence — keep this
+copy in sync if the replenishment schedule above changes).
+
+Keep this copy honest about what the demo actually does — in particular,
+never describe the simulated trust-layer fingerprint as a live VeChain
+anchor (see .env.example's DEMO_SIMULATE_ANCHOR comment).
