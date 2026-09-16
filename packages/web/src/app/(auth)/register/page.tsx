@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { auth } from '@/lib/api-client';
-import { getPostAuthRedirect, saveSession } from '@/lib/auth';
+import { getPostAuthRedirect, saveSession, safeNextPath } from '@/lib/auth';
 import { track } from '@/lib/analytics';
 
 const RegisterSchema = z
@@ -33,7 +33,7 @@ export default function RegisterPage() {
   const searchParams = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
   const nextPath = searchParams.get('next');
-  const safeNextPath = nextPath?.startsWith('/') && !nextPath.startsWith('//') ? nextPath : null;
+  const nextTarget = safeNextPath(nextPath);
 
   const {
     register,
@@ -51,7 +51,7 @@ export default function RegisterPage() {
       });
       saveSession(result.token, result.user);
       track('signup', { role: result.user.role });
-      router.push(safeNextPath ?? getPostAuthRedirect(result.user));
+      router.push(nextTarget ?? getPostAuthRedirect(result.user));
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Registration failed');
     }
@@ -144,7 +144,7 @@ export default function RegisterPage() {
               <p className="text-center text-sm text-gray-500">
                 Already have an account?{' '}
                 <Link
-                  href={safeNextPath ? `/login?next=${encodeURIComponent(safeNextPath)}` : '/login'}
+                  href={nextTarget ? `/login?next=${encodeURIComponent(nextTarget)}` : '/login'}
                   className="text-brand-600 underline"
                 >
                   Sign in
