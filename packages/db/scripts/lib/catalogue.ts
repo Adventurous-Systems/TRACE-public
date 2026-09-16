@@ -8,11 +8,13 @@
  *
  * SEED_TAG stamps every curated passport's customAttributes.seedSource, and is
  * what scopes every subsequent top-up, convergence and teardown. Anything not
- * carrying this tag is treated as visitor-created and never converged.
+ * carrying this tag is treated as visitor-created and never converged. It
+ * lives in @trace/core (re-exported here) so the API can share it too — see
+ * that module's docstring.
  */
 import type { NewMaterialPassport } from '../../drizzle/schema.js';
 
-export const SEED_TAG = 'workshop-curated-2026-06';
+export { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 export const CATALOGUE_LOCK_NAME = 'trace-demo-catalogue-v1';
 
 const DAY = 24 * 60 * 60 * 1000;
