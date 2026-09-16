@@ -15,6 +15,17 @@ export function isRequestAllowed(
 }
 
 /**
+ * Whether public marketplace browse (listings search, stats, facets) should
+ * be scoped to the curated demo catalogue only. True for public_buyer_demo
+ * alone: self_hosted has no curated tag on real inventory, and
+ * public_showcase/public_sandbox are read-only exposures of the same curated
+ * research showcase, not a mixed visitor+curated demo.
+ */
+export function curatedBrowseOnly(profile: Env['TRACE_DEPLOYMENT_PROFILE']): boolean {
+  return profile === 'public_buyer_demo';
+}
+
+/**
  * Read-only public exposure profiles are protected at the API boundary,
  * independently of the web UI and reverse proxy. public_buyer_demo permits
  * normal buyer requests and relies on the existing role guards for all

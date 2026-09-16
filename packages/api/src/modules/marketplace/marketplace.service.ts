@@ -1,4 +1,4 @@
-import { eq, and, or, ilike, gte, lte, desc, asc, sql } from 'drizzle-orm';
+import { eq, and, or, ilike, gte, lte, desc, asc, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   listings,
@@ -19,8 +19,25 @@ import {
   ForbiddenError,
   ConflictError,
 } from '@trace/core';
+import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 
 type TransactionWithListing = Transaction & { listing: Listing };
+
+/**
+ * The active-listing predicate every public browse surface shares
+ * (searchListings, getMarketplaceStats, and the facets endpoint added
+ * alongside it). curatedOnly additionally requires the curated demo tag, so
+ * a public_buyer_demo visitor's own listings never appear in anonymous
+ * browse — see docs/operations/public-buyer-demo.md. Kept in one place so
+ * browse and its facets can never independently drift out of sync.
+ */
+function browseConditions(curatedOnly: boolean): SQL[] {
+  const conditions = [eq(listings.status, 'active')];
+  if (curatedOnly) {
+    conditions.push(sql`${materialPassports.customAttributes}->>'seedSource' = ${SEED_TAG}`);
+  }
+  return conditions;
+}
 
 // ─── Listing: Create ─────────────────────────────────────────────────────────
 
@@ -149,9 +166,10 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
 
 export async function searchListings(
   query: MarketplaceQueryInput,
+  options: { curatedOnly?: boolean } = {},
 ): Promise<{ data: ListingWithPassport[]; total: number; page: number; limit: number }> {
   // All filters pushed into SQL — no in-memory post-filtering
-  const conditions = [eq(listings.status, 'active')];
+  const conditions = browseConditions(options.curatedOnly ?? false);
 
   if (query.minPricePence !== undefined)
     conditions.push(gte(listings.pricePence, query.minPricePence));
@@ -265,7 +283,7 @@ export async function searchListings(
   };
 }
 
-export async function getMarketplaceStats(): Promise<{
+export async function getMarketplaceStats(options: { curatedOnly?: boolean } = {}): Promise<{
   totalCarbonSavedKg: number;
   activeCount: number;
 }> {
@@ -276,7 +294,7 @@ export async function getMarketplaceStats(): Promise<{
     })
     .from(listings)
     .innerJoin(materialPassports, eq(listings.passportId, materialPassports.id))
-    .where(eq(listings.status, 'active'));
+    .where(and(...browseConditions(options.curatedOnly ?? false)));
   return { totalCarbonSavedKg: Math.round(Number(row?.total ?? 0)), activeCount: row?.count ?? 0 };
 }
 

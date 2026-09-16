@@ -6,7 +6,9 @@ import {
   MarketplaceQuerySchema,
   UpdateTransactionSchema,
 } from '@trace/core';
+import { env } from '../../env.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
+import { curatedBrowseOnly } from '../../middleware/deployment-profile.js';
 import { recordAuditEvent } from '../../lib/audit.js';
 import {
   createListing,
@@ -24,17 +26,25 @@ import {
 
 export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /api/v1/marketplace/listings ─────────────────────────────────────
-  // Public: search/browse all active listings
+  // Public: search/browse all active listings. On the public buyer demo,
+  // browse is scoped to the curated catalogue only — a visitor's own
+  // listings stay in their seller dashboard (getListingById, listHubListings)
+  // and never enter the public marketplace, since the demo host retains
+  // visitor data indefinitely with no sweep. See curatedBrowseOnly.
   app.get('/listings', async (request, reply) => {
     const query = MarketplaceQuerySchema.parse(request.query);
-    const result = await searchListings(query);
+    const result = await searchListings(query, {
+      curatedOnly: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
+    });
     return reply.send({ success: true, data: result });
   });
 
   // ── GET /api/v1/marketplace/stats ─────────────────────────────────────────
   // Public: aggregate impact (carbon saved + active listing count)
   app.get('/stats', async (_request, reply) => {
-    const stats = await getMarketplaceStats();
+    const stats = await getMarketplaceStats({
+      curatedOnly: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
+    });
     return reply.send({ success: true, data: stats });
   });
 
