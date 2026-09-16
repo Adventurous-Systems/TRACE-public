@@ -298,6 +298,40 @@ export async function getMarketplaceStats(options: { curatedOnly?: boolean } = {
   return { totalCarbonSavedKg: Math.round(Number(row?.total ?? 0)), activeCount: row?.count ?? 0 };
 }
 
+/**
+ * The category and condition-grade values browse can actually return, given
+ * the same browseConditions() the listings and stats endpoints use. Lets the
+ * marketplace filter UI hide options that would only ever return zero
+ * results — most visibly on the demo, where the full category/grade lists
+ * are far wider than the curated catalogue's four categories and two grades.
+ */
+export async function getMarketplaceFacets(
+  options: { curatedOnly?: boolean } = {},
+): Promise<{ categoryL1: string[]; conditionGrade: string[] }> {
+  const where = and(...browseConditions(options.curatedOnly ?? false));
+
+  const [categoryRows, gradeRows] = await Promise.all([
+    db
+      .selectDistinct({ categoryL1: materialPassports.categoryL1 })
+      .from(listings)
+      .innerJoin(materialPassports, eq(listings.passportId, materialPassports.id))
+      .where(where),
+    db
+      .selectDistinct({ conditionGrade: materialPassports.conditionGrade })
+      .from(listings)
+      .innerJoin(materialPassports, eq(listings.passportId, materialPassports.id))
+      .where(where),
+  ]);
+
+  return {
+    categoryL1: categoryRows.map((r) => r.categoryL1).sort(),
+    conditionGrade: gradeRows
+      .map((r) => r.conditionGrade)
+      .filter((g): g is string => g !== null)
+      .sort(),
+  };
+}
+
 export async function listHubListings(organisationId: string): Promise<ListingWithPassport[]> {
   const data = await db.query.listings.findMany({
     where: eq(listings.organisationId, organisationId),

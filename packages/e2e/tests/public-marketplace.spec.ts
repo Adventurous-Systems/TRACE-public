@@ -43,4 +43,18 @@ test.describe('Public marketplace (logged out)', () => {
       page.getByText(/Trust layer prepared|Blockchain verified|Pending verification/).first(),
     ).toBeVisible();
   });
+
+  // The category filter used to offer all ten top-level categories from
+  // MATERIAL_CATEGORIES regardless of whether any of them had stock, so most
+  // selections dead-ended on "No listings match your search." It's now
+  // narrowed to /api/v1/marketplace/facets — this only checks that the
+  // narrowing actually ran (fewer than the full list), not an exact demo
+  // count, since the live catalogue here also includes this spec's own
+  // 'masonry' fixture plus whatever else the environment seeded.
+  test('category filter is narrowed to categories with stock', async ({ page }) => {
+    await page.goto('/marketplace');
+    const options = page.getByLabel('Filter by category').locator('option');
+    await expect(options).not.toHaveCount(11); // 10 categories + "All categories"
+    await expect(page.getByLabel('Filter by category')).toContainText('Structural Steel');
+  });
 });

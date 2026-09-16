@@ -15,6 +15,7 @@ import {
   getListingById,
   searchListings,
   getMarketplaceStats,
+  getMarketplaceFacets,
   listHubListings,
   updateListing,
   cancelListing,
@@ -46,6 +47,17 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
       curatedOnly: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
     });
     return reply.send({ success: true, data: stats });
+  });
+
+  // ── GET /api/v1/marketplace/facets ────────────────────────────────────────
+  // Public: category/grade values browse can actually return, so the filter
+  // UI never offers an option that would return zero results. Reuses the same
+  // curatedOnly scoping as /listings and /stats — see getMarketplaceFacets.
+  app.get('/facets', async (_request, reply) => {
+    const facets = await getMarketplaceFacets({
+      curatedOnly: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
+    });
+    return reply.send({ success: true, data: facets });
   });
 
   // ── POST /api/v1/marketplace/listings ─────────────────────────────────────

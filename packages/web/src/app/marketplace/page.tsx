@@ -38,6 +38,12 @@ export default function MarketplacePage() {
   const [stats, setStats] = useState<{ totalCarbonSavedKg: number; activeCount: number } | null>(
     null,
   );
+  // Which categories/grades browse can actually return. Starts as the full
+  // lists — every option available, same as before this existed — and narrows
+  // only once facets resolves, so a slow or failed fetch is never worse than
+  // today, just not yet narrowed.
+  const [categoryOptions, setCategoryOptions] = useState(MATERIAL_CATEGORIES);
+  const [gradeOptions, setGradeOptions] = useState<string[]>(['A', 'B', 'C', 'D']);
   const searchTrackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -45,6 +51,13 @@ export default function MarketplacePage() {
     marketplace
       .stats()
       .then(setStats)
+      .catch(() => {});
+    marketplace
+      .facets()
+      .then((facets) => {
+        setCategoryOptions(MATERIAL_CATEGORIES.filter((c) => facets.categoryL1.includes(c.slug)));
+        setGradeOptions(['A', 'B', 'C', 'D'].filter((g) => facets.conditionGrade.includes(g)));
+      })
       .catch(() => {});
   }, []);
 
@@ -191,8 +204,11 @@ export default function MarketplacePage() {
                 (materialPassports.categoryL1), not the display labels — the
                 two were previously the same hardcoded list, but the API
                 never matched labels against stored slugs, so every category
-                selection silently returned zero results. */}
-            {MATERIAL_CATEGORIES.map((c) => (
+                selection silently returned zero results.
+                Narrowed to /marketplace/facets — a category with no active
+                listing would otherwise dead-end in "No listings match your
+                search" every time it's picked. */}
+            {categoryOptions.map((c) => (
               <option key={c.slug} value={c.slug}>
                 {c.label}
               </option>
@@ -208,7 +224,7 @@ export default function MarketplacePage() {
             className="h-9 rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <option value="">Any condition</option>
-            {['A', 'B', 'C', 'D'].map((g) => (
+            {gradeOptions.map((g) => (
               <option key={g} value={g}>
                 Grade {g}
               </option>

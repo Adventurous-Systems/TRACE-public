@@ -4,7 +4,11 @@ import { eq } from 'drizzle-orm';
 import { auditEvents, db, listings, materialPassports, organisations, users } from '@trace/db';
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
-import { getMarketplaceStats, searchListings } from './marketplace.service.js';
+import {
+  getMarketplaceFacets,
+  getMarketplaceStats,
+  searchListings,
+} from './marketplace.service.js';
 
 const HUB_STAFF = getTestPersona('hubStaff');
 
@@ -260,14 +264,18 @@ describe('curated-only browse', () => {
     orgId = org!.id;
     sellerId = seller!.id;
 
+    // Categories the real catalogue never uses (structural-steel,
+    // structural-timber, masonry, insulation — see scripts/lib/catalogue.ts),
+    // so the facets assertions below can tell this fixture's rows apart from
+    // the live curated catalogue without depending on its exact contents.
     const [curatedPassport] = await db
       .insert(materialPassports)
       .values({
         organisationId: orgId,
         registeredBy: sellerId,
         productName: `${marker} curated`,
-        categoryL1: 'masonry',
-        conditionGrade: 'B',
+        categoryL1: 'flooring',
+        conditionGrade: 'D',
         status: 'active',
         customAttributes: { seedSource: SEED_TAG },
       })
@@ -278,8 +286,8 @@ describe('curated-only browse', () => {
         organisationId: orgId,
         registeredBy: sellerId,
         productName: `${marker} visitor`,
-        categoryL1: 'masonry',
-        conditionGrade: 'B',
+        categoryL1: 'roofing',
+        conditionGrade: 'C',
         status: 'active',
       })
       .returning();
@@ -343,5 +351,19 @@ describe('curated-only browse', () => {
     // Both counts include the whole live catalogue, not just this fixture, so
     // assert the *difference* the visitor listing makes rather than a total.
     expect(uncurated.activeCount).toBeGreaterThan(curated.activeCount);
+  });
+
+  it('facets include both categories when not curated-only', async () => {
+    const facets = await getMarketplaceFacets({ curatedOnly: false });
+    expect(facets.categoryL1).toContain('flooring');
+    expect(facets.categoryL1).toContain('roofing');
+  });
+
+  it('facets keep the curated category and grade but drop the visitor-only ones', async () => {
+    const facets = await getMarketplaceFacets({ curatedOnly: true });
+    expect(facets.categoryL1).toContain('flooring');
+    expect(facets.categoryL1).not.toContain('roofing');
+    expect(facets.conditionGrade).toContain('D');
+    expect(facets.conditionGrade).not.toContain('C');
   });
 });

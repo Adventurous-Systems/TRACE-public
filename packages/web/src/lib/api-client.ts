@@ -467,6 +467,9 @@ export const marketplace = {
   stats: () =>
     request<{ totalCarbonSavedKg: number; activeCount: number }>('/api/v1/marketplace/stats'),
 
+  facets: () =>
+    request<{ categoryL1: string[]; conditionGrade: string[] }>('/api/v1/marketplace/facets'),
+
   hubListings: (token: string) =>
     request<ListingSummary[]>('/api/v1/marketplace/listings/hub', { token }),
 
