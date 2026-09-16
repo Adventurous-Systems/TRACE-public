@@ -27,10 +27,12 @@ jobs:
 
       - name: Test source release tooling
         run: |
-          bash -n ops/release/*.sh
+          bash -n ops/release/*.sh ops/deploy/*.sh
           bash ops/release/test-release-tooling.sh
           bash ops/release/test-scan-image.sh
           bash ops/deploy/test-deployment-state.sh
+          bash ops/deploy/test-deploy-main.sh
+          bash ops/deploy/test-prune-releases.sh
 
   build-and-test:
     name: Build and test

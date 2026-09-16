@@ -1,0 +1,72 @@
+name: Deploy public demo
+
+# Runs after CI finishes on main. Deploys only if Security also reports
+# success for that exact commit, and only if the exact-SHA orchestrator on
+# the demo host decides the change is not documentation-only (see
+# ops/deploy/deploy-main.sh). The host itself re-resolves the exact current
+# public main tip; this workflow never passes it a SHA or any other argument.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-public-demo
+  # A deployment in progress must never be cancelled mid-switch.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deploy:
+    name: Deploy to demo.trace.adventurous.systems
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, linux, trace-demo-vps]
+    steps:
+      - name: Resolve the commit under test
+        id: sha
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            sha="$(git ls-remote --exit-code --refs \
+              https://github.com/Adventurous-Systems/TRACE-public.git refs/heads/main \
+              | cut -f1)"
+          else
+            sha="$WORKFLOW_RUN_SHA"
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Could not resolve a commit SHA" >&2; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # workflow_run only reports the one workflow that triggered this run.
+      # Security runs independently on the same push, so it is checked here
+      # explicitly rather than trusted implicitly.
+      - name: Require Security to have passed for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          conclusion="$(gh api "repos/$REPO/actions/workflows/security.yml/runs" \
+            -f head_sha="$SHA" -f status=completed --jq '.workflow_runs[0].conclusion // empty')"
+          if [[ "$conclusion" != success ]]; then
+            echo "Security has not reported success for $SHA (conclusion: ${conclusion:-none yet})" >&2
+            exit 1
+          fi
+          echo "Security passed for $SHA"
+
+      # No actions/checkout: this job never runs repository code on the demo
+      # host. deploy-main.sh independently re-resolves the exact current
+      # public main tip and fetches it fresh; it takes no arguments, which is
+      # exactly what the host's sudoers grant allows it to be run with.
+      - name: Deploy the current public main tip
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/libexec/trace-demo/deploy-main.sh | tee -a "$GITHUB_STEP_SUMMARY"
