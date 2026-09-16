@@ -175,14 +175,16 @@ release directory.
 
 A merge to public `main` deploys itself. `.github/workflows/deploy-demo.yml` runs
 on a self-hosted GitHub Actions runner registered on the demo host, scoped only to
-this repository. It triggers after `CI` completes on `main`, additionally requires
-`Security` to have reported success for that exact commit (`workflow_run` only
-reports the workflow that triggered it, so the sibling is checked explicitly via
-the GitHub API), and then runs `sudo -n deploy-main.sh` with no arguments. The job
-never checks out repository code onto the runner; `deploy-main.sh` performs its
-own clean fetch of the exact public `main` tip, so the blast radius of a
-compromised workflow file is exactly the one sudoers grant below, nothing else on
-the host.
+this repository. It triggers on every push to `main`, polls the GitHub API until
+both `CI` and `Security` report success for that exact commit (a plain `push`
+trigger, rather than `workflow_run`, keeps this workflow's own trigger
+unremarkable — zizmor's `dangerous-triggers` audit flags `workflow_run`
+categorically regardless of what the triggered job does; the actual gate here is
+this explicit wait, checked the same way for both workflows), and only then runs
+`sudo -n deploy-main.sh` with no arguments. The job never checks out repository
+code onto the runner; `deploy-main.sh` performs its own clean fetch of the exact
+public `main` tip, so the blast radius of a compromised workflow file is exactly
+the one sudoers grant below, nothing else on the host.
 
 `deploy-main.sh` runs the same sequence as the manual release procedure above,
 end to end, holding the same deployment lock:
