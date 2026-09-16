@@ -1,14 +1,16 @@
 name: Deploy public demo
 
-# Runs after CI finishes on main. Deploys only if Security also reports
-# success for that exact commit, and only if the exact-SHA orchestrator on
-# the demo host decides the change is not documentation-only (see
-# ops/deploy/deploy-main.sh). The host itself re-resolves the exact current
-# public main tip; this workflow never passes it a SHA or any other argument.
+# Runs on every push to main. Waits for CI and Security to both report
+# success for that exact commit before invoking the deploy wrapper on the
+# demo host; if either fails, the deploy step never runs. `push` (rather than
+# `workflow_run`, which zizmor's dangerous-triggers audit flags regardless of
+# what a job actually does) keeps this workflow's trigger itself
+# unremarkable; the actual gate is the explicit wait below, and the actual
+# privilege boundary is the zero-argument sudoers grant on the host (see
+# ops/deploy/deploy-main.sh and docs/operations/deployment.md "Automated
+# deployment").
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
 
@@ -24,14 +26,18 @@ permissions:
 jobs:
   deploy:
     name: Deploy to demo.trace.adventurous.systems
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: [self-hosted, linux, trace-demo-vps]
+    # A self-hosted runner is the point of this workflow: it is what lets the
+    # sudoers-gated deploy wrapper run on the demo host at all. It is scoped
+    # to only this repository, runs no PR-triggered or untrusted-input jobs,
+    # never checks out repository code, and its account holds no privilege
+    # beyond the single zero-argument root command documented above.
+    runs-on: [self-hosted, linux, trace-demo-vps] # zizmor: ignore[self-hosted-runner]
     steps:
       - name: Resolve the commit under test
         id: sha
         env:
           EVENT_NAME: ${{ github.event_name }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          PUSH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
@@ -39,28 +45,39 @@ jobs:
               https://github.com/Adventurous-Systems/TRACE-public.git refs/heads/main \
               | cut -f1)"
           else
-            sha="$WORKFLOW_RUN_SHA"
+            sha="$PUSH_SHA"
           fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Could not resolve a commit SHA" >&2; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      # workflow_run only reports the one workflow that triggered this run.
-      # Security runs independently on the same push, so it is checked here
-      # explicitly rather than trusted implicitly.
-      - name: Require Security to have passed for this commit
+      - name: Wait for CI and Security to pass for this commit
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
-          conclusion="$(gh api "repos/$REPO/actions/workflows/security.yml/runs" \
-            -f head_sha="$SHA" -f status=completed --jq '.workflow_runs[0].conclusion // empty')"
-          if [[ "$conclusion" != success ]]; then
-            echo "Security has not reported success for $SHA (conclusion: ${conclusion:-none yet})" >&2
-            exit 1
-          fi
-          echo "Security passed for $SHA"
+          wait_for() {
+            local workflow="$1" elapsed=0 interval=30 timeout=1800 conclusion
+            while (( elapsed < timeout )); do
+              conclusion="$(gh api "repos/$REPO/actions/workflows/$workflow/runs" \
+                -f head_sha="$SHA" --jq '.workflow_runs[0].conclusion // "pending"')"
+              case "$conclusion" in
+                success) echo "$workflow passed for $SHA"; return 0 ;;
+                pending) : ;;
+                *)
+                  echo "$workflow did not succeed for $SHA (conclusion: $conclusion)" >&2
+                  return 1
+                  ;;
+              esac
+              sleep "$interval"
+              elapsed=$((elapsed + interval))
+            done
+            echo "Timed out waiting for $workflow to complete for $SHA" >&2
+            return 1
+          }
+          wait_for ci.yml
+          wait_for security.yml
 
       # No actions/checkout: this job never runs repository code on the demo
       # host. deploy-main.sh independently re-resolves the exact current
