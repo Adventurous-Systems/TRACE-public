@@ -43,4 +43,37 @@ test.describe('Public marketplace (logged out)', () => {
       page.getByText(/Trust layer prepared|Blockchain verified|Pending verification/).first(),
     ).toBeVisible();
   });
+
+  // The category filter used to offer all ten top-level categories from
+  // MATERIAL_CATEGORIES regardless of whether any of them had stock, so most
+  // selections dead-ended on "No listings match your search." It's now
+  // narrowed to /api/v1/marketplace/facets — this only checks that the
+  // narrowing actually ran (fewer than the full list), not an exact demo
+  // count, since the live catalogue here also includes this spec's own
+  // 'masonry' fixture plus whatever else the environment seeded.
+  test('category filter is narrowed to categories with stock', async ({ page }) => {
+    await page.goto('/marketplace');
+    const options = page.getByLabel('Filter by category').locator('option');
+    await expect(options).not.toHaveCount(11); // 10 categories + "All categories"
+    await expect(page.getByLabel('Filter by category')).toContainText('Structural Steel');
+  });
+
+  // A search with no matches distinguishes "no results for these filters"
+  // (recoverable — offer a way out) from "nothing is listed at all" (the
+  // marketplace/page.tsx branch this is NOT exercising). Category/grade
+  // dropdowns can no longer reach this state on their own now that they're
+  // narrowed to options with stock, so the free-text search is the reliable
+  // way to reach it regardless of what the live catalogue contains.
+  test('a search with no matches offers a way to clear it', async ({ page }) => {
+    await page.goto('/marketplace');
+    await page.getByPlaceholder(/search materials/i).fill('no-such-material-zzqx9');
+    await expect(page.getByText('No listings match your search.')).toBeVisible();
+
+    const clear = page.getByRole('button', { name: /clear filters/i });
+    await expect(clear).toBeVisible();
+    await clear.click();
+
+    await expect(page.getByPlaceholder(/search materials/i)).toHaveValue('');
+    await expect(page.getByText(productName).first()).toBeVisible();
+  });
 });

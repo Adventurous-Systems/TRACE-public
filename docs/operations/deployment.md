@@ -120,7 +120,7 @@ modifications. The receipt is root-owned, mode 400, and records the exact local 
 4. Run the installed preparation command for the exact reviewed main commit.
    It creates the immutable release directory, builds API, web, and operations images sequentially, rejects all HIGH/CRITICAL runtime findings, and binds image IDs, SBOMs, reports, scanner version, and vulnerability-database timestamp into the receipt.
 5. Run migrations and the base seed, then run `demo-replenish --env demo`
-   through the operations image with `--target-active 3 --yes`. Do not schedule
+   through the operations image with `--target-active 1 --yes`. Do not schedule
    `demo-restore`; run the non-destructive replenisher thereafter and
    record expected counts and hashes.
 6. Populate the inactive slot file. Blue uses web/API ports 5003/5004 and green

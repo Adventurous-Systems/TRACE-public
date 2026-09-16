@@ -128,6 +128,7 @@ packages/contracts/tsconfig.json
 packages/core/package.json
 packages/core/src/constants/categories.ts
 packages/core/src/constants/config.ts
+packages/core/src/constants/demo-catalogue.ts
 packages/core/src/constants/demo-personas.ts
 packages/core/src/errors.ts
 packages/core/src/index.ts
@@ -168,8 +169,11 @@ packages/db/migrations/meta/_journal.json
 packages/db/package.json
 packages/db/scripts/demo-replenish.ts
 packages/db/scripts/demo-restore.ts
+packages/db/scripts/demo-trim-active.ts
 packages/db/scripts/lib/catalogue.ts
 packages/db/scripts/lib/demo-content.ts
+packages/db/scripts/lib/demo-trim-policy.test.ts
+packages/db/scripts/lib/demo-trim-policy.ts
 packages/db/scripts/lib/guard.ts
 packages/db/scripts/migrate.ts
 packages/db/scripts/rehash-passports.ts
@@ -254,6 +258,7 @@ packages/web/src/app/passport/[id]/page.tsx
 packages/web/src/app/scan/page.tsx
 packages/web/src/components/Analytics.tsx
 packages/web/src/components/DashboardLayout.tsx
+packages/web/src/components/DemoGuide.tsx
 packages/web/src/components/FeedbackWidget.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx

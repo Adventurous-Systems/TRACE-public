@@ -6,8 +6,8 @@
  * or deletes users, offers, transactions, reserved listings, or sold listings.
  *
  * Usage:
- *   pnpm --filter @trace/db demo:replenish -- --env demo --target-active 3 --dry-run
- *   pnpm --filter @trace/db demo:replenish -- --env demo --target-active 3 --yes
+ *   pnpm --filter @trace/db demo:replenish -- --env demo --target-active 1 --dry-run
+ *   pnpm --filter @trace/db demo:replenish -- --env demo --target-active 1 --yes
  */
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -19,7 +19,7 @@ import * as Minio from 'minio';
 import postgres from 'postgres';
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
-import { CATALOG, SEED_TAG, type Product } from './lib/catalogue.js';
+import { CATALOG, CATALOGUE_LOCK_NAME, SEED_TAG, type Product } from './lib/catalogue.js';
 import { resolveTarget } from './lib/guard.js';
 
 const PACKAGE_ROOT = process.cwd();
@@ -27,7 +27,6 @@ loadEnv({ path: path.resolve(PACKAGE_ROOT, '../../.env') });
 
 const PRODUCTS_DIR = path.resolve(PACKAGE_ROOT, 'data/products');
 const SELLER_EMAIL = (process.env['SEED_SELLER_EMAIL'] ?? 'admin@stirlingreuse.com').toLowerCase();
-const LOCK_NAME = 'trace-demo-replenish-v1';
 
 interface MinioConfig {
   client: Minio.Client;
@@ -42,7 +41,7 @@ interface UploadedObject {
 
 function parseTargetActive(argv: string[]): number {
   const index = argv.indexOf('--target-active');
-  const raw = index >= 0 ? argv[index + 1] : '3';
+  const raw = index >= 0 ? argv[index + 1] : '1';
   const target = Number(raw);
   if (!Number.isInteger(target) || target < 1 || target > 10) {
     throw new Error('--target-active must be an integer from 1 to 10');
@@ -148,7 +147,7 @@ async function main() {
     let created = 0;
 
     await db.transaction(async (tx) => {
-      await tx.execute(dsql`select pg_advisory_xact_lock(hashtext(${LOCK_NAME}))`);
+      await tx.execute(dsql`select pg_advisory_xact_lock(hashtext(${CATALOGUE_LOCK_NAME}))`);
 
       const passports = await tx
         .select()
