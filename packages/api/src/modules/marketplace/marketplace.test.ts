@@ -2,7 +2,13 @@ import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { auditEvents, db, listings, materialPassports, organisations, users } from '@trace/db';
+import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
+import {
+  getMarketplaceFacets,
+  getMarketplaceStats,
+  searchListings,
+} from './marketplace.service.js';
 
 const HUB_STAFF = getTestPersona('hubStaff');
 
@@ -227,5 +233,137 @@ describe('D-03: transaction authorization', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ data: { status: string } }>().data.status).toBe('resolved');
+  });
+});
+
+// Curated-only browse (public_buyer_demo): a visitor's own listing must never
+// appear in anonymous marketplace browse or its stats, only in their own
+// seller dashboard (listHubListings / getListingById — untouched by this
+// filter). Covers both listings the curated tag admits and excludes.
+describe('curated-only browse', () => {
+  const marker = `curated-browse-${Date.now()}`;
+  const baseQuery = {
+    page: 1,
+    limit: 50,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
+  } as const;
+
+  let orgId: string;
+  let sellerId: string;
+  let curatedListingId: string;
+  let visitorListingId: string;
+
+  beforeAll(async () => {
+    const org = await db.query.organisations.findFirst({
+      where: eq(organisations.slug, 'stirling'),
+    });
+    const seller = await db.query.users.findFirst({
+      where: eq(users.email, 'staff@stirlingreuse.com'),
+    });
+    orgId = org!.id;
+    sellerId = seller!.id;
+
+    // Categories the real catalogue never uses (structural-steel,
+    // structural-timber, masonry, insulation — see scripts/lib/catalogue.ts),
+    // so the facets assertions below can tell this fixture's rows apart from
+    // the live curated catalogue without depending on its exact contents.
+    const [curatedPassport] = await db
+      .insert(materialPassports)
+      .values({
+        organisationId: orgId,
+        registeredBy: sellerId,
+        productName: `${marker} curated`,
+        categoryL1: 'flooring',
+        conditionGrade: 'D',
+        status: 'active',
+        customAttributes: { seedSource: SEED_TAG },
+      })
+      .returning();
+    const [visitorPassport] = await db
+      .insert(materialPassports)
+      .values({
+        organisationId: orgId,
+        registeredBy: sellerId,
+        productName: `${marker} visitor`,
+        categoryL1: 'roofing',
+        conditionGrade: 'C',
+        status: 'active',
+      })
+      .returning();
+
+    const [curatedListing] = await db
+      .insert(listings)
+      .values({
+        passportId: curatedPassport!.id,
+        organisationId: orgId,
+        sellerId,
+        pricePence: 500,
+        currency: 'GBP',
+        quantity: 1,
+        shippingOptions: [{ method: 'collection' }],
+        status: 'active',
+      })
+      .returning();
+    const [visitorListing] = await db
+      .insert(listings)
+      .values({
+        passportId: visitorPassport!.id,
+        organisationId: orgId,
+        sellerId,
+        pricePence: 500,
+        currency: 'GBP',
+        quantity: 1,
+        shippingOptions: [{ method: 'collection' }],
+        status: 'active',
+      })
+      .returning();
+
+    curatedListingId = curatedListing!.id;
+    visitorListingId = visitorListing!.id;
+  });
+
+  it('returns both curated and visitor listings when not curated-only', async () => {
+    const result = await searchListings({ ...baseQuery, q: marker }, { curatedOnly: false });
+    const ids = result.data.map((l) => l.id);
+    expect(ids).toContain(curatedListingId);
+    expect(ids).toContain(visitorListingId);
+  });
+
+  it('excludes the visitor listing and keeps the curated one when curated-only', async () => {
+    const result = await searchListings({ ...baseQuery, q: marker }, { curatedOnly: true });
+    const ids = result.data.map((l) => l.id);
+    expect(ids).toContain(curatedListingId);
+    expect(ids).not.toContain(visitorListingId);
+  });
+
+  it('defaults to uncurated browse when no option is passed', async () => {
+    const result = await searchListings({ ...baseQuery, q: marker });
+    const ids = result.data.map((l) => l.id);
+    expect(ids).toContain(visitorListingId);
+  });
+
+  it('agrees with search: curated-only stats never count the visitor listing', async () => {
+    const [uncurated, curated] = await Promise.all([
+      getMarketplaceStats({ curatedOnly: false }),
+      getMarketplaceStats({ curatedOnly: true }),
+    ]);
+    // Both counts include the whole live catalogue, not just this fixture, so
+    // assert the *difference* the visitor listing makes rather than a total.
+    expect(uncurated.activeCount).toBeGreaterThan(curated.activeCount);
+  });
+
+  it('facets include both categories when not curated-only', async () => {
+    const facets = await getMarketplaceFacets({ curatedOnly: false });
+    expect(facets.categoryL1).toContain('flooring');
+    expect(facets.categoryL1).toContain('roofing');
+  });
+
+  it('facets keep the curated category and grade but drop the visitor-only ones', async () => {
+    const facets = await getMarketplaceFacets({ curatedOnly: true });
+    expect(facets.categoryL1).toContain('flooring');
+    expect(facets.categoryL1).not.toContain('roofing');
+    expect(facets.conditionGrade).toContain('D');
+    expect(facets.conditionGrade).not.toContain('C');
   });
 });

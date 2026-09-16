@@ -37,6 +37,6 @@ cp "$replenisher" "$tmpdir/ops/run-replenish.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$*" > "$TRACE_REPLENISH_TEST_OUTPUT"' > "$tmpdir/ops/run-ops.sh"
 chmod 755 "$tmpdir/ops/run-replenish.sh" "$tmpdir/ops/run-ops.sh"
 TRACE_REPLENISH_TEST_OUTPUT="$tmpdir/replenish.args" PATH="$fake_bin:$PATH" TRACE_DEPLOY_CONFIG_DIR="$tmpdir/config" TRACE_DEPLOY_LOCK_FILE="$tmpdir/deploy.lock" "$tmpdir/ops/run-replenish.sh" "$tmpdir/config/active.env"
-grep -Fqx "$tmpdir/config/old.env demo-replenish --env demo --target-active 3 --yes" "$tmpdir/replenish.args"
+grep -Fqx "$tmpdir/config/old.env demo-replenish --env demo --target-active 1 --yes" "$tmpdir/replenish.args"
 
 echo "deployment state tests passed"

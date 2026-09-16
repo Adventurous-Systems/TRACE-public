@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared core package
+        run: pnpm --filter @trace/core build
+
       - name: Install Playwright chromium
         run: pnpm --filter @trace/e2e exec playwright install --with-deps chromium
 

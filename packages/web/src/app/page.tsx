@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ScrollText, ShieldCheck, Recycle, QrCode, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/Logo';
+import { DemoGuide } from '@/components/DemoGuide';
 
 export default function HomePage() {
   return (
@@ -56,6 +57,9 @@ export default function HomePage() {
               <QrCode className="h-5 w-5" /> Scan QR code
             </Button>
           </Link>
+        </div>
+        <div className="mt-10 max-w-md mx-auto text-left">
+          <DemoGuide />
         </div>
       </section>
 

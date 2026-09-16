@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { keccak256 as ethersKeccak256 } from 'ethers';
 import type { MaterialPassport } from '@trace/db';
+import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 import { buildCanonicalJsonLd, computePassportHash } from './passport-hash.js';
 
 /**
@@ -59,7 +60,7 @@ const FIXTURE: MaterialPassport = {
   reuseSuitability: [],
   handlingRequirements: null,
   hazardousSubstances: [],
-  customAttributes: { seedSource: 'workshop-curated-2026-06' },
+  customAttributes: { seedSource: SEED_TAG },
   status: 'listed',
   blockchainTxHash: null,
   blockchainPassportHash: null,
