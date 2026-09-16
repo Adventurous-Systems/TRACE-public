@@ -26,7 +26,7 @@
     "demo:verify": "tsx scripts/demo-restore.ts --verify",
     "demo:replenish": "tsx scripts/demo-replenish.ts",
     "demo:trim-active": "tsx scripts/demo-trim-active.ts",
-    "test": "tsx --test scripts/lib/demo-trim-policy.test.ts",
+    "test": "tsx --test scripts/lib/*.test.ts",
     "rotate:credentials": "tsx scripts/rotate-published-credentials.ts",
     "studio": "drizzle-kit studio"
   },

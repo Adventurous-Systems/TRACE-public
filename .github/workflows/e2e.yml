@@ -72,7 +72,6 @@ jobs:
       DEMO_SUPPLIER_PASSWORD: ci-only-supplier-password
       DEMO_SUPPLIER2_PASSWORD: ci-only-supplier-two-password
       DEMO_APPLICANT_PASSWORD: ci-only-applicant-password
-      WORKSHOP_PASSWORD: ci-only-workshop-password
 
     steps:
       - name: Check out repository
@@ -106,7 +105,6 @@ jobs:
         run: |
           pnpm --filter @trace/db migrate
           pnpm --filter @trace/db seed
-          pnpm --filter @trace/db seed:workshop
           # The curated demo catalogue. Run by no workflow before this, which is
           # why CI could never assert anything about the demo.
           pnpm --filter @trace/db seed:products

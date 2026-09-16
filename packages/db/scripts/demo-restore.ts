@@ -115,7 +115,12 @@ async function main() {
   // Furniture is on by default; --no-furniture opts out for a bare catalogue.
   const furniture = !argv.includes('--no-furniture');
   const targetActiveIndex = argv.indexOf('--target-active');
-  const targetActiveRaw = targetActiveIndex >= 0 ? argv[targetActiveIndex + 1] : '3';
+  // Default matches the demo's converged catalogue depth (one active lot per
+  // product, see demo-trim-active.ts / 7d80393). A stale '3' here makes
+  // demo:verify report every catalogue product as an error once the live
+  // catalogue has been trimmed to 1, because expectedPerProduct below falls
+  // back to this default whenever a curated passport carries catalogueKey.
+  const targetActiveRaw = targetActiveIndex >= 0 ? argv[targetActiveIndex + 1] : '1';
   const targetActive = Number(targetActiveRaw);
   if (!Number.isInteger(targetActive) || targetActive < 1 || targetActive > 10) {
     throw new Error('--target-active must be an integer from 1 to 10');
