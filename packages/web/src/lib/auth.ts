@@ -27,6 +27,24 @@ export function getPostAuthRedirect(user: StoredUser): string {
   return '/dashboard';
 }
 
+// Validates a `?next=` value before it is ever passed to router.push/replace.
+// A bare `startsWith('/') && !startsWith('//')` check (the old inline version
+// on the login/register pages) still lets through paths like `/\evil.example`
+// or `/\t/evil.example` — the WHATWG URL parser treats a leading backslash
+// like a second forward slash, so the browser navigates cross-origin. Parsing
+// against a fixed placeholder origin and checking the origin survived intact
+// catches that, plus `javascript:`/absolute URLs, in one place.
+export function safeNextPath(value: string | null | undefined): string | null {
+  if (!value || !value.startsWith('/')) return null;
+  try {
+    const url = new URL(value, 'http://trace.invalid');
+    if (url.origin !== 'http://trace.invalid') return null;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 export function isSupplier(user: StoredUser | null): boolean {
   return user?.role === 'supplier';
 }
