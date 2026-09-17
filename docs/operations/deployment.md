@@ -45,10 +45,16 @@ nightly timer are defined in [Public buyer demo operations](public-buyer-demo.md
 - `ops/deploy/run-ops.sh` exposes only an allowlist of operations-image commands.
 
 Repository scripts are never executed as root by an unrestricted SSH session.
-A separately reviewed, root-owned wrapper must use `flock`, accept only an exact
-40-character SHA plus the expected API/web/operations digests, select the
-inactive slot, and invoke fixed installed copies of these primitives. Application
-containers must never receive the Docker socket.
+A separately reviewed, root-owned wrapper (`ops/deploy/deploy-main.sh`, installed
+as `deploy-main.sh`) holds the deployment `flock`, resolves the exact current
+public `main` tip itself, selects the inactive slot, and invokes fixed installed
+copies of these primitives. It takes no arguments: letting it resolve the SHA
+itself, rather than accepting one as an argument, is what lets the sudoers grant
+that runs it be pinned to that exact command with zero arguments — the tightest
+possible grant, and no weaker a check than an argument would give, since
+`prepare-release.sh`/`verify-release.sh` independently refuse any SHA that is not
+the exact current public `main` tip regardless of how they were invoked.
+Application containers must never receive the Docker socket.
 
 ## Host-owned configuration
 
@@ -164,6 +170,63 @@ The optional publishing workflow may continue to create private GHCR packages,
 but the demo host neither pulls nor deploys them and stores no registry token.
 The source-based demo build uses only the exact public commit fetched into its
 release directory.
+
+## Automated deployment
+
+A merge to public `main` deploys itself. `.github/workflows/deploy-demo.yml` runs
+on a self-hosted GitHub Actions runner registered on the demo host, scoped only to
+this repository. It triggers on every push to `main`, polls the GitHub API until
+both `CI` and `Security` report success for that exact commit (a plain `push`
+trigger, rather than `workflow_run`, keeps this workflow's own trigger
+unremarkable — zizmor's `dangerous-triggers` audit flags `workflow_run`
+categorically regardless of what the triggered job does; the actual gate here is
+this explicit wait, checked the same way for both workflows), and only then runs
+`sudo -n deploy-main.sh` with no arguments. The job never checks out repository
+code onto the runner; `deploy-main.sh` performs its own clean fetch of the exact
+public `main` tip, so the blast radius of a compromised workflow file is exactly
+the one sudoers grant below, nothing else on the host.
+
+`deploy-main.sh` runs the same sequence as the manual release procedure above,
+end to end, holding the same deployment lock:
+
+1. Resolve the exact current public `main` tip and compare it to the release the
+   active slot is currently serving. If they match, exit; nothing to do.
+2. Diff the two commits' changed paths against an ignore list
+   (`docs/**`, `**/*.md`, `LICENSE`, `.github/**`, `PUBLIC_MANIFEST.txt`,
+   `.gitignore`, `.prettierignore`, `.gitleaks.toml`). If every changed path is on
+   that list, exit; a documentation-only merge does not redeploy. Anything not on
+   the list is treated as code, and if the diff cannot be computed the default is
+   to deploy, never to silently skip.
+3. Prepare (or, if already prepared, verify) the immutable source release, free
+   the inactive slot of any older generation's containers, and write its
+   candidate environment file.
+4. Preflight, migrate, and run `demo-verify`. A catalogue integrity failure here
+   aborts before anything starts or switches; the live slot is never touched, and
+   this always needs a human (investigate and run `demo-replenish` manually —
+   never `demo-restore` against the buyer demo, see
+   [Public buyer demo operations](public-buyer-demo.md)).
+5. Start the candidate slot, verify its loopback endpoints, and switch the nginx
+   upstream and active environment pair together.
+6. Probe the public hostname. If the probes fail, roll back immediately and exit
+   non-zero; a failed deployment run is a red run in the Actions tab with the full
+   host log, and the demo keeps serving the previous release throughout.
+7. Record the deployment in `/var/lib/trace-demo/state/deployments.log` and prune
+   old releases, always keeping the active release, every release a recorded
+   rollback pointer or a running container still references, and the two most
+   recently prepared releases regardless.
+
+The sudoers grant for the runner's service account is exactly
+`ALL=(root) NOPASSWD: /usr/local/libexec/trace-demo/deploy-main.sh ""` — that
+account has no other sudo rights and is not in the `docker` group, so it cannot
+reach anything else on the host through this path. `workflow_dispatch` on the
+same workflow re-runs the identical wrapper by hand as a break-glass path;
+`concurrency: cancel-in-progress: false` means a second trigger queues rather
+than cancelling a deployment in progress, per the release procedure above.
+
+To pause automated deployment without touching the application, stop the
+runner's service (`systemctl stop actions.runner.Adventurous-Systems-TRACE-public.*`)
+or use the nginx emergency maintenance switch; neither affects the currently
+serving slot.
 
 ## Rollback
 

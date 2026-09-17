@@ -3,6 +3,7 @@
 .github/CODEOWNERS
 .github/dependabot.yml
 .github/workflows/ci.yml
+.github/workflows/deploy-demo.yml
 .github/workflows/e2e.yml
 .github/workflows/promotion-source.yml
 .github/workflows/publish-images.yml
@@ -31,8 +32,8 @@ deploy/demo-data.env.example
 deploy/nginx/demo-acme.conf.example
 deploy/nginx/demo.conf.example
 deploy/nginx/local-gateway.conf
-deploy/nginx/upstream-slot.conf.example
 deploy/nginx/maintenance.html
+deploy/nginx/upstream-slot.conf.example
 deploy/systemd/trace-demo-replenish.service
 deploy/systemd/trace-demo-replenish.timer
 docker-compose.yml
@@ -51,13 +52,17 @@ docs/research/methods.md
 eslint.config.mjs
 genesis.json
 ops/backup_db.sh
+ops/deploy/deploy-main.sh
 ops/deploy/preflight.sh
+ops/deploy/prune-releases.sh
 ops/deploy/rollback-nginx.sh
 ops/deploy/run-ops.sh
 ops/deploy/run-replenish.sh
 ops/deploy/start-candidate.sh
 ops/deploy/switch-nginx.sh
+ops/deploy/test-deploy-main.sh
 ops/deploy/test-deployment-state.sh
+ops/deploy/test-prune-releases.sh
 ops/deploy/verify-candidate.sh
 ops/release/prepare-release.sh
 ops/release/release-lib.sh

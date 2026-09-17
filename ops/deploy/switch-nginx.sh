@@ -18,8 +18,18 @@ previous_env="$(readlink -f "$ACTIVE_ENV_LINK")"
 [[ -f "$previous_upstream" && -f "$previous_env" ]] || { echo "Active deployment links are invalid" >&2; exit 1; }
 
 install -d -m 700 "$STATE_DIR"
-exec 9>"$LOCK_FILE"
-flock -n 9 || { echo "Another TRACE public-demo deployment is running" >&2; exit 1; }
+# TRACE_DEPLOY_LOCK_HELD=1 means a caller (deploy-main.sh) already holds this
+# same lock for the duration of its own run. Re-acquiring it here would be a
+# guaranteed self-conflict: flock's exclusivity is per open file description,
+# not per process tree, so a fresh exec+flock in this script never observes
+# an ancestor's already-held lock on the same file as "ours" — it just fails.
+# Run standalone (a human invoking this directly, e.g. for a manual switch or
+# the documented rollback procedure), the variable is unset and this script
+# takes the lock itself, exactly as before.
+if [[ "${TRACE_DEPLOY_LOCK_HELD:-0}" != 1 ]]; then
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || { echo "Another TRACE public-demo deployment is running" >&2; exit 1; }
+fi
 upstream_state="$STATE_DIR/$(basename "$ACTIVE_LINK").previous"
 env_state="$STATE_DIR/$(basename "$ACTIVE_ENV_LINK").previous"
 printf '%s\n' "$previous_upstream" > "$upstream_state"

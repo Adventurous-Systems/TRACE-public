@@ -317,6 +317,36 @@ async function main() {
     };
     const byName = new Map(curated.map((p) => [p.productName, p]));
 
+    // demo-replenish.ts appends a "— Demo Lot NNN" suffix to every lot it
+    // creates beyond the original (demo-replenish.ts's displayName()), and
+    // production's history shows even a product's original passport can end
+    // up replaced by a suffixed lot 001 — but the bare, un-suffixed name
+    // seed-products.ts gives a freshly-seeded original is just as valid.
+    // byName's keys are whatever productName each row actually has, so it
+    // can find the bare original but never a suffixed lot, and cannot answer
+    // "does a passport exist for catalogue product X" reliably. byCatalogueKey
+    // answers that correctly via catalogueKeyFor, picking the lowest-numbered
+    // lot as the representative passport when more than one exists (matching
+    // demo-trim-active's own "lowest-numbered lot survives" convention). A
+    // row with no demoLotNumber only ever resolves a key via catalogueKeyFor's
+    // bare-name fallback, which requires an exact match to the catalogue's
+    // canonical name — i.e. it can only be the original, un-replenished
+    // passport, so it is lot 1 by definition (matching demo-replenish.ts's
+    // own lotNumber() fallback), never lower-priority than a numbered lot.
+    const lotNumber = (passport: (typeof curated)[number]): number => {
+      const value = (passport.customAttributes as Record<string, unknown> | null)?.[
+        'demoLotNumber'
+      ];
+      return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 1;
+    };
+    const byCatalogueKey = new Map<string, (typeof curated)[number]>();
+    for (const p of curated) {
+      const key = catalogueKeyFor(p);
+      if (!key) continue;
+      const existing = byCatalogueKey.get(key);
+      if (!existing || lotNumber(p) < lotNumber(existing)) byCatalogueKey.set(key, p);
+    }
+
     console.log(`Curated catalogue (${curated.length}/${CATALOG.length} present):`);
 
     // Rows wearing the curated tag that the catalogue does not define. They are
@@ -347,7 +377,7 @@ async function main() {
       }
     }
 
-    const missing = CATALOG.filter((c) => !byName.has(c.passport.productName!));
+    const missing = CATALOG.filter((c) => !byCatalogueKey.has(c.key));
     for (const m of missing) {
       problems.push({
         severity: 'error',
@@ -587,8 +617,12 @@ async function main() {
       const applicantId = personaIds.get('applicant');
 
       // Quality report — gives the inspector journey and the passport detail
-      // page something real to show.
-      const target = byName.get(DEMO_QUALITY_REPORT.productName);
+      // page something real to show. Looked up by catalogueKey, not byName —
+      // see the comment above byCatalogueKey's definition.
+      const qualityReportKey = CATALOG.find(
+        (c) => c.passport.productName === DEMO_QUALITY_REPORT.productName,
+      )?.key;
+      const target = qualityReportKey ? byCatalogueKey.get(qualityReportKey) : undefined;
       if (!inspectorId || !target) {
         problems.push({
           severity: 'error',
