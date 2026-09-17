@@ -60,7 +60,7 @@ jobs:
           wait_for() {
             local workflow="$1" elapsed=0 interval=30 timeout=1800 conclusion
             while (( elapsed < timeout )); do
-              conclusion="$(gh api "repos/$REPO/actions/workflows/$workflow/runs" \
+              conclusion="$(gh api --method GET "repos/$REPO/actions/workflows/$workflow/runs" \
                 -f head_sha="$SHA" --jq '.workflow_runs[0].conclusion // "pending"')"
               case "$conclusion" in
                 success) echo "$workflow passed for $SHA"; return 0 ;;
