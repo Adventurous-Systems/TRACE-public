@@ -283,4 +283,24 @@ expect_success 'deploying from an active blue slot picks green' run_deploy "$con
 grep -q "^preflight $config6/green-$code_sha.env\$" "$calls_log" \
   || fail_message 'expected the inactive (green) slot to be prepared'
 
+
+# --- Test 7: a stale candidate env from a prior failed run is regenerated --
+# A run that fails after writing the candidate env (e.g. later at
+# switch-nginx) must not permanently block every subsequent retry for that
+# same SHA.
+config7="$tmpdir/config7"; state7="$tmpdir/state7"
+setup_config "$config7" green "$docs_sha"
+printf 'GARBAGE=from-a-previous-failed-run\n' > "$config7/blue-$code_sha.env"
+: > "$calls_log"
+expect_success 'a pre-existing candidate env from a failed run does not block a retry' \
+  run_deploy "$config7" "$state7"
+grep -q "^preflight $config7/blue-$code_sha.env\$" "$calls_log" \
+  || fail_message 'expected the stale slot to still be prepared and preflighted'
+grep -q '^GARBAGE=' "$config7/blue-$code_sha.env" \
+  && fail_message 'the stale candidate env must be regenerated, not left in place'
+grep -q "^COMPOSE_PROJECT_NAME=trace-demo-blue\$" "$config7/blue-$code_sha.env" \
+  || fail_message 'the regenerated candidate env must contain fresh, correct content'
+[[ "$(readlink -f "$config7/active.env")" == "$config7/blue-$code_sha.env" ]] \
+  || fail_message 'the retry must still complete and switch to the regenerated candidate'
+
 echo "All $pass_count deploy-main tests passed."
