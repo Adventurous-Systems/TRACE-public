@@ -79,6 +79,10 @@ done
 install -d -m 700 "$STATE_DIR"
 exec 9>"$LOCK_FILE"
 flock -n 9 || fail 'another TRACE public-demo deployment is already running'
+# Tell switch-nginx.sh / rollback-nginx.sh, invoked below, that this lock is
+# already held for the whole run — otherwise their own exec+flock on the
+# same file is a guaranteed self-conflict against the lock we just took.
+export TRACE_DEPLOY_LOCK_HELD=1
 
 ACTIVE_ENV_LINK="$CONFIG_DIR/active.env"
 ACTIVE_CONF_LINK="$CONFIG_DIR/nginx/active.conf"

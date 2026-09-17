@@ -18,8 +18,13 @@ current_upstream="$(readlink -f "$ACTIVE_LINK")"
 current_env="$(readlink -f "$ACTIVE_ENV_LINK")"
 [[ -f "$previous_upstream" && -f "$previous_env" && -f "$current_upstream" && -f "$current_env" ]] || { echo "Rollback deployment pair is invalid" >&2; exit 1; }
 
-exec 9>"$LOCK_FILE"
-flock -n 9 || { echo "Another TRACE public-demo deployment is running" >&2; exit 1; }
+# TRACE_DEPLOY_LOCK_HELD=1 means a caller (deploy-main.sh) already holds this
+# same lock — see the matching comment in switch-nginx.sh for why this must
+# not re-acquire it in that case.
+if [[ "${TRACE_DEPLOY_LOCK_HELD:-0}" != 1 ]]; then
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || { echo "Another TRACE public-demo deployment is running" >&2; exit 1; }
+fi
 switch_link() {
   local link="$1" target="$2" suffix="$3"
   local temporary="${link}.${suffix}"
