@@ -37,6 +37,10 @@ import { getChainAdapter } from '../lib/chain/index.js';
 import { ensureOrganisationWallet } from '../lib/wallet.js';
 import { computePassportHash } from '../lib/passport-hash.js';
 import { decideAnchorAction } from '../lib/anchor-decision.js';
+import {
+  findPassportsMissingIdentifiers,
+  issuePassportIdentifiers,
+} from '../lib/passport-identifiers.js';
 
 const logger = createLogger('anchor-worker');
 
@@ -397,7 +401,28 @@ export async function findUnanchoredPassports(limit: number) {
     .limit(limit);
 }
 
+/**
+ * Issue the Digital Link + QR image for passports that lack them (seeded rows
+ * bypass createPassport). Runs in simulation mode too, and before anchoring so
+ * new anchors carry the Digital Link as their metadata URI. One failure does
+ * not stop the rest; the next sweep retries it.
+ */
+export async function backfillPassportIdentifiers(limit: number): Promise<number> {
+  let issued = 0;
+  for (const { id } of await findPassportsMissingIdentifiers(limit)) {
+    try {
+      await issuePassportIdentifiers(id);
+      issued += 1;
+    } catch (err) {
+      logger.error({ passportId: id, err }, 'Could not issue passport identifiers');
+    }
+  }
+  if (issued > 0) logger.info({ issued }, 'Issued missing passport Digital Links and QR codes');
+  return issued;
+}
+
 async function processSweepJob(): Promise<void> {
+  await backfillPassportIdentifiers(SWEEP_BATCH_SIZE);
   if (env.DEMO_SIMULATE_ANCHOR) return;
 
   const pending = await findUnanchoredPassports(SWEEP_BATCH_SIZE);
