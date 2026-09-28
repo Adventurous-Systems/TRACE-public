@@ -141,6 +141,12 @@ write_fake "$fake_bin/rollback-nginx.sh" \
   'ln -sfn "$(cat "$state_dir/$(basename "$active_conf").previous")" "$active_conf"' \
   'ln -sfn "$(cat "$state_dir/$(basename "$active_env").previous")" "$active_env"'
 
+write_fake "$fake_bin/switch-worker.sh" \
+  '#!/usr/bin/env bash' \
+  'echo "switch-worker $*" >> "$TRACE_TEST_CALLS_LOG"' \
+  'if [[ "${TRACE_TEST_SWITCH_WORKER_FAIL:-0}" == 1 ]]; then exit 1; fi' \
+  'exit 0'
+
 write_fake "$fake_bin/prune-releases.sh" \
   '#!/usr/bin/env bash' \
   'echo "prune-releases $*" >> "$TRACE_TEST_CALLS_LOG"'
@@ -200,6 +206,7 @@ run_deploy() {
     TRACE_DEPLOY_VERIFY_CANDIDATE="$fake_bin/verify-candidate.sh" \
     TRACE_DEPLOY_SWITCH_NGINX="$fake_bin/switch-nginx.sh" \
     TRACE_DEPLOY_ROLLBACK_NGINX="$fake_bin/rollback-nginx.sh" \
+    TRACE_DEPLOY_SWITCH_WORKER="$fake_bin/switch-worker.sh" \
     TRACE_DEPLOY_PRUNE_RELEASES="$fake_bin/prune-releases.sh" \
     TRACE_DEPLOY_DOCKER="$fake_bin/docker" \
     TRACE_DEPLOY_PROBE_ATTEMPTS=2 \
@@ -248,6 +255,10 @@ grep -q '^prune-releases $' "$calls_log" || fail_message 'expected prune-release
   || fail_message 'active.env must point at the new blue candidate after switching'
 grep -q "sha=$code_sha slot=blue previous=$docs_sha result=deployed" "$state3/deployments.log" \
   || fail_message 'expected a deployment log line'
+grep -q "^switch-worker $config3/green-$docs_sha.env $config3/blue-$code_sha.env\$" "$calls_log" \
+  || fail_message 'expected the anchor worker to follow traffic to the new slot'
+grep -qx 'TRACE_ENABLE_WORKER=0' "$config3/blue-$code_sha.env" \
+  || fail_message 'a live env without TRACE_ENABLE_WORKER must carry forward as 0'
 
 # --- Test 4: demo-verify failure aborts before start/switch -----------------
 config4="$tmpdir/config4"; state4="$tmpdir/state4"
@@ -274,6 +285,8 @@ grep -q '^rollback-nginx' "$calls_log" || fail_message 'expected rollback-nginx 
   || fail_message 'active.env must be restored to the previous slot after rollback'
 [[ "$(readlink -f "$config5/nginx/active.conf")" == "$config5/nginx/green.conf" ]] \
   || fail_message 'active.conf must be restored to the previous slot after rollback'
+grep -q '^switch-worker' "$calls_log" \
+  && fail_message 'a rolled-back deploy must not move the anchor worker'
 
 # --- Test 6: slot selection flips the other way when blue is active --------
 config6="$tmpdir/config6"; state6="$tmpdir/state6"
@@ -302,5 +315,28 @@ grep -q "^COMPOSE_PROJECT_NAME=trace-demo-blue\$" "$config7/blue-$code_sha.env" 
   || fail_message 'the regenerated candidate env must contain fresh, correct content'
 [[ "$(readlink -f "$config7/active.env")" == "$config7/blue-$code_sha.env" ]] \
   || fail_message 'the retry must still complete and switch to the regenerated candidate'
+
+# --- Test 8: TRACE_ENABLE_WORKER is carried forward to the candidate --------
+config8="$tmpdir/config8"; state8="$tmpdir/state8"
+setup_config "$config8" green "$docs_sha"
+printf 'TRACE_ENABLE_WORKER=1\n' >> "$config8/green-$docs_sha.env"
+: > "$calls_log"
+expect_success 'a worker-enabled live slot deploys' run_deploy "$config8" "$state8"
+grep -qx 'TRACE_ENABLE_WORKER=1' "$config8/blue-$code_sha.env" \
+  || fail_message 'TRACE_ENABLE_WORKER=1 must be carried forward to the candidate env'
+
+# --- Test 9: a worker switch failure fails the run but keeps the site live --
+config9="$tmpdir/config9"; state9="$tmpdir/state9"
+setup_config "$config9" green "$docs_sha"
+: > "$calls_log"
+TRACE_TEST_ENV_EXTRA=(TRACE_TEST_SWITCH_WORKER_FAIL=1)
+expect_failure 'a failed worker switch fails the deploy run' run_deploy "$config9" "$state9"
+TRACE_TEST_ENV_EXTRA=()
+grep -q '^rollback-nginx' "$calls_log" \
+  && fail_message 'a worker failure must not roll back a site that passed its probes'
+[[ "$(readlink -f "$config9/active.env")" == "$config9/blue-$code_sha.env" ]] \
+  || fail_message 'the new slot must stay live when only the worker switch failed'
+grep -q "sha=$code_sha slot=blue previous=$docs_sha result=deployed" "$state9/deployments.log" \
+  || fail_message 'the deploy itself must still be recorded'
 
 echo "All $pass_count deploy-main tests passed."

@@ -30,7 +30,15 @@ nightly timer are defined in [Public buyer demo operations](public-buyer-demo.md
   pinned by digest and it intentionally contains no Meilisearch service.
 - `deploy/compose.app.yml` starts an API/web slot from locally named images whose
   immutable image IDs are recorded in the source-release receipt.
-  An optional worker profile exists for future write-enabled deployments.
+  Its optional `worker` profile runs the anchor worker (`node dist/worker.js`)
+  for deployments that anchor passports on chain.
+- `ops/deploy/switch-worker.sh` moves the anchor worker between slots so only
+  the live slot's worker consumes the shared anchor queue. The worker runs only
+  when the deploy environment sets `TRACE_ENABLE_WORKER=1`. `deploy-main.sh`
+  carries that setting forward to each new candidate, and calls this script
+  only after the post-switch public probes pass. A worker failure fails the run
+  but never rolls back a slot that passed its probes. `rollback-nginx.sh` calls
+  it after a rollback, so the worker follows traffic back.
 - `Dockerfile.ops` supplies migrations, deterministic synthetic seeding,
   catalogue verification, backup checks, and restore-time operations.
 - `ops/release/prepare-release.sh` fetches the exact current public `main`
@@ -232,11 +240,12 @@ serving slot.
 
 Application rollback is an nginx operation:
 
-1. Stop the new worker if one exists.
-2. Restore the recorded previous upstream and active environment pair with `rollback-nginx.sh`.
-3. Run `nginx -t`, reload gracefully, and verify public probes.
-4. Restore the previous worker only if that release used one.
-5. Preserve the failed slot and logs for diagnosis.
+1. Restore the recorded previous upstream and active environment pair with
+   `rollback-nginx.sh`. It checks and reloads nginx, and then moves the anchor
+   worker back with `switch-worker.sh`. If it warns that the worker move failed,
+   re-run the printed `switch-worker.sh` command.
+2. Verify the public probes.
+3. Preserve the failed slot and logs for diagnosis.
 
 Do not reverse a database migration during an application rollback. Every
 migration must remain compatible with the previous slot. A destructive migration
