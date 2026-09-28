@@ -3,8 +3,11 @@ import { ScrollText, ShieldCheck, Recycle, QrCode, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/Logo';
 import { DemoGuide } from '@/components/DemoGuide';
+import { fetchTrustMode, trustCopy } from '@/lib/trust-mode';
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Claims about anchoring follow what the API actually does (see trust-mode.ts).
+  const trust = trustCopy(await fetchTrustMode());
   return (
     <main className="min-h-screen bg-gradient-to-b from-brand-50 to-white">
       <nav className="flex items-center justify-between px-4 sm:px-6 py-4 max-w-7xl mx-auto">
@@ -37,10 +40,7 @@ export default function HomePage() {
           Construction materials deserve
           <span className="text-brand-600"> a second life</span>
         </h1>
-        <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10">
-          TRACE issues blockchain-anchored material passports for reclaimed construction materials,
-          enabling circular economy hubs to buy and sell with trust and compliance.
-        </p>
+        <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-10">{trust.headline}</p>
         <div className="flex items-center justify-center gap-4 flex-wrap">
           <Link href="/register" className="trace-self-hosted-only">
             <Button size="lg" className="bg-brand-600 hover:bg-brand-700">
@@ -73,8 +73,8 @@ export default function HomePage() {
             },
             {
               Icon: ShieldCheck,
-              title: 'Blockchain Anchored',
-              desc: 'Integrity proofs on VeChainThor — anyone can verify a passport has not been tampered with.',
+              title: trust.cardTitle,
+              desc: trust.cardDescription,
             },
             {
               Icon: Recycle,

@@ -341,6 +341,8 @@ export interface PassportCertificate {
   onchainVerified: boolean | null;
   failureReason: string | null;
   lastAttemptAt: string | null;
+  chainId: string | null;
+  networkLabel: string | null;
 }
 
 export interface PassportListResponse {
@@ -598,7 +600,9 @@ export const passports = {
     request<PassportDetail>(`/api/v1/passports/${id}`, token ? { token } : {}),
 
   verify: (id: string) =>
-    request<PassportDetail & { verified: boolean }>(`/api/v1/passports/${id}/verify`),
+    request<PassportDetail & { verified: boolean; onchainVerified: boolean | null }>(
+      `/api/v1/passports/${id}/verify`,
+    ),
 
   certificate: (id: string) => request<PassportCertificate>(`/api/v1/passports/${id}/certificate`),
 
