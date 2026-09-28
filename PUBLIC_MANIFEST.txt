@@ -93,6 +93,7 @@ packages/api/src/lib/chain/vechain-transactions.ts
 packages/api/src/lib/chain/vechain.ts
 packages/api/src/lib/passport-hash.test.ts
 packages/api/src/lib/passport-hash.ts
+packages/api/src/lib/passport-identifiers.ts
 packages/api/src/lib/queue.ts
 packages/api/src/lib/storage.ts
 packages/api/src/lib/wallet.test.ts
