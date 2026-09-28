@@ -15,6 +15,10 @@ printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$fake_bin/flock"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$fake_bin/nginx"
 printf '%s\n' '#!/usr/bin/env bash' 'case "$1" in' '-c) echo 0:600 ;;' '*) /usr/bin/stat "$@" ;;' 'esac' > "$fake_bin/stat"
 chmod 755 "$fake_bin/flock" "$fake_bin/nginx" "$fake_bin/stat"
+worker_calls="$tmpdir/switch-worker.calls"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "$*" >> "$TRACE_TEST_WORKER_CALLS"' > "$fake_bin/switch-worker.sh"
+chmod 755 "$fake_bin/switch-worker.sh"
+export TRACE_DEPLOY_SWITCH_WORKER="$fake_bin/switch-worker.sh" TRACE_TEST_WORKER_CALLS="$worker_calls"
 
 printf 'old upstream\n' > "$tmpdir/config/nginx/old.conf"
 printf 'new upstream\n' > "$tmpdir/config/nginx/new.conf"
@@ -32,6 +36,8 @@ env PATH="$fake_bin:$PATH" TRACE_DEPLOY_STATE_DIR="$tmpdir/state" TRACE_DEPLOY_L
 env PATH="$fake_bin:$PATH" TRACE_DEPLOY_STATE_DIR="$tmpdir/state" TRACE_DEPLOY_LOCK_FILE="$tmpdir/deploy.lock" "$rollback" "$tmpdir/config/nginx/active.conf" "$tmpdir/config/active.env"
 [[ "$(readlink -f "$tmpdir/config/nginx/active.conf")" == "$tmpdir/config/nginx/old.conf" ]]
 [[ "$(readlink -f "$tmpdir/config/active.env")" == "$tmpdir/config/old.env" ]]
+# The anchor worker follows the rollback: from the rolled-back env to the restored one.
+grep -Fqx "$tmpdir/config/new.env $tmpdir/config/old.env" "$worker_calls"
 
 # --- Nested-lock regression -------------------------------------------------
 # deploy-main.sh holds the deploy lock for its entire run and then calls
@@ -102,5 +108,52 @@ printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$*" > "$TRACE_REPLENISH_TEST
 chmod 755 "$tmpdir/ops/run-replenish.sh" "$tmpdir/ops/run-ops.sh"
 TRACE_REPLENISH_TEST_OUTPUT="$tmpdir/replenish.args" PATH="$fake_bin:$PATH" TRACE_DEPLOY_CONFIG_DIR="$tmpdir/config" TRACE_DEPLOY_LOCK_FILE="$tmpdir/deploy.lock" "$tmpdir/ops/run-replenish.sh" "$tmpdir/config/active.env"
 grep -Fqx "$tmpdir/config/old.env demo-replenish --env demo --target-active 1 --yes" "$tmpdir/replenish.args"
+
+
+# --- switch-worker.sh -------------------------------------------------------
+# Fake docker: logs every compose call; `ps` reports the state in
+# $TRACE_TEST_WORKER_STATE (default running).
+switcher_worker="$repo_root/ops/deploy/switch-worker.sh"
+bash -n "$switcher_worker"
+docker_log="$tmpdir/docker.calls"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "$*" >> "$TRACE_TEST_DOCKER_LOG"' \
+  'if [[ " $* " == *" ps worker "* ]]; then echo "${TRACE_TEST_WORKER_STATE:-running}"; fi' \
+  > "$fake_bin/docker"
+chmod 755 "$fake_bin/docker"
+printf 'COMPOSE_PROJECT_NAME=trace-demo-green\n' > "$tmpdir/config/green.env"
+printf 'COMPOSE_PROJECT_NAME=trace-demo-blue\nTRACE_ENABLE_WORKER=1\n' > "$tmpdir/config/blue-on.env"
+printf 'COMPOSE_PROJECT_NAME=trace-demo-blue\nTRACE_ENABLE_WORKER=0\n' > "$tmpdir/config/blue-off.env"
+run_switch_worker() {
+  env PATH="$fake_bin:$PATH" TRACE_DEPLOY_DOCKER="$fake_bin/docker" \
+    TRACE_DEPLOY_COMPOSE_FILE="$tmpdir/compose.app.yml" TRACE_DEPLOY_WORKER_WAIT_SLEEP=0 \
+    TRACE_TEST_DOCKER_LOG="$docker_log" "$switcher_worker" "$@"
+}
+
+# Enabled: start the new slot's worker, then stop the old slot's.
+: > "$docker_log"
+run_switch_worker "$tmpdir/config/green.env" "$tmpdir/config/blue-on.env" >/dev/null
+[[ "$(sed -n 1p "$docker_log")" == "compose --env-file $tmpdir/config/blue-on.env -f $tmpdir/compose.app.yml --profile worker up -d --no-build --pull never worker" ]]
+grep -Fqx "compose --env-file $tmpdir/config/green.env -f $tmpdir/compose.app.yml --profile worker rm --stop --force worker" "$docker_log"
+start_line="$(grep -n ' up -d ' "$docker_log" | cut -d: -f1)"
+stop_line="$(grep -n "green.env .* rm --stop" "$docker_log" | cut -d: -f1)"
+(( start_line < stop_line )) || { echo "switch-worker must start the new worker before stopping the old one" >&2; exit 1; }
+
+# Disabled: never start one; remove any from both slots.
+: > "$docker_log"
+run_switch_worker "$tmpdir/config/green.env" "$tmpdir/config/blue-off.env" >/dev/null
+if grep -q ' up -d ' "$docker_log"; then echo "switch-worker must not start a disabled worker" >&2; exit 1; fi
+grep -Fqx "compose --env-file $tmpdir/config/blue-off.env -f $tmpdir/compose.app.yml --profile worker rm --stop --force worker" "$docker_log"
+
+# Same slot on both sides (a re-run): never stop the worker it just ensured.
+: > "$docker_log"
+run_switch_worker "$tmpdir/config/blue-on.env" "$tmpdir/config/blue-on.env" >/dev/null
+if grep -q ' rm ' "$docker_log"; then echo "switch-worker must not stop the target slot's own worker" >&2; exit 1; fi
+
+# A worker that never reaches running fails loudly and leaves the old one up.
+: > "$docker_log"
+if TRACE_TEST_WORKER_STATE=exited run_switch_worker "$tmpdir/config/green.env" "$tmpdir/config/blue-on.env" >/dev/null 2>&1; then
+  echo "switch-worker must fail when the new worker does not start" >&2; exit 1
+fi
+if grep -q "green.env .* rm " "$docker_log"; then echo "a failed start must not stop the old worker" >&2; exit 1; fi
 
 echo "deployment state tests passed"

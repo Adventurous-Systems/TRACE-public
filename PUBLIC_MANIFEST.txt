@@ -61,6 +61,7 @@ ops/deploy/run-ops.sh
 ops/deploy/run-replenish.sh
 ops/deploy/start-candidate.sh
 ops/deploy/switch-nginx.sh
+ops/deploy/switch-worker.sh
 ops/deploy/test-deploy-main.sh
 ops/deploy/test-deployment-state.sh
 ops/deploy/test-prune-releases.sh

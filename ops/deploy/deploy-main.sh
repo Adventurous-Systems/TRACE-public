@@ -31,6 +31,7 @@ if [[ "${TRACE_DEPLOY_TEST_MODE:-0}" == 1 && "$EUID" != 0 ]]; then
   VERIFY_CANDIDATE="${TRACE_DEPLOY_VERIFY_CANDIDATE:?required in test mode}"
   SWITCH_NGINX="${TRACE_DEPLOY_SWITCH_NGINX:?required in test mode}"
   ROLLBACK_NGINX="${TRACE_DEPLOY_ROLLBACK_NGINX:?required in test mode}"
+  SWITCH_WORKER="${TRACE_DEPLOY_SWITCH_WORKER:?required in test mode}"
   PRUNE_RELEASES="${TRACE_DEPLOY_PRUNE_RELEASES:-$SCRIPT_DIR/prune-releases.sh}"
   DOCKER_BIN="${TRACE_DEPLOY_DOCKER:-docker}"
   PROBE_ATTEMPTS="${TRACE_DEPLOY_PROBE_ATTEMPTS:-12}"
@@ -41,7 +42,8 @@ else
   export PATH
   unset TRACE_DEPLOY_TEST_MODE TRACE_DEPLOY_CONFIG_DIR TRACE_DEPLOY_STATE_DIR \
     TRACE_DEPLOY_RELEASE_ROOT TRACE_DEPLOY_LOCK_FILE TRACE_PUBLIC_REPOSITORY_URL \
-    TRACE_DEPLOY_PUBLIC_URL
+    TRACE_DEPLOY_PUBLIC_URL TRACE_DEPLOY_SWITCH_WORKER TRACE_DEPLOY_COMPOSE_FILE \
+    TRACE_DEPLOY_DOCKER
   CONFIG_DIR='/var/lib/trace-demo/config'
   STATE_DIR='/var/lib/trace-demo/state'
   RELEASE_ROOT='/opt/trace-public-demo/releases'
@@ -56,6 +58,7 @@ else
   VERIFY_CANDIDATE='/usr/local/libexec/trace-demo/verify-candidate.sh'
   SWITCH_NGINX='/usr/local/libexec/trace-demo/switch-nginx.sh'
   ROLLBACK_NGINX='/usr/local/libexec/trace-demo/rollback-nginx.sh'
+  SWITCH_WORKER='/usr/local/libexec/trace-demo/switch-worker.sh'
   PRUNE_RELEASES='/usr/local/libexec/trace-demo/prune-releases.sh'
   DOCKER_BIN='docker'
   PROBE_ATTEMPTS=12
@@ -63,7 +66,7 @@ else
 fi
 readonly CONFIG_DIR STATE_DIR RELEASE_ROOT LOCK_FILE PUBLIC_GIT_URL PUBLIC_URL
 readonly PREPARE_RELEASE VERIFY_RELEASE PREFLIGHT RUN_OPS START_CANDIDATE
-readonly VERIFY_CANDIDATE SWITCH_NGINX ROLLBACK_NGINX PRUNE_RELEASES DOCKER_BIN
+readonly VERIFY_CANDIDATE SWITCH_NGINX ROLLBACK_NGINX SWITCH_WORKER PRUNE_RELEASES DOCKER_BIN
 readonly PROBE_ATTEMPTS PROBE_SLEEP
 
 [[ "$#" == 0 ]] || { echo "Usage: $0" >&2; exit 2; }
@@ -164,6 +167,8 @@ candidate_project="trace-demo-$slot"
 runtime_network="$(value "$live_env_file" TRACE_RUNTIME_NETWORK)"
 api_env_file="$(value "$live_env_file" TRACE_API_ENV_FILE)"
 web_env_file="$(value "$live_env_file" TRACE_WEB_ENV_FILE)"
+enable_worker="$(value "$live_env_file" TRACE_ENABLE_WORKER)"
+[[ "$enable_worker" == 1 ]] || enable_worker=0
 [[ -n "$runtime_network" && -n "$api_env_file" && -n "$web_env_file" ]] \
   || fail 'active environment is missing required fields'
 
@@ -213,6 +218,9 @@ candidate_tmp="$(mktemp "$CONFIG_DIR/.$slot-$target_sha.env.XXXXXX")"
   printf 'TRACE_OPS_IMAGE_ID=%s\n' "$(value "$receipt" TRACE_OPS_IMAGE_ID)"
   printf 'TRACE_API_HOST_PORT=%s\n' "$candidate_api_port"
   printf 'TRACE_WEB_HOST_PORT=%s\n' "$candidate_web_port"
+  # Carried forward from the live deployment: whether this slot runs the
+  # anchor worker (see switch-worker.sh). Absent or anything but 1 = off.
+  printf 'TRACE_ENABLE_WORKER=%s\n' "$enable_worker"
 } > "$candidate_tmp"
 chmod 600 "$candidate_tmp"
 mv -f "$candidate_tmp" "$candidate_env"
@@ -260,5 +268,13 @@ printf '%s sha=%s slot=%s previous=%s result=deployed\n' \
 chmod 600 "$STATE_DIR/deployments.log"
 
 log "deployed: $target_sha (slot=$slot, previous=$live_sha)"
+
+# --- Anchor worker follows traffic -------------------------------------------
+# Only after the public probes passed, so a rolled-back deploy never moves it.
+# The site is already live on the new slot; a worker failure must not roll it
+# back, but it must fail the run so anchoring does not silently stop.
+if ! "$SWITCH_WORKER" "$live_env_file" "$candidate_env"; then
+  fail "deployed $target_sha, but moving the anchor worker to slot $slot failed; the site is live but passport anchoring may be stopped. Re-run: $SWITCH_WORKER $live_env_file $candidate_env"
+fi
 
 "$PRUNE_RELEASES" || echo 'Release pruning failed; old releases were not removed. This does not affect the live deployment.' >&2
