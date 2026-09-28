@@ -38,7 +38,11 @@ services:
     env_file:
       - ${TRACE_WEB_ENV_FILE:?Set TRACE_WEB_ENV_FILE to the minimal mode-600 web environment file}
     environment:
-      API_URL: http://api:3001
+      # This slot's own API, by container name. Both slots share the external
+      # trace-runtime network, where the bare service name `api` resolves to
+      # every slot's API container in turn, so server-side fetches from this
+      # slot's web could be answered by the other (idle or older) slot.
+      API_URL: http://${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-api-1:3001
     ports:
       - '127.0.0.1:${TRACE_WEB_HOST_PORT:?Set TRACE_WEB_HOST_PORT}:3000'
       - '[::1]:${TRACE_WEB_HOST_PORT:?Set TRACE_WEB_HOST_PORT}:3000'
