@@ -15,6 +15,9 @@ jobs:
   e2e:
     name: Browser tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
 
     services:
       postgres:
@@ -91,12 +94,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Authenticate to GitHub Container Registry
+        # The MinIO image is a private mirror (upstream withdrew its public
+        # images); see docs/operations/minio-image-mirror.md.
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+
       - name: Start MinIO
         # Buckets are created on demand by the app (storage.ensureBucket).
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data # RELEASE.2025-09-07T16-13-09Z
+            ghcr.io/adventurous-systems/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2 server /data # RELEASE.2025-09-07T16-13-09Z (private mirror)
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && break || sleep 2
           done
