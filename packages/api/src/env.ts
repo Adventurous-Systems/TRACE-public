@@ -27,6 +27,17 @@ const envSchema = z.object({
   // Redis
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
+  // Blockchain. CHAIN_KIND picks the adapter in lib/chain/; only 'vechain'
+  // exists today (Thor Solo, testnet or mainnet, chosen by VECHAIN_NODE_URL).
+  CHAIN_KIND: z.enum(['vechain']).default('vechain'),
+  // Human-readable network name shown in the UI next to on-chain anchors,
+  // e.g. "TRACE demo chain (VeChain Thor Solo)". Never claim testnet/mainnet
+  // here unless the node really is one.
+  CHAIN_NETWORK_LABEL: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
+
   // VeChain
   VECHAIN_NODE_URL: z.string().url().default('http://localhost:8669'),
   DEPLOYER_PRIVATE_KEY: z

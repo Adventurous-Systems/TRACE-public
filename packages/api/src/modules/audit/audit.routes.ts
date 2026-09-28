@@ -1,12 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { Address } from '@vechain/sdk-core';
-import { ThorClient } from '@vechain/sdk-network';
 import { Wallet } from 'ethers';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { listRecentAuditEvents, listRecentBlockchainTransactions } from '../../lib/audit.js';
 import { env } from '../../env.js';
-
-const thorClient = ThorClient.at(env.VECHAIN_NODE_URL);
+import { getChainAdapter } from '../../lib/chain/index.js';
 
 function parseLimit(value: unknown): number {
   const limit = Number(value ?? 50);
@@ -38,8 +35,7 @@ async function getGasPayerStatus() {
 
   const address = new Wallet(privateKey).address;
   try {
-    const account = await thorClient.accounts.getAccount(Address.of(address));
-    const energyWei = parseWei(account.energy);
+    const energyWei = await getChainAdapter().getFeeTokenBalance(address);
     const critical = parseWei(env.VTHO_CRITICAL_THRESHOLD_WEI);
     const warning = parseWei(env.VTHO_WARNING_THRESHOLD_WEI);
     return {

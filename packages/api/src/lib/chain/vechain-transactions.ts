@@ -2,7 +2,7 @@ import { Wallet } from 'ethers';
 import { ProviderInternalBaseWallet, VeChainProvider } from '@vechain/sdk-network';
 import type { ThorClient } from '@vechain/sdk-network';
 import type { TransactionClause } from '@vechain/sdk-core';
-import { env } from '../env.js';
+import { env } from '../../env.js';
 
 export interface SubmittedVeChainTransaction {
   txId: string;

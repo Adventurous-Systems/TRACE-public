@@ -3,6 +3,7 @@ import { db } from '@trace/db';
 import { sql } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { env } from '../../env.js';
+import { getChainAdapter } from '../../lib/chain/index.js';
 import { minioClient } from '../../lib/storage.js';
 
 async function checkDatabase(): Promise<boolean> {
@@ -45,13 +46,16 @@ async function checkMinio(): Promise<boolean> {
   }
 }
 
-async function checkThor(): Promise<boolean> {
+function checkChain(): Promise<boolean> {
+  return getChainAdapter().ping(1500);
+}
+
+async function currentChainId(): Promise<string | null> {
+  if (env.DEMO_SIMULATE_ANCHOR) return null;
   try {
-    const endpoint = new URL('/blocks/best', env.VECHAIN_NODE_URL);
-    const response = await fetch(endpoint, { signal: AbortSignal.timeout(1500) });
-    return response.ok;
+    return await getChainAdapter().chainId();
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -68,7 +72,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       checkDatabase(),
       checkRedis(),
       checkMinio(),
-      checkThor(),
+      checkChain(),
     ]);
     const ready = database && redis && minio && (env.DEMO_SIMULATE_ANCHOR || thor);
 
@@ -84,7 +88,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
 
   // Compatibility endpoint retained for existing monitors and local tooling.
   app.get('/', async (_request, reply) => {
-    const dbOk = await checkDatabase();
+    const [dbOk, chainId] = await Promise.all([checkDatabase(), currentChainId()]);
 
     return reply.status(dbOk ? 200 : 503).send({
       success: dbOk,
@@ -100,6 +104,10 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
         //   'onchain'   — anchored via MATERIAL_REGISTRY_ADDRESS
         anchorMode: env.DEMO_SIMULATE_ANCHOR ? 'simulated' : 'onchain',
         anchoringConfigured: Boolean(env.MATERIAL_REGISTRY_ADDRESS),
+        // Which chain on-chain anchors go to (null while simulating or when
+        // the node is unreachable) and its human-readable name for the UI.
+        chainId,
+        chainNetworkLabel: env.DEMO_SIMULATE_ANCHOR ? null : (env.CHAIN_NETWORK_LABEL ?? null),
         timestamp: new Date().toISOString(),
       },
     });
