@@ -60,7 +60,7 @@ services:
 
   thor-solo:
     image: vechain/thor:v2.4.3@sha256:b5fd684366a1c08b64699bd60648a3e7fa69b07b81390d6212c4760c2eb55a8d
-    command: solo --genesis /genesis.json --on-demand --persist --api-cors 'https://demo.trace.adventurous.systems' --api-addr 0.0.0.0:8669
+    command: solo --genesis /genesis.json --on-demand --block-interval 86400 --persist --api-cors 'https://demo.trace.adventurous.systems' --api-addr 0.0.0.0:8669
     volumes:
       - ${TRACE_DATA_ROOT:?Set TRACE_DATA_ROOT}/thor:/home/thor
       - ${TRACE_GENESIS_FILE:?Set TRACE_GENESIS_FILE}:/genesis.json:ro

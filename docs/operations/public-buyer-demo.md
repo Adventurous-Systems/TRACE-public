@@ -45,3 +45,24 @@ copy in sync if the replenishment schedule above changes).
 Keep this copy honest about what the demo actually does — in particular,
 never describe the simulated trust-layer fingerprint as a live VeChain
 anchor (see .env.example's DEMO_SIMULATE_ANCHOR comment).
+
+## Thor Solo block production
+
+The demo's Thor Solo node should write a block only when there is a
+transaction to include, so an idle demo does not grow the chain data
+directory. From Thor v2.4, `--on-demand` alone does not do this. Solo still
+packs an empty block every `--block-interval` seconds (default 10), which
+came to about 8,600 empty blocks a day. `--on-demand` still packs a block as
+soon as a transaction arrives. So both Compose files run:
+
+    solo --on-demand --block-interval 86400 --persist ...
+
+Measured with `vechain/thor:v2.4.3` and this repository's `genesis.json`:
+
+- no new blocks during idle periods;
+- a transaction included about 0.1 s after submission;
+- one extra block at each node restart, from Solo's own startup transaction;
+- one empty block a day at most.
+
+The long interval only affects Solo. Testnet and mainnet nodes follow the
+network's own block schedule.
