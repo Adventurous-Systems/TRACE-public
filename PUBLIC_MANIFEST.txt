@@ -42,6 +42,7 @@ docs/maintainers/parity-manifest.md
 docs/maintainers/public-release.md
 docs/nginx/trace-web.same-origin-api.conf.example
 docs/operations/deployment.md
+docs/operations/minio-image-mirror.md
 docs/operations/public-buyer-demo.md
 docs/operations/self-service-sandbox.md
 docs/research/README.md

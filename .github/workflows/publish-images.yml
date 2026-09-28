@@ -174,7 +174,7 @@ jobs:
             --cap-drop ALL --security-opt no-new-privileges \
             --env MINIO_ROOT_USER=traceverify \
             --env MINIO_ROOT_PASSWORD=trace-verify-disposable-password \
-            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
+            ghcr.io/adventurous-systems/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2 \
             server /data
           for attempt in $(seq 1 30); do
             if docker exec "$minio" curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
