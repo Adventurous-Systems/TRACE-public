@@ -15,13 +15,13 @@ import {
   ConflictError,
   ValidationError,
 } from '@trace/core';
-import QRCode from 'qrcode';
 import sharp from 'sharp';
 import { anchorQueue } from '../../lib/queue.js';
 import { uploadBuffer } from '../../lib/storage.js';
 import { computePassportHash } from '../../lib/passport-hash.js';
 import { simulatePassportAnchor } from '../../lib/anchor.js';
 import { getChainAdapter } from '../../lib/chain/index.js';
+import { issuePassportIdentifiers } from '../../lib/passport-identifiers.js';
 import { env } from '../../env.js';
 
 // Module-level singleton (avoids reconnecting on every verify call)
@@ -79,29 +79,11 @@ export async function createPassport(
 
   if (!passport) throw new Error('Failed to insert passport');
 
-  const publicUrl = `${env.WEB_URL}/passport/${passport.id}`;
-  let qrCodeUrl: string | undefined;
-
-  if (env.NODE_ENV !== 'test') {
-    const qrBuffer = await QRCode.toBuffer(publicUrl, {
-      type: 'png',
-      width: 400,
-      margin: 2,
-      errorCorrectionLevel: 'H',
-    });
-    const qrKey = `passports/${passport.id}/qr.png`;
-    qrCodeUrl = await uploadBuffer(env.MINIO_BUCKET_PASSPORTS, qrKey, qrBuffer, 'image/png');
-  }
-
-  // Update with QR code URL and mark as active
+  // Digital Link + QR image, then mark active.
+  await issuePassportIdentifiers(passport.id);
   const [updated] = await db
     .update(materialPassports)
-    .set({
-      qrCodeUrl: qrCodeUrl ?? null,
-      digitalLinkUri: publicUrl,
-      status: 'active',
-      updatedAt: new Date(),
-    })
+    .set({ status: 'active', updatedAt: new Date() })
     .where(eq(materialPassports.id, passport.id))
     .returning();
 

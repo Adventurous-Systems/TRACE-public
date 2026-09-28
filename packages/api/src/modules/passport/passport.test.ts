@@ -517,3 +517,55 @@ describe('D-27: a simulated certificate carries no tamper accusation', () => {
     expect(body.data.failureReason).toBeNull();
   });
 });
+
+// Follow-up #3: seeded passports are inserted directly (bypassing
+// createPassport) and so had no Digital Link or QR code. The anchor worker's
+// sweep now issues them. (The QR image itself is skipped under NODE_ENV=test,
+// which has no object storage, exactly as in createPassport.)
+describe('passport identifiers', () => {
+  let app: TestApp;
+  let authHeader: { authorization: string };
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    authHeader = await getAuthHeader(app, SEEDED_ADMIN.email, SEEDED_ADMIN.password);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('createPassport issues the Digital Link', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/passports',
+      headers: authHeader,
+      payload: VALID_PASSPORT_PAYLOAD,
+    });
+    const created = res.json<{ data: { id: string; digitalLinkUri: string | null } }>().data;
+    expect(created.digitalLinkUri).toBe(`${process.env['WEB_URL']}/passport/${created.id}`);
+  });
+
+  it('the sweep backfills a seeded passport that has no Digital Link', async () => {
+    const organisation = await db.query.organisations.findFirst();
+    expect(organisation).toBeTruthy();
+    const [seeded] = await db
+      .insert(materialPassports)
+      .values({
+        productName: 'Seeded reclaimed brick (identifier backfill test)',
+        categoryL1: 'masonry',
+        organisationId: organisation!.id,
+        status: 'active',
+      })
+      .returning();
+    expect(seeded!.digitalLinkUri).toBeNull();
+
+    const { backfillPassportIdentifiers } = await import('../../workers/anchor-passport.worker.js');
+    await backfillPassportIdentifiers(500);
+
+    const after = await db.query.materialPassports.findFirst({
+      where: eq(materialPassports.id, seeded!.id),
+    });
+    expect(after!.digitalLinkUri).toBe(`${process.env['WEB_URL']}/passport/${seeded!.id}`);
+  });
+});
