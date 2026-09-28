@@ -66,3 +66,57 @@ Measured with `vechain/thor:v2.4.3` and this repository's `genesis.json`:
 
 The long interval only affects Solo. Testnet and mainnet nodes follow the
 network's own block schedule.
+
+## On-chain anchoring
+
+The demo anchors passport fingerprints on its own Thor Solo chain, which is
+not reachable from the internet. Visitors check an anchor inside the app. A
+publicly checkable chain (VeChain testnet) is a later step, and it is a
+configuration change rather than new code.
+
+Each deployment has its own chain identity: a deployer key and a genesis that
+funds only that key. Never reuse a key across deployments or commit one to
+this repository.
+
+Bringing it up, as root on the demo host (`<sha>` is the live release):
+
+1.  **Create the chain identity** in a root-only directory, using the
+    release's API image:
+
+        install -d -m 700 /var/lib/trace-demo/config/chain
+        docker run --rm --user 0 -v /var/lib/trace-demo/config/chain:/out \
+          trace-demo-api:<sha> node dist/scripts/solo-genesis.js /out
+
+    This writes `deployer.key` (mode 600, never printed) and `genesis.json`.
+    It refuses to overwrite either file.
+
+2.  **Reset the chain onto the new genesis.** Stop `thor-solo`, move its data
+    directory aside as a backup, and point the Compose file's genesis at the
+    new file. Start it again, then confirm the node answers and that idle
+    periods add no blocks (see "Thor Solo block production").
+3.  **Deploy the registry:**
+
+        /usr/local/libexec/trace-demo/run-ops.sh /var/lib/trace-demo/config/active.env chain-deploy-registry
+
+    It prints `MATERIAL_REGISTRY_ADDRESS=...`. It refuses if an address is
+    already configured, unless `--force` is passed.
+
+4.  **Configure the API environment file** (mode 600):
+    - `MATERIAL_REGISTRY_ADDRESS` from step 3;
+    - `DEPLOYER_PRIVATE_KEY` and `FEE_DELEGATOR_PRIVATE_KEY`, both set to the
+      deployer key. Organisation wallets hold no VTHO, so the deployer
+      sponsors their gas;
+    - `FEE_DELEGATION_REQUIRED=true`;
+    - `WALLET_ENCRYPTION_KEY`, a new random secret;
+    - `CHAIN_NETWORK_LABEL`, describing the chain honestly (e.g. "TRACE demo
+      chain (VeChain Thor Solo)").
+5.  **Enable the anchor worker:** set `TRACE_ENABLE_WORKER=1` in the live
+    deploy environment. Every later deploy carries it forward, and
+    `switch-worker.sh` keeps the worker on the live slot.
+6.  **Switch anchoring on:** set `DEMO_SIMULATE_ANCHOR=false` and deploy. The
+    worker's sweep then anchors every passport that has a fingerprint but no
+    chain transaction, including the curated catalogue, within about five
+    minutes.
+
+To go back to simulation, set `DEMO_SIMULATE_ANCHOR=true` and redeploy. The
+site never depends on the chain in simulation mode.

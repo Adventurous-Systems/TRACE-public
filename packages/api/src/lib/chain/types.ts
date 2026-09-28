@@ -39,6 +39,8 @@ export interface ChainReceipt {
   paid: string | null;
   blockNumber: number;
   blockId: string;
+  /** Address of the contract created by this transaction, if it deployed one. */
+  contractAddress: string | null;
 }
 
 /** Raw chain data for the transaction explorer route. */
@@ -66,6 +68,12 @@ export interface ChainAdapter {
 
   /** True when the node answers within the timeout. Never throws. */
   ping(timeoutMs?: number): Promise<boolean>;
+
+  /**
+   * Deploy MaterialRegistry from the bytecode bundled in lib/chain/artifacts,
+   * with `admin` as its ADMIN. Wait for the receipt to learn the address.
+   */
+  deployMaterialRegistry(admin: ChainSigner): Promise<SubmittedChainTransaction>;
 
   /** MaterialRegistry.registerPassport — first anchor of a passport. */
   registerPassport(

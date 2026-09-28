@@ -9,6 +9,10 @@ import { ThorClient } from '@vechain/sdk-network';
 import { ABIFunction, Address } from '@vechain/sdk-core';
 import { Interface, keccak256, toUtf8Bytes } from 'ethers';
 import { submitVeChainTransaction } from './vechain-transactions.js';
+import {
+  MATERIAL_REGISTRY_ABI,
+  MATERIAL_REGISTRY_BYTECODE,
+} from './artifacts/material-registry.js';
 import { uuidToBytes32 } from './ids.js';
 import type {
   ChainAdapter,
@@ -68,6 +72,8 @@ const VERIFY_FUNCTION = new ABIFunction({
 const REGISTER_FALLBACK_GAS = 500_000;
 const UPDATE_FALLBACK_GAS = 300_000;
 const GRANT_ROLE_FALLBACK_GAS = 200_000;
+// MaterialRegistry creation is ~2.5M gas on Thor.
+const DEPLOY_FALLBACK_GAS = 4_000_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -109,6 +115,18 @@ export class VeChainAdapter implements ChainAdapter {
     } catch {
       return false;
     }
+  }
+
+  deployMaterialRegistry(admin: ChainSigner): Promise<SubmittedChainTransaction> {
+    const constructorArgs = new Interface(MATERIAL_REGISTRY_ABI).encodeDeploy([admin.address]);
+    const data = MATERIAL_REGISTRY_BYTECODE + constructorArgs.slice(2);
+    return submitVeChainTransaction({
+      thorClient: this.thorClient,
+      originPrivateKey: admin.privateKey,
+      originAddress: admin.address,
+      clauses: [{ to: null, value: '0x0', data }],
+      fallbackGas: DEPLOY_FALLBACK_GAS,
+    });
   }
 
   registerPassport(
@@ -169,6 +187,7 @@ export class VeChainAdapter implements ChainAdapter {
           paid: receipt.paid ?? null,
           blockNumber: receipt.meta.blockNumber,
           blockId: receipt.meta.blockID,
+          contractAddress: receipt.outputs[0]?.contractAddress ?? null,
         };
       }
       if (Date.now() >= deadline) return null;
