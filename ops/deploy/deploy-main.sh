@@ -189,8 +189,14 @@ if [[ -n "$stale_containers" ]]; then
 fi
 
 # --- Candidate environment file --------------------------------------------
+# A prior failed run for this exact SHA may have already written this file
+# (e.g. it failed after this point but before switching). Regenerating it is
+# what makes a retry work at all, and is safe: this run holds the exclusive
+# deploy lock, the content is derived entirely from the immutable release
+# receipt plus the fixed slot ports above, and this path can never be the
+# live one (live_sha came from active.env, so the candidate is by
+# construction the other slot).
 candidate_env="$CONFIG_DIR/$slot-$target_sha.env"
-[[ ! -e "$candidate_env" ]] || fail "candidate environment already exists: $candidate_env"
 candidate_tmp="$(mktemp "$CONFIG_DIR/.$slot-$target_sha.env.XXXXXX")"
 {
   printf 'COMPOSE_PROJECT_NAME=%s\n' "$candidate_project"

@@ -127,6 +127,9 @@ jobs:
   container-build:
     name: Build and start deployment images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -198,6 +201,14 @@ jobs:
             /tmp/trivy-*.json
             /tmp/trivy-*.cdx.json
           retention-days: 30
+
+      - name: Authenticate to GitHub Container Registry
+        # The MinIO image is a private mirror (upstream withdrew its public
+        # images); see docs/operations/minio-image-mirror.md.
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
 
       - name: Start isolated data services and migrate
         shell: bash
