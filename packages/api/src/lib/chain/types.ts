@@ -100,6 +100,17 @@ export interface ChainAdapter {
   waitForReceipt(txId: string, options?: { timeoutMs?: number }): Promise<ChainReceipt | null>;
 
   /**
+   * What the registry currently holds for a passport: whether it is
+   * registered and, if so, its anchored hash. The source of truth for
+   * register-vs-update, since the database clears its anchor columns on edit.
+   * Throws when the chain cannot be read (the caller retries).
+   */
+  getPassportAnchor(
+    registryAddress: string,
+    passportId: string,
+  ): Promise<{ registered: boolean; dataHash: string | null }>;
+
+  /**
    * MaterialRegistry.verifyPassport — does the chain hold this hash for this
    * passport? null when the node or contract cannot be reached (unknown,
    * never "mismatch").

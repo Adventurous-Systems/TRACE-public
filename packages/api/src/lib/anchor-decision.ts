@@ -1,25 +1,24 @@
 /**
- * What an anchor job should do for a passport, given its current fingerprint.
+ * What an anchor job should do for a passport, decided from what the registry
+ * currently holds for it (ChainAdapter.getPassportAnchor), never from the
+ * database's anchor columns:
  *
- * The worker used to skip every passport that already had a transaction hash,
- * so reanchorPassport() (called after a hashed field such as conditionGrade
- * changes) queued jobs that did nothing and the chain kept the old hash. The
- * registry supports updates (MaterialRegistry.updatePassportHash), so:
+ *   - not registered on chain                  → register
+ *   - registered, chain hash ≠ recomputed hash → update (updatePassportHash)
+ *   - registered, chain hash = recomputed hash → skip (already current)
  *
- *   - never submitted to a chain (no tx hash)     → register
- *   - submitted, stored hash ≠ recomputed hash    → update
- *   - submitted, stored hash = recomputed hash    → skip (nothing changed)
- *
- * A simulated record (fingerprint stored, no tx hash) counts as "never
- * submitted", so switching a deployment from simulation to on-chain anchors
- * its existing passports.
+ * The database is not a safe source: updatePassport() clears
+ * blockchainTxHash when a passport is edited, and a simulated record has a
+ * fingerprint but no transaction. Deciding from those made an edited passport
+ * try registerPassport again, which the registry rejects
+ * (PassportAlreadyExists), so edits were never re-anchored.
  */
 export type AnchorAction = 'register' | 'update' | 'skip';
 
 export function decideAnchorAction(
-  passport: { blockchainTxHash: string | null; blockchainPassportHash: string | null },
+  onchain: { registered: boolean; dataHash: string | null },
   recomputedHash: string,
 ): AnchorAction {
-  if (!passport.blockchainTxHash) return 'register';
-  return passport.blockchainPassportHash === recomputedHash ? 'skip' : 'update';
+  if (!onchain.registered) return 'register';
+  return onchain.dataHash?.toLowerCase() === recomputedHash.toLowerCase() ? 'skip' : 'update';
 }
