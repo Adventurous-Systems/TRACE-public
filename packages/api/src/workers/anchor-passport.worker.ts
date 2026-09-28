@@ -445,7 +445,7 @@ export function startAnchorWorker() {
     logger.error({ err }, 'Anchor sweep failed');
   });
   void anchorSweepQueue
-    .upsertJobScheduler('anchor-sweep', { every: SWEEP_EVERY_MS, immediately: true })
+    .upsertJobScheduler('anchor-sweep', { every: SWEEP_EVERY_MS })
     .catch((err: unknown) => logger.error({ err }, 'Could not schedule the anchor sweep'));
 
   logger.info('Anchor passport worker started');
