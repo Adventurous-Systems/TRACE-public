@@ -8,6 +8,7 @@ import {
   canViewAdmin,
   isSupplier,
   isHubStaff,
+  safeNextPath,
   type StoredUser,
 } from './auth';
 
@@ -119,5 +120,35 @@ describe('isSupplier / isHubStaff (pre-existing)', () => {
       expect(isHubStaff(user(role, 'org-1'))).toBe(true);
     }
     expect(isHubStaff(user('inspector', 'org-1'))).toBe(false);
+  });
+});
+
+// Guards the `?next=` value from Slice 5's login-return fix before it is
+// ever passed to router.push/replace. A bare `startsWith('//')` check (the
+// version this replaced) still lets `/\evil.example` and `/\t/evil.example`
+// through — the WHATWG URL parser folds a leading backslash into a second
+// forward slash, so the browser treats it as an off-origin absolute URL.
+describe('safeNextPath', () => {
+  it('accepts an in-app path, with or without a query string', () => {
+    expect(safeNextPath('/transactions')).toBe('/transactions');
+    expect(safeNextPath('/transactions?tab=open')).toBe('/transactions?tab=open');
+  });
+
+  it('rejects missing, empty, or relative values', () => {
+    expect(safeNextPath(null)).toBeNull();
+    expect(safeNextPath(undefined)).toBeNull();
+    expect(safeNextPath('')).toBeNull();
+    expect(safeNextPath('transactions')).toBeNull();
+  });
+
+  it('rejects protocol-relative and backslash-disguised off-origin targets', () => {
+    expect(safeNextPath('//evil.example')).toBeNull();
+    expect(safeNextPath('/\\evil.example')).toBeNull();
+    expect(safeNextPath('/\t/evil.example')).toBeNull();
+  });
+
+  it('rejects absolute URLs and non-http(s) schemes', () => {
+    expect(safeNextPath('https://evil.example')).toBeNull();
+    expect(safeNextPath('javascript:alert(1)')).toBeNull();
   });
 });

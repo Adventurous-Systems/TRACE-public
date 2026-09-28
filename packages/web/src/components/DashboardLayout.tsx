@@ -21,11 +21,11 @@ export default function DashboardLayout({ children }: Props) {
   useEffect(() => {
     const u = getUser();
     if (!u) {
-      router.replace('/login');
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     } else {
       setUser(u);
     }
-  }, [router]);
+  }, [router, pathname]);
 
   // Close the mobile menu on navigation.
   useEffect(() => {

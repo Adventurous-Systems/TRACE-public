@@ -75,7 +75,7 @@ export default function AccessRequestPage() {
     }
 
     if (!token || !user) {
-      router.replace('/login');
+      router.replace('/login?next=%2Faccess-request');
       return;
     }
 

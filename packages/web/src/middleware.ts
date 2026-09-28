@@ -8,6 +8,7 @@ const PROTECTED_PREFIXES = [
   '/quality',
   '/transactions',
   '/admin',
+  '/access-request',
 ];
 
 function isJwtExpired(token: string): boolean {
@@ -31,7 +32,9 @@ export function middleware(request: NextRequest): NextResponse {
   if (!token || isJwtExpired(token)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
-    loginUrl.searchParams.set('redirect', pathname);
+    const search = request.nextUrl.search;
+    loginUrl.search = '';
+    loginUrl.searchParams.set('next', `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -46,5 +49,6 @@ export const config = {
     '/quality/:path*',
     '/transactions/:path*',
     '/admin/:path*',
+    '/access-request/:path*',
   ],
 };

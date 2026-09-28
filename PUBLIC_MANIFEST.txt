@@ -210,6 +210,7 @@ packages/e2e/global-setup.ts
 packages/e2e/package.json
 packages/e2e/playwright.config.ts
 packages/e2e/scripts/assert-smoke-isolation.ts
+packages/e2e/tests/auth-redirect.spec.ts
 packages/e2e/tests/buyer-journey.spec.ts
 packages/e2e/tests/mobile/mobile-nav.spec.ts
 packages/e2e/tests/mobile/overflow.spec.ts

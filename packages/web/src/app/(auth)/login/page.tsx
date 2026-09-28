@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { auth } from '@/lib/api-client';
-import { getPostAuthRedirect, saveSession } from '@/lib/auth';
+import { getPostAuthRedirect, saveSession, safeNextPath } from '@/lib/auth';
 
 const LoginSchema = z.object({
   email: z.string().email('Enter a valid email'),
@@ -25,7 +25,7 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
   const nextPath = searchParams.get('next');
-  const safeNextPath = nextPath?.startsWith('/') && !nextPath.startsWith('//') ? nextPath : null;
+  const nextTarget = safeNextPath(nextPath);
 
   const {
     register,
@@ -38,7 +38,7 @@ export default function LoginPage() {
     try {
       const result = await auth.login(data.email, data.password);
       saveSession(result.token, result.user);
-      router.push(safeNextPath ?? getPostAuthRedirect(result.user));
+      router.push(nextTarget ?? getPostAuthRedirect(result.user));
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Login failed');
     }
@@ -102,9 +102,7 @@ export default function LoginPage() {
                 New to TRACE?{' '}
                 <Link
                   href={
-                    safeNextPath
-                      ? `/register?next=${encodeURIComponent(safeNextPath)}`
-                      : '/register'
+                    nextTarget ? `/register?next=${encodeURIComponent(nextTarget)}` : '/register'
                   }
                   className="text-brand-600 underline"
                 >
