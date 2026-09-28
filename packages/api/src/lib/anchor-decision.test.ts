@@ -5,29 +5,33 @@ const HASH_A = `0x${'a'.repeat(64)}`;
 const HASH_B = `0x${'b'.repeat(64)}`;
 
 describe('decideAnchorAction', () => {
-  it('registers a passport that was never submitted', () => {
-    expect(
-      decideAnchorAction({ blockchainTxHash: null, blockchainPassportHash: null }, HASH_A),
-    ).toBe('register');
+  it('registers a passport the registry has never seen', () => {
+    expect(decideAnchorAction({ registered: false, dataHash: null }, HASH_A)).toBe('register');
   });
 
-  it('registers a simulated passport (fingerprint stored, no transaction)', () => {
-    expect(
-      decideAnchorAction({ blockchainTxHash: null, blockchainPassportHash: HASH_A }, HASH_A),
-    ).toBe('register');
+  it('skips a passport whose anchored hash is already current', () => {
+    expect(decideAnchorAction({ registered: true, dataHash: HASH_A }, HASH_A)).toBe('skip');
   });
 
-  it('skips an anchored passport whose fingerprint is unchanged', () => {
+  it('compares hashes case-insensitively', () => {
     expect(
-      decideAnchorAction({ blockchainTxHash: '0xtx', blockchainPassportHash: HASH_A }, HASH_A),
+      decideAnchorAction(
+        { registered: true, dataHash: HASH_A.toUpperCase().replace('0X', '0x') },
+        HASH_A,
+      ),
     ).toBe('skip');
   });
 
-  // The bug this replaces: re-anchor jobs after e.g. a conditionGrade change
-  // were skipped because a tx hash already existed, leaving the chain stale.
-  it('updates an anchored passport whose fingerprint changed', () => {
-    expect(
-      decideAnchorAction({ blockchainTxHash: '0xtx', blockchainPassportHash: HASH_A }, HASH_B),
-    ).toBe('update');
+  // Re-anchor after a hashed field changes (e.g. conditionGrade from a quality
+  // report). The old worker skipped these because a tx hash existed.
+  it('updates a registered passport whose data changed', () => {
+    expect(decideAnchorAction({ registered: true, dataHash: HASH_A }, HASH_B)).toBe('update');
+  });
+
+  // updatePassport() clears the database's anchor columns on edit. Deciding
+  // from the database made this "register", which the registry rejects with
+  // PassportAlreadyExists — edits were never re-anchored.
+  it('updates (never re-registers) an edited passport the registry already holds', () => {
+    expect(decideAnchorAction({ registered: true, dataHash: HASH_A }, HASH_B)).not.toBe('register');
   });
 });

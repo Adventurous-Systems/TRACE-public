@@ -29,6 +29,7 @@ const REGISTRY_INTERFACE = new Interface([
 ]);
 
 const HUB_ROLE = keccak256(toUtf8Bytes('HUB_ROLE'));
+const ZERO_HASH = `0x${'0'.repeat(64)}`;
 
 const HAS_ROLE_FUNCTION = new ABIFunction({
   type: 'function',
@@ -192,6 +193,29 @@ export class VeChainAdapter implements ChainAdapter {
       if (Date.now() >= deadline) return null;
       await sleep(1000);
     }
+  }
+
+  async getPassportAnchor(
+    registryAddress: string,
+    passportId: string,
+  ): Promise<{ registered: boolean; dataHash: string | null }> {
+    // verifyPassport returns the stored record even when the hash does not
+    // match, so one call with a zero hash reads the record without reverting
+    // for unregistered passports (unlike getPassport).
+    const result = await this.thorClient.contracts.executeCall(registryAddress, VERIFY_FUNCTION, [
+      uuidToBytes32(passportId),
+      ZERO_HASH,
+    ]);
+    if (!result.success) {
+      throw new Error(`MaterialRegistry.verifyPassport call failed for ${passportId}`);
+    }
+    // `plain` carries the tuple with its field names; `array` is positional.
+    const record = (result.result?.plain as unknown[] | undefined)?.[1] as
+      | { dataHash?: string; registeredAt?: bigint | number | string }
+      | undefined;
+    const registeredAt = BigInt(record?.registeredAt ?? 0);
+    if (registeredAt === 0n) return { registered: false, dataHash: null };
+    return { registered: true, dataHash: String(record?.dataHash).toLowerCase() };
   }
 
   async verifyPassport(
