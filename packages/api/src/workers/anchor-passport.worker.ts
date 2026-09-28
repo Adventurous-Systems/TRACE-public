@@ -17,8 +17,8 @@
  */
 
 import { Worker, type Job } from 'bullmq';
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
-import { db, materialPassports } from '@trace/db';
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { blockchainTransactions, db, materialPassports, type MaterialPassport } from '@trace/db';
 import { createLogger } from '@trace/core';
 import { Wallet } from 'ethers';
 import { env } from '../env.js';
@@ -141,6 +141,47 @@ async function ensureHubRole(
   }
 }
 
+/**
+ * The registry already holds this passport's current fingerprint, but the
+ * database may not say so — e.g. the passport was edited (which clears the
+ * anchor columns) and then edited back. Restore the anchor columns from the
+ * transaction that anchored this exact hash.
+ */
+async function syncAlreadyAnchored(
+  passport: MaterialPassport,
+  dataHash: string,
+  chainId: string,
+): Promise<void> {
+  if (
+    passport.blockchainTxHash &&
+    passport.blockchainPassportHash === dataHash &&
+    passport.blockchainChainId === chainId
+  ) {
+    return;
+  }
+  const anchoringTx = (
+    await db.query.blockchainTransactions.findMany({
+      where: and(
+        eq(blockchainTransactions.resourceType, 'passport'),
+        eq(blockchainTransactions.resourceId, passport.id),
+        eq(blockchainTransactions.status, 'succeeded'),
+      ),
+      orderBy: [desc(blockchainTransactions.confirmedAt)],
+    })
+  ).find((tx) => tx.metadata['certificateHash'] === dataHash);
+
+  await db
+    .update(materialPassports)
+    .set({
+      blockchainTxHash: anchoringTx?.txHash ?? passport.blockchainTxHash,
+      blockchainPassportHash: dataHash,
+      blockchainAnchoredAt: anchoringTx?.confirmedAt ?? passport.blockchainAnchoredAt ?? new Date(),
+      blockchainChainId: chainId,
+      updatedAt: new Date(),
+    })
+    .where(eq(materialPassports.id, passport.id));
+}
+
 // ─── Main job processor ───────────────────────────────────────────────────
 
 async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
@@ -161,18 +202,22 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
     throw new Error('MATERIAL_REGISTRY_ADDRESS is not set — cannot anchor passport');
   }
 
+  const chain = getChainAdapter();
   const dataHash = computePassportHash(passport);
-  const action = decideAnchorAction(passport, dataHash);
+  // Decide from the registry, not the database (see lib/anchor-decision.ts).
+  const onchain = await chain.getPassportAnchor(registryAddress, passportId);
+  const action = decideAnchorAction(onchain, dataHash);
+  const chainId = await chain.chainId();
+
   if (action === 'skip') {
+    await syncAlreadyAnchored(passport, dataHash, chainId);
     logger.info({ passportId }, 'Passport already anchored with its current fingerprint');
     return;
   }
 
-  const chain = getChainAdapter();
-  const chainId = await chain.chainId();
   const auditAction = action === 'register' ? 'passport.anchor' : 'passport.reanchor';
   const metadataUri = passport.digitalLinkUri ?? `${env.API_URL}/api/v1/passports/${passportId}`;
-  const previousHash = action === 'update' ? passport.blockchainPassportHash : null;
+  const previousHash = action === 'update' ? onchain.dataHash : null;
 
   logger.info({ passportId, action, dataHash, chainId }, 'Computed passport hash');
 
