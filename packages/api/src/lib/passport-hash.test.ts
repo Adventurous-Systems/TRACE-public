@@ -65,6 +65,7 @@ const FIXTURE: MaterialPassport = {
   blockchainTxHash: null,
   blockchainPassportHash: null,
   blockchainAnchoredAt: null,
+  blockchainChainId: null,
   registeredBy: null,
   createdAt: new Date('2026-06-04T09:49:27.000Z'),
   updatedAt: new Date('2026-09-01T09:00:00.000Z'),

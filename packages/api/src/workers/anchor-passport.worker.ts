@@ -3,120 +3,75 @@
  *
  * Flow:
  *   1. Receive { passportId, organisationId } from the anchor-passport BullMQ queue
- *   2. Load the full passport from the DB
- *   3. Serialise to canonical JSON-LD (keys sorted for reproducible hash)
- *   4. Compute keccak256 hash
- *   5. Submit to MaterialRegistry.registerPassport() on VeChainThor
- *   6. Poll for tx confirmation
- *   7. Write blockchain_tx_hash, blockchain_passport_hash, blockchain_anchored_at back to DB
+ *   2. Load the full passport from the DB and recompute its canonical fingerprint
+ *   3. Decide register / update / skip (see lib/anchor-decision.ts)
+ *   4. Submit MaterialRegistry.registerPassport() or .updatePassportHash()
+ *      through the configured ChainAdapter (lib/chain/)
+ *   5. Wait for the receipt
+ *   6. Write blockchain_tx_hash, blockchain_passport_hash, blockchain_anchored_at
+ *      and blockchain_chain_id back to the DB
+ *
+ * A second, repeatable "anchor-sweep" job queues passports that have a
+ * fingerprint but were never submitted (seeded, replenished or created while
+ * simulating), so they are anchored without the scripts touching the queue.
  */
 
 import { Worker, type Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { db, materialPassports } from '@trace/db';
 import { createLogger } from '@trace/core';
-import { ThorClient } from '@vechain/sdk-network';
-import { ABIFunction } from '@vechain/sdk-core';
-import { keccak256, Interface, toUtf8Bytes, Wallet } from 'ethers';
+import { Wallet } from 'ethers';
 import { env } from '../env.js';
 import {
   createBlockchainTransaction,
   recordAuditEvent,
   updateBlockchainTransaction,
 } from '../lib/audit.js';
-import { redisConnection, type AnchorPassportJob } from '../lib/queue.js';
-import { submitVeChainTransaction } from '../lib/vechain-transactions.js';
+import {
+  anchorQueue,
+  anchorSweepQueue,
+  redisConnection,
+  type AnchorPassportJob,
+} from '../lib/queue.js';
+import { getChainAdapter } from '../lib/chain/index.js';
 import { ensureOrganisationWallet } from '../lib/wallet.js';
-import { buildCanonicalJsonLd } from '../lib/passport-hash.js';
+import { computePassportHash } from '../lib/passport-hash.js';
+import { decideAnchorAction } from '../lib/anchor-decision.js';
 
 const logger = createLogger('anchor-worker');
 
-// ─── VeChain setup ─────────────────────────────────────────────────────────
+const SWEEP_EVERY_MS = 5 * 60 * 1000;
+const SWEEP_BATCH_SIZE = 50;
 
-// Module-level singleton — one ThorClient per worker process
-const thorClient = ThorClient.at(env.VECHAIN_NODE_URL);
-
-// Minimal ABI for MaterialRegistry
-const REGISTRY_ABI = [
-  'function registerPassport(bytes32 passportId, bytes32 dataHash, string calldata metadataUri) external',
-  'function grantHubRole(address hub) external',
-];
-
-const HUB_ROLE = keccak256(toUtf8Bytes('HUB_ROLE'));
-const HAS_ROLE_FUNCTION = new ABIFunction({
-  type: 'function',
-  name: 'hasRole',
-  inputs: [
-    { name: 'role', type: 'bytes32' },
-    { name: 'account', type: 'address' },
-  ],
-  outputs: [{ name: '', type: 'bool' }],
-  stateMutability: 'view',
-});
-
-// ─── UUID → bytes32 ───────────────────────────────────────────────────────
-
-function uuidToBytes32(uuid: string): string {
-  const hex = uuid.replace(/-/g, '');
-  return '0x' + hex.padStart(64, '0');
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForReceipt(txId: string) {
-  let receipt = null;
-  for (let i = 0; i < 12; i++) {
-    try {
-      receipt = await thorClient.transactions.getTransactionReceipt(txId);
-      if (receipt) break;
-    } catch {
-      // not yet confirmed
-    }
-    await sleep(5000);
-  }
-  return receipt;
-}
-
-async function ensureHubRole(hubAddress: string, organisationId: string): Promise<void> {
-  if (!env.MATERIAL_REGISTRY_ADDRESS) {
-    throw new Error('MATERIAL_REGISTRY_ADDRESS is not set — cannot grant HUB_ROLE');
-  }
-
-  const hasRoleResult = await thorClient.contracts.executeCall(
-    env.MATERIAL_REGISTRY_ADDRESS,
-    HAS_ROLE_FUNCTION,
-    [HUB_ROLE, hubAddress],
-  );
-  const alreadyHub = hasRoleResult.result?.array?.[0] === true;
-  if (alreadyHub) return;
+async function ensureHubRole(
+  registryAddress: string,
+  hubAddress: string,
+  organisationId: string,
+): Promise<void> {
+  const chain = getChainAdapter();
+  if (await chain.hasHubRole(registryAddress, hubAddress)) return;
 
   if (!env.DEPLOYER_PRIVATE_KEY) {
     throw new Error('DEPLOYER_PRIVATE_KEY is required to grant HUB_ROLE to org wallets');
   }
 
-  const deployerAddress = new Wallet(env.DEPLOYER_PRIVATE_KEY).address;
-  const iface = new Interface(REGISTRY_ABI);
-  const callData = iface.encodeFunctionData('grantHubRole', [hubAddress]);
+  const deployer = {
+    address: new Wallet(env.DEPLOYER_PRIVATE_KEY).address,
+    privateKey: env.DEPLOYER_PRIVATE_KEY,
+  };
   const blockchainLog = await createBlockchainTransaction({
     action: 'org.grantHubRole',
     resourceType: 'organisation',
     resourceId: organisationId,
     organisationId,
-    originAddress: deployerAddress,
-    contractAddress: env.MATERIAL_REGISTRY_ADDRESS,
+    chainId: await chain.chainId(),
+    originAddress: deployer.address,
+    contractAddress: registryAddress,
     metadata: { hubAddress },
   });
 
   try {
-    const submitted = await submitVeChainTransaction({
-      thorClient,
-      originPrivateKey: env.DEPLOYER_PRIVATE_KEY,
-      originAddress: deployerAddress,
-      clauses: [{ to: env.MATERIAL_REGISTRY_ADDRESS, value: '0x0', data: callData }],
-      fallbackGas: 200_000,
-    });
+    const submitted = await chain.grantHubRole(deployer, { registryAddress, hubAddress });
 
     if (blockchainLog) {
       await updateBlockchainTransaction(blockchainLog.id, {
@@ -134,7 +89,7 @@ async function ensureHubRole(hubAddress: string, organisationId: string): Promis
       });
     }
 
-    const receipt = await waitForReceipt(submitted.txId);
+    const receipt = await chain.waitForReceipt(submitted.txId);
     if (!receipt || receipt.reverted) {
       throw new Error(
         `HUB_ROLE grant transaction ${submitted.txId} failed or was not confirmed in time`,
@@ -147,8 +102,8 @@ async function ensureHubRole(hubAddress: string, organisationId: string): Promis
         gasUsed: receipt.gasUsed,
         gasPayerAddress: receipt.gasPayer ?? submitted.gasPayerAddress,
         vthoPaidWei: receipt.paid,
-        blockNumber: receipt.meta.blockNumber,
-        blockId: receipt.meta.blockID,
+        blockNumber: receipt.blockNumber,
+        blockId: receipt.blockId,
         confirmedAt: new Date(),
       });
     }
@@ -201,67 +156,64 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
     return;
   }
 
-  if (passport.blockchainTxHash && passport.blockchainAnchoredAt) {
-    logger.info({ passportId }, 'Passport already anchored, skipping');
-    return;
-  }
-
-  if (!env.MATERIAL_REGISTRY_ADDRESS) {
+  const registryAddress = env.MATERIAL_REGISTRY_ADDRESS;
+  if (!registryAddress) {
     throw new Error('MATERIAL_REGISTRY_ADDRESS is not set — cannot anchor passport');
   }
 
-  // Compute hash
-  const jsonLd = buildCanonicalJsonLd(passport);
-  const dataHashBytes = keccak256(Buffer.from(jsonLd, 'utf-8'));
-  const passportIdBytes32 = uuidToBytes32(passportId);
+  const dataHash = computePassportHash(passport);
+  const action = decideAnchorAction(passport, dataHash);
+  if (action === 'skip') {
+    logger.info({ passportId }, 'Passport already anchored with its current fingerprint');
+    return;
+  }
+
+  const chain = getChainAdapter();
+  const chainId = await chain.chainId();
+  const auditAction = action === 'register' ? 'passport.anchor' : 'passport.reanchor';
   const metadataUri = passport.digitalLinkUri ?? `${env.API_URL}/api/v1/passports/${passportId}`;
+  const previousHash = action === 'update' ? passport.blockchainPassportHash : null;
 
-  logger.info({ passportId, dataHashBytes }, 'Computed passport hash');
-
-  // Encode call data
-  const iface = new Interface(REGISTRY_ABI);
-  const callData = iface.encodeFunctionData('registerPassport', [
-    passportIdBytes32,
-    dataHashBytes,
-    metadataUri,
-  ]);
+  logger.info({ passportId, action, dataHash, chainId }, 'Computed passport hash');
 
   let orgWallet: { address: string; privateKey: string } | null = null;
 
   const blockchainLog = await createBlockchainTransaction({
-    action: 'passport.anchor',
+    action: auditAction,
     resourceType: 'passport',
     resourceId: passportId,
     organisationId: passport.organisationId,
     actorId: passport.registeredBy ?? null,
+    chainId,
     originAddress: null,
-    contractAddress: env.MATERIAL_REGISTRY_ADDRESS,
-    metadata: {
-      certificateHash: dataHashBytes,
-      metadataUri,
-    },
+    contractAddress: registryAddress,
+    metadata: { certificateHash: dataHash, metadataUri, previousHash },
   });
 
   try {
     orgWallet = await ensureOrganisationWallet(passport.organisationId);
-    await ensureHubRole(orgWallet.address, passport.organisationId);
 
-    const submitted = await submitVeChainTransaction({
-      thorClient,
-      originPrivateKey: orgWallet.privateKey,
-      originAddress: orgWallet.address,
-      clauses: [
-        {
-          to: env.MATERIAL_REGISTRY_ADDRESS,
-          value: '0x0',
-          data: callData,
-        },
-      ],
-      fallbackGas: 500_000,
-    });
+    let submitted;
+    if (action === 'register') {
+      await ensureHubRole(registryAddress, orgWallet.address, passport.organisationId);
+      submitted = await chain.registerPassport(orgWallet, {
+        registryAddress,
+        passportId,
+        dataHash,
+        metadataUri,
+      });
+    } else {
+      // Only the registering wallet (the organisation's) may update its hash.
+      submitted = await chain.updatePassportHash(orgWallet, {
+        registryAddress,
+        passportId,
+        dataHash,
+      });
+    }
     logger.info(
       {
         passportId,
+        action,
         txId: submitted.txId,
         originAddress: submitted.originAddress,
         gasPayerAddress: submitted.gasPayerAddress,
@@ -279,8 +231,9 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
         gasPayerAddress: submitted.gasPayerAddress,
         submittedAt: new Date(),
         metadata: {
-          certificateHash: dataHashBytes,
+          certificateHash: dataHash,
           metadataUri,
+          previousHash,
           gasPayerSource: submitted.gasPayerSource,
           delegated: submitted.delegated,
           gasEstimate: submitted.gasEstimate,
@@ -288,7 +241,7 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
       });
     }
 
-    const receipt = await waitForReceipt(submitted.txId);
+    const receipt = await chain.waitForReceipt(submitted.txId);
 
     if (!receipt || receipt.reverted) {
       throw new Error(`Transaction ${submitted.txId} failed or was not confirmed in time`);
@@ -298,8 +251,9 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
       .update(materialPassports)
       .set({
         blockchainTxHash: submitted.txId,
-        blockchainPassportHash: dataHashBytes,
+        blockchainPassportHash: dataHash,
         blockchainAnchoredAt: new Date(),
+        blockchainChainId: chainId,
         updatedAt: new Date(),
       })
       .where(eq(materialPassports.id, passportId));
@@ -310,8 +264,8 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
         gasUsed: receipt.gasUsed,
         gasPayerAddress: receipt.gasPayer ?? submitted.gasPayerAddress,
         vthoPaidWei: receipt.paid,
-        blockNumber: receipt.meta.blockNumber,
-        blockId: receipt.meta.blockID,
+        blockNumber: receipt.blockNumber,
+        blockId: receipt.blockId,
         confirmedAt: new Date(),
       });
     }
@@ -321,26 +275,29 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
         id: passport.registeredBy ?? null,
         organisationId: passport.organisationId,
       },
-      action: 'passport.anchor',
+      action: auditAction,
       resourceType: 'passport',
       resourceId: passportId,
       status: 'succeeded',
       metadata: {
         txHash: submitted.txId,
-        certificateHash: dataHashBytes,
+        chainId,
+        certificateHash: dataHash,
+        previousHash,
         originAddress: orgWallet.address,
         gasPayerAddress: receipt.gasPayer ?? submitted.gasPayerAddress,
         gasUsed: receipt.gasUsed,
         vthoPaidWei: receipt.paid,
-        blockNumber: receipt.meta.blockNumber,
+        blockNumber: receipt.blockNumber,
       },
     });
 
     logger.info(
       {
         passportId,
+        action,
         txId: submitted.txId,
-        dataHashBytes,
+        dataHash,
         gasUsed: receipt.gasUsed,
         vthoPaidWei: receipt.paid,
         gasPayerAddress: receipt.gasPayer ?? submitted.gasPayerAddress,
@@ -359,18 +316,63 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
         id: passport.registeredBy ?? null,
         organisationId: passport.organisationId,
       },
-      action: 'passport.anchor',
+      action: auditAction,
       resourceType: 'passport',
       resourceId: passportId,
       status: 'failed',
       failureReason: err instanceof Error ? err.message : String(err),
       metadata: {
-        certificateHash: dataHashBytes,
+        certificateHash: dataHash,
+        previousHash,
         originAddress: orgWallet?.address ?? null,
       },
     });
     logger.error({ passportId, err }, 'Failed to anchor passport');
     throw err;
+  }
+}
+
+// ─── Sweep: anchor passports that were never submitted ──────────────────────
+
+/** Passports with a fingerprint but no chain transaction, oldest first. */
+export async function findUnanchoredPassports(limit: number) {
+  return db
+    .select({
+      id: materialPassports.id,
+      organisationId: materialPassports.organisationId,
+    })
+    .from(materialPassports)
+    .where(
+      and(
+        isNotNull(materialPassports.blockchainPassportHash),
+        isNull(materialPassports.blockchainTxHash),
+      ),
+    )
+    .orderBy(materialPassports.createdAt)
+    .limit(limit);
+}
+
+async function processSweepJob(): Promise<void> {
+  if (env.DEMO_SIMULATE_ANCHOR) return;
+
+  const pending = await findUnanchoredPassports(SWEEP_BATCH_SIZE);
+  for (const passport of pending) {
+    // Same jobId as createPassport uses, so a passport already queued (or
+    // retrying) is not queued twice. A job that exhausted its retries stays
+    // in the failed set under that id and would block the add, so retry it.
+    const existing = await anchorQueue.getJob(`anchor-${passport.id}`);
+    if (existing && (await existing.isFailed())) {
+      await existing.retry();
+      continue;
+    }
+    await anchorQueue.add(
+      'default',
+      { passportId: passport.id, organisationId: passport.organisationId },
+      { jobId: `anchor-${passport.id}` },
+    );
+  }
+  if (pending.length > 0) {
+    logger.info({ queued: pending.length }, 'Anchor sweep queued unanchored passports');
   }
 }
 
@@ -390,6 +392,22 @@ export function startAnchorWorker() {
     logger.error({ jobId: job?.id, passportId: job?.data.passportId, err }, 'Anchor job failed');
   });
 
+  const sweepWorker = new Worker('anchor-sweep', processSweepJob, {
+    connection: redisConnection,
+    concurrency: 1,
+  });
+  sweepWorker.on('failed', (_job, err) => {
+    logger.error({ err }, 'Anchor sweep failed');
+  });
+  void anchorSweepQueue
+    .upsertJobScheduler('anchor-sweep', { every: SWEEP_EVERY_MS, immediately: true })
+    .catch((err: unknown) => logger.error({ err }, 'Could not schedule the anchor sweep'));
+
   logger.info('Anchor passport worker started');
-  return worker;
+  return {
+    close: async () => {
+      await Promise.all([worker.close(), sweepWorker.close()]);
+    },
+    on: worker.on.bind(worker),
+  };
 }

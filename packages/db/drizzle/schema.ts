@@ -168,6 +168,9 @@ export const materialPassports = pgTable(
     blockchainTxHash: text('blockchain_tx_hash'),
     blockchainPassportHash: text('blockchain_passport_hash'),
     blockchainAnchoredAt: timestamp('blockchain_anchored_at', { withTimezone: true }),
+    // CAIP-2 style id of the chain holding the anchor, e.g. `vechain:<genesis
+    // id>`; null for simulated or never-anchored passports.
+    blockchainChainId: text('blockchain_chain_id'),
 
     // Metadata
     registeredBy: uuid('registered_by').references(() => users.id),
@@ -248,6 +251,7 @@ export const blockchainTransactions = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     txHash: text('tx_hash'),
+    chainId: text('chain_id'),
     action: text('action').notNull(),
     resourceType: text('resource_type').notNull(),
     resourceId: text('resource_id'),
