@@ -45,3 +45,78 @@ copy in sync if the replenishment schedule above changes).
 Keep this copy honest about what the demo actually does — in particular,
 never describe the simulated trust-layer fingerprint as a live VeChain
 anchor (see .env.example's DEMO_SIMULATE_ANCHOR comment).
+
+## Thor Solo block production
+
+The demo's Thor Solo node should write a block only when there is a
+transaction to include, so an idle demo does not grow the chain data
+directory. From Thor v2.4, `--on-demand` alone does not do this. Solo still
+packs an empty block every `--block-interval` seconds (default 10), which
+came to about 8,600 empty blocks a day. `--on-demand` still packs a block as
+soon as a transaction arrives. So both Compose files run:
+
+    solo --on-demand --block-interval 86400 --persist ...
+
+Measured with `vechain/thor:v2.4.3` and this repository's `genesis.json`:
+
+- no new blocks during idle periods;
+- a transaction included about 0.1 s after submission;
+- one extra block at each node restart, from Solo's own startup transaction;
+- one empty block a day at most.
+
+The long interval only affects Solo. Testnet and mainnet nodes follow the
+network's own block schedule.
+
+## On-chain anchoring
+
+The demo anchors passport fingerprints on its own Thor Solo chain, which is
+not reachable from the internet. Visitors check an anchor inside the app. A
+publicly checkable chain (VeChain testnet) is a later step, and it is a
+configuration change rather than new code.
+
+Each deployment has its own chain identity: a deployer key and a genesis that
+funds only that key. Never reuse a key across deployments or commit one to
+this repository.
+
+Bringing it up, as root on the demo host (`<sha>` is the live release):
+
+1.  **Create the chain identity** in a root-only directory, using the
+    release's API image:
+
+        install -d -m 700 /var/lib/trace-demo/config/chain
+        docker run --rm --user 0 -v /var/lib/trace-demo/config/chain:/out \
+          trace-demo-api:<sha> node dist/scripts/solo-genesis.js /out
+
+    This writes `deployer.key` (mode 600, never printed) and `genesis.json`.
+    It refuses to overwrite either file.
+
+2.  **Reset the chain onto the new genesis.** Stop `thor-solo`, move its data
+    directory aside as a backup, and point the Compose file's genesis at the
+    new file. Start it again, then confirm the node answers and that idle
+    periods add no blocks (see "Thor Solo block production").
+3.  **Deploy the registry:**
+
+        /usr/local/libexec/trace-demo/run-ops.sh /var/lib/trace-demo/config/active.env chain-deploy-registry
+
+    It prints `MATERIAL_REGISTRY_ADDRESS=...`. It refuses if an address is
+    already configured, unless `--force` is passed.
+
+4.  **Configure the API environment file** (mode 600):
+    - `MATERIAL_REGISTRY_ADDRESS` from step 3;
+    - `DEPLOYER_PRIVATE_KEY` and `FEE_DELEGATOR_PRIVATE_KEY`, both set to the
+      deployer key. Organisation wallets hold no VTHO, so the deployer
+      sponsors their gas;
+    - `FEE_DELEGATION_REQUIRED=true`;
+    - `WALLET_ENCRYPTION_KEY`, a new random secret;
+    - `CHAIN_NETWORK_LABEL`, describing the chain honestly (e.g. "TRACE demo
+      chain (VeChain Thor Solo)").
+5.  **Enable the anchor worker:** set `TRACE_ENABLE_WORKER=1` in the live
+    deploy environment. Every later deploy carries it forward, and
+    `switch-worker.sh` keeps the worker on the live slot.
+6.  **Switch anchoring on:** set `DEMO_SIMULATE_ANCHOR=false` and deploy. The
+    worker's sweep then anchors every passport that has a fingerprint but no
+    chain transaction, including the curated catalogue, within about five
+    minutes.
+
+To go back to simulation, set `DEMO_SIMULATE_ANCHOR=true` and redeploy. The
+site never depends on the chain in simulation mode.

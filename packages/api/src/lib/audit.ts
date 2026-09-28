@@ -207,6 +207,7 @@ export async function createBlockchainTransaction(input: {
   action: string;
   resourceType: string;
   resourceId?: string | null;
+  chainId?: string | null;
   organisationId?: string | null;
   actorId?: string | null;
   originAddress?: string | null;
@@ -222,6 +223,7 @@ export async function createBlockchainTransaction(input: {
         action: input.action,
         resourceType: input.resourceType,
         resourceId: input.resourceId ?? null,
+        chainId: input.chainId ?? null,
         organisationId: input.organisationId ?? null,
         actorId: input.actorId ?? null,
         originAddress: input.originAddress ?? null,

@@ -88,7 +88,7 @@ services:
 
   thor-solo:
     image: vechain/thor:v2.4.3@sha256:b5fd684366a1c08b64699bd60648a3e7fa69b07b81390d6212c4760c2eb55a8d
-    command: solo --genesis /genesis.json --on-demand --persist --api-cors 'http://localhost:${WEB_HOST_PORT:-3003}' --api-addr 0.0.0.0:8669
+    command: solo --genesis /genesis.json --on-demand --block-interval 86400 --persist --api-cors 'http://localhost:${WEB_HOST_PORT:-3003}' --api-addr 0.0.0.0:8669
     ports:
       - '127.0.0.1:${THOR_HOST_PORT:-8669}:8669'
       - '[::1]:${THOR_HOST_PORT:-8669}:8669'

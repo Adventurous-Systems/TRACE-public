@@ -17,16 +17,14 @@ import {
 } from '@trace/core';
 import QRCode from 'qrcode';
 import sharp from 'sharp';
-import { ThorClient } from '@vechain/sdk-network';
-import { ABIFunction } from '@vechain/sdk-core';
 import { anchorQueue } from '../../lib/queue.js';
 import { uploadBuffer } from '../../lib/storage.js';
 import { computePassportHash } from '../../lib/passport-hash.js';
 import { simulatePassportAnchor } from '../../lib/anchor.js';
+import { getChainAdapter } from '../../lib/chain/index.js';
 import { env } from '../../env.js';
 
 // Module-level singleton (avoids reconnecting on every verify call)
-const thorClient = ThorClient.at(env.VECHAIN_NODE_URL);
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -51,6 +49,8 @@ export interface PassportCertificate {
   onchainVerified: boolean | null;
   failureReason: string | null;
   lastAttemptAt: Date | null;
+  chainId: string | null;
+  networkLabel: string | null;
 }
 
 // ─── Create ──────────────────────────────────────────────────────────────────
@@ -288,40 +288,6 @@ export async function updatePassport(
 
 // ─── Verify ───────────────────────────────────────────────────────────────────
 
-/**
- * Returns basic passport data plus on-chain verification status.
- * The actual hash comparison is done in the blockchain worker/service,
- * so here we just surface the stored anchor data.
- */
-const VERIFY_FUNCTION = new ABIFunction({
-  type: 'function',
-  name: 'verifyPassport',
-  inputs: [
-    { name: 'passportId', type: 'bytes32' },
-    { name: 'dataHash', type: 'bytes32' },
-  ],
-  outputs: [
-    { name: 'valid', type: 'bool' },
-    {
-      name: 'record',
-      type: 'tuple',
-      components: [
-        { name: 'dataHash', type: 'bytes32' },
-        { name: 'owner', type: 'address' },
-        { name: 'status', type: 'uint8' },
-        { name: 'registeredAt', type: 'uint64' },
-        { name: 'updatedAt', type: 'uint64' },
-        { name: 'metadataUri', type: 'string' },
-      ],
-    },
-  ],
-  stateMutability: 'view',
-});
-
-function uuidToBytes32(uuid: string): string {
-  return '0x' + uuid.replace(/-/g, '').padStart(64, '0');
-}
-
 export interface PassportIntegrityResult {
   match: boolean;
   recomputedHash: string;
@@ -348,6 +314,11 @@ export async function verifyPassportIntegrity(
   };
 }
 
+/**
+ * Returns basic passport data plus on-chain verification status.
+ * The actual hash comparison is done in the blockchain worker/service,
+ * so here we just surface the stored anchor data.
+ */
 export async function verifyPassport(passportId: string): Promise<PassportWithVerification> {
   const passport = await db.query.materialPassports.findFirst({
     where: eq(materialPassports.id, passportId),
@@ -369,17 +340,12 @@ export async function verifyPassport(passportId: string): Promise<PassportWithVe
     passport.blockchainPassportHash &&
     passport.blockchainTxHash
   ) {
-    try {
-      const result = await thorClient.contracts.executeCall(
-        env.MATERIAL_REGISTRY_ADDRESS,
-        VERIFY_FUNCTION,
-        [uuidToBytes32(passportId), passport.blockchainPassportHash],
-      );
-      onchainVerified = result.result?.array?.[0] === true;
-    } catch {
-      // Node unreachable or contract not deployed — return null, not an error
-      onchainVerified = null;
-    }
+    // Node unreachable or contract not deployed → null (unknown), not an error.
+    onchainVerified = await getChainAdapter().verifyPassport(
+      env.MATERIAL_REGISTRY_ADDRESS,
+      passportId,
+      passport.blockchainPassportHash,
+    );
   }
 
   return { ...passport, verified, onchainVerified };
@@ -456,6 +422,13 @@ export async function getPassportCertificate(passportId: string): Promise<Passpo
         ? 'Certificate hash does not match the on-chain record'
         : (latestChainTx?.failureReason ?? null),
     lastAttemptAt: latestChainTx?.updatedAt ?? latestChainTx?.createdAt ?? null,
+    // Which chain the anchor is on, and its human-readable name — only for a
+    // real on-chain anchor, so a simulated record never names a network.
+    chainId: status === 'verified' ? passport.blockchainChainId : null,
+    networkLabel:
+      status === 'verified' && passport.blockchainChainId
+        ? (env.CHAIN_NETWORK_LABEL ?? null)
+        : null,
   };
 }
 

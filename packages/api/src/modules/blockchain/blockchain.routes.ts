@@ -2,26 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { Interface } from 'ethers';
 import { blockchainTransactions, db } from '@trace/db';
-import { ThorClient } from '@vechain/sdk-network';
 import { NotFoundError } from '@trace/core';
-import { env } from '../../env.js';
+import { bytes32ToUuid, getChainAdapter } from '../../lib/chain/index.js';
 
-const thorClient = ThorClient.at(env.VECHAIN_NODE_URL);
 const registryInterface = new Interface([
   'function registerPassport(bytes32 passportId, bytes32 dataHash, string metadataUri)',
+  'function updatePassportHash(bytes32 passportId, bytes32 newDataHash)',
   'function grantHubRole(address hub)',
 ]);
-
-function bytes32ToUuid(value: string): string {
-  const hex = value.replace(/^0x/, '').slice(-32);
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20),
-  ].join('-');
-}
 
 function decodeClause(data: string) {
   try {
@@ -35,6 +23,15 @@ function decodeClause(data: string) {
         passportIdBytes32: passportId,
         certificateHash: String(parsed.args[1]),
         metadataUri: String(parsed.args[2]),
+      };
+    }
+    if (parsed.name === 'updatePassportHash') {
+      const passportId = String(parsed.args[0]);
+      return {
+        method: parsed.name,
+        passportId: bytes32ToUuid(passportId),
+        passportIdBytes32: passportId,
+        certificateHash: String(parsed.args[1]),
       };
     }
     if (parsed.name === 'grantHubRole') {
@@ -52,28 +49,26 @@ function decodeClause(data: string) {
 export async function blockchainRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { txHash: string } }>('/transactions/:txHash', async (request, reply) => {
     const txHash = request.params.txHash;
-    const [tx, receipt, localLog] = await Promise.all([
-      thorClient.transactions.getTransaction(txHash).catch(() => null),
-      thorClient.transactions.getTransactionReceipt(txHash).catch(() => null),
+    const [chainTx, localLog] = await Promise.all([
+      getChainAdapter().getTransaction(txHash),
       db.query.blockchainTransactions.findFirst({
         where: eq(blockchainTransactions.txHash, txHash),
       }),
     ]);
 
-    if (!tx && !receipt && !localLog) {
+    if (!chainTx.transaction && !chainTx.receipt && !localLog) {
       throw new NotFoundError(`Blockchain transaction ${txHash} not found`);
     }
 
-    const firstClause = tx?.clauses?.[0];
-    const decoded = firstClause?.data ? decodeClause(firstClause.data) : null;
+    const decoded = chainTx.firstCallData ? decodeClause(chainTx.firstCallData) : null;
 
     return reply.send({
       success: true,
       data: {
         id: txHash,
-        status: receipt ? (receipt.reverted ? 'failed' : 'confirmed') : 'pending',
-        transaction: tx,
-        receipt,
+        status: chainTx.reverted === null ? 'pending' : chainTx.reverted ? 'failed' : 'confirmed',
+        transaction: chainTx.transaction,
+        receipt: chainTx.receipt,
         decoded,
         localLog,
       },

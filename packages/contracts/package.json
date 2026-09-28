@@ -9,7 +9,8 @@
     "deploy:solo": "hardhat run scripts/deploy.ts --network vechain_solo",
     "deploy:testnet": "hardhat run scripts/deploy.ts --network vechain_testnet",
     "typecheck": "tsc --noEmit",
-    "lint": "solhint 'contracts/**/*.sol'"
+    "lint": "solhint 'contracts/**/*.sol'",
+    "export:api-artifacts": "hardhat run scripts/export-api-artifacts.ts"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.2"
