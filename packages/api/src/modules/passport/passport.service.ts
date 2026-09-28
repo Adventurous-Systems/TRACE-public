@@ -49,6 +49,8 @@ export interface PassportCertificate {
   onchainVerified: boolean | null;
   failureReason: string | null;
   lastAttemptAt: Date | null;
+  chainId: string | null;
+  networkLabel: string | null;
 }
 
 // ─── Create ──────────────────────────────────────────────────────────────────
@@ -420,6 +422,13 @@ export async function getPassportCertificate(passportId: string): Promise<Passpo
         ? 'Certificate hash does not match the on-chain record'
         : (latestChainTx?.failureReason ?? null),
     lastAttemptAt: latestChainTx?.updatedAt ?? latestChainTx?.createdAt ?? null,
+    // Which chain the anchor is on, and its human-readable name — only for a
+    // real on-chain anchor, so a simulated record never names a network.
+    chainId: status === 'verified' ? passport.blockchainChainId : null,
+    networkLabel:
+      status === 'verified' && passport.blockchainChainId
+        ? (env.CHAIN_NETWORK_LABEL ?? null)
+        : null,
   };
 }
 

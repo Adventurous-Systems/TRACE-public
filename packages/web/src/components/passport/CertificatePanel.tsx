@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ShieldCheck,
   Fingerprint,
+  Link2,
   Loader2,
   Copy,
   ExternalLink,
@@ -44,6 +45,13 @@ type IntegrityState =
   | { phase: 'error' }
   | { phase: 'done'; match: boolean };
 
+// Live registry check. `null` from the API means the chain could not be read —
+// unknown, never a mismatch (same reasoning as D-07).
+type ChainCheckState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'done'; onchainVerified: boolean | null };
+
 export default function CertificatePanel({
   passportId,
   initialCertificate,
@@ -58,6 +66,7 @@ export default function CertificatePanel({
   );
   const [loading, setLoading] = useState(!initialCertificate);
   const [integrity, setIntegrity] = useState<IntegrityState>({ phase: 'idle' });
+  const [chainCheck, setChainCheck] = useState<ChainCheckState>({ phase: 'idle' });
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +110,8 @@ export default function CertificatePanel({
         certificate.registeredAt ? new Date(certificate.registeredAt).toLocaleString() : null,
       ],
       ['Verification block', certificate.blockNumber ? `#${certificate.blockNumber}` : null],
+      ['Network', certificate.networkLabel],
+      ['Chain ID', certificate.chainId],
     ].filter(([, value]) => value) as Array<[string, string]>;
   }, [certificate]);
 
@@ -116,6 +127,16 @@ export default function CertificatePanel({
     } catch {
       // Not a mismatch — we simply could not reach the check. See D-07.
       setIntegrity({ phase: 'error' });
+    }
+  }
+
+  async function runChainCheck() {
+    setChainCheck({ phase: 'checking' });
+    try {
+      const res = await passports.verify(passportId);
+      setChainCheck({ phase: 'done', onchainVerified: res.onchainVerified ?? null });
+    } catch {
+      setChainCheck({ phase: 'done', onchainVerified: null });
     }
   }
 
@@ -163,7 +184,7 @@ export default function CertificatePanel({
             <p className="text-xs text-gray-500 max-w-xs">
               {status === 'verified' ? (
                 <>
-                  Digital fingerprint registered on VeChainThor
+                  Digital fingerprint registered on {certificate?.networkLabel ?? 'VeChainThor'}
                   {certificate?.hub ? (
                     <>
                       {' '}
@@ -201,7 +222,7 @@ export default function CertificatePanel({
             <div key={label} className="flex gap-4">
               <dt className="text-gray-500 w-40 shrink-0">{label}</dt>
               <dd className="font-mono text-xs break-all text-gray-700">
-                {label === 'Registered on' || label === 'Verification block'
+                {label === 'Registered on' || label === 'Verification block' || label === 'Network'
                   ? value
                   : shortHash(value)}
               </dd>
@@ -266,6 +287,49 @@ export default function CertificatePanel({
                 {integrity.match
                   ? 'Untampered — recomputed fingerprint matches the record.'
                   : 'Mismatch — this passport’s data no longer matches its fingerprint.'}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Live registry check — asks the chain now, not our records */}
+        {certificate?.txHash && (
+          <div className="rounded-lg border bg-gray-50/60 p-3">
+            {chainCheck.phase === 'idle' && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={runChainCheck}
+                className="gap-1.5"
+              >
+                <Link2 className="h-4 w-4" /> Check on chain now
+              </Button>
+            )}
+            {chainCheck.phase === 'checking' && (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Loader2 className="h-4 w-4 animate-spin" /> Asking the registry contract…
+              </div>
+            )}
+            {chainCheck.phase === 'done' && (
+              <div
+                className={cn(
+                  'flex items-center gap-2 text-sm font-medium motion-safe:animate-fade-in-up',
+                  chainCheck.onchainVerified === true && 'text-green-700',
+                  chainCheck.onchainVerified === false && 'text-red-700',
+                  chainCheck.onchainVerified === null && 'text-gray-600',
+                )}
+              >
+                {chainCheck.onchainVerified === true ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4" />
+                )}
+                {chainCheck.onchainVerified === true
+                  ? 'Confirmed just now — the chain holds this exact fingerprint.'
+                  : chainCheck.onchainVerified === false
+                    ? 'The chain holds a different fingerprint for this passport.'
+                    : 'Couldn’t reach the chain just now — this doesn’t indicate a problem with the passport.'}
               </div>
             )}
           </div>

@@ -311,6 +311,8 @@ packages/web/src/lib/carbon-factors.ts
 packages/web/src/lib/categories.test.ts
 packages/web/src/lib/categories.ts
 packages/web/src/lib/confetti.ts
+packages/web/src/lib/trust-mode.test.ts
+packages/web/src/lib/trust-mode.ts
 packages/web/src/lib/utils.ts
 packages/web/src/middleware.ts
 packages/web/src/types/umami.d.ts

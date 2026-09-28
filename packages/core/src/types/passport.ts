@@ -129,4 +129,8 @@ export interface PassportCertificate {
   onchainVerified: boolean | null;
   failureReason: string | null;
   lastAttemptAt: Date | null;
+  /** CAIP-2 style id of the chain holding the anchor; null unless anchored on chain. */
+  chainId: string | null;
+  /** Human-readable name of that chain (CHAIN_NETWORK_LABEL); null unless anchored on chain. */
+  networkLabel: string | null;
 }
