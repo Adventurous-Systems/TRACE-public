@@ -33,6 +33,7 @@ jobs:
           bash ops/deploy/test-deployment-state.sh
           bash ops/deploy/test-deploy-main.sh
           bash ops/deploy/test-prune-releases.sh
+          bash ops/deploy/test-run-ops.sh
 
   build-and-test:
     name: Build and test

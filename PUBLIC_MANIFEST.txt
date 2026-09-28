@@ -65,6 +65,7 @@ ops/deploy/switch-worker.sh
 ops/deploy/test-deploy-main.sh
 ops/deploy/test-deployment-state.sh
 ops/deploy/test-prune-releases.sh
+ops/deploy/test-run-ops.sh
 ops/deploy/verify-candidate.sh
 ops/release/prepare-release.sh
 ops/release/release-lib.sh
@@ -81,9 +82,12 @@ packages/api/src/lib/anchor-decision.test.ts
 packages/api/src/lib/anchor-decision.ts
 packages/api/src/lib/anchor.ts
 packages/api/src/lib/audit.ts
+packages/api/src/lib/chain/artifacts/material-registry.ts
 packages/api/src/lib/chain/chain.test.ts
 packages/api/src/lib/chain/ids.ts
 packages/api/src/lib/chain/index.ts
+packages/api/src/lib/chain/solo-genesis.test.ts
+packages/api/src/lib/chain/solo-genesis.ts
 packages/api/src/lib/chain/types.ts
 packages/api/src/lib/chain/vechain-transactions.ts
 packages/api/src/lib/chain/vechain.ts
@@ -119,6 +123,8 @@ packages/api/src/modules/passport/passport.test.ts
 packages/api/src/modules/quality/quality.routes.ts
 packages/api/src/modules/quality/quality.service.ts
 packages/api/src/modules/quality/quality.test.ts
+packages/api/src/scripts/chain-deploy-registry.ts
+packages/api/src/scripts/solo-genesis.ts
 packages/api/src/server.ts
 packages/api/src/test-setup.ts
 packages/api/src/test-utils.ts
@@ -135,6 +141,8 @@ packages/contracts/contracts/QualityAssurance.sol
 packages/contracts/hardhat.config.ts
 packages/contracts/package.json
 packages/contracts/scripts/deploy.ts
+packages/contracts/scripts/export-api-artifacts.ts
+packages/contracts/test/ApiArtifacts.test.ts
 packages/contracts/test/CircularMarketplace.test.ts
 packages/contracts/test/MaterialRegistry.test.ts
 packages/contracts/test/QualityAssurance.test.ts
