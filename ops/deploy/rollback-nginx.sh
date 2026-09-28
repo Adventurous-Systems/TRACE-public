@@ -52,3 +52,11 @@ if ! nginx -s reload; then
   exit 1
 fi
 echo "Nginx and active environment rolled back."
+
+# The anchor worker follows traffic back (see switch-worker.sh). Best effort:
+# the rollback itself has succeeded and must not be undone by a worker problem.
+SWITCH_WORKER="${TRACE_DEPLOY_SWITCH_WORKER:-$(dirname -- "$(readlink -f -- "$0")")/switch-worker.sh}"
+if [[ -x "$SWITCH_WORKER" ]]; then
+  "$SWITCH_WORKER" "$current_env" "$previous_env" \
+    || echo "WARNING: rollback succeeded, but moving the anchor worker back failed. Re-run: $SWITCH_WORKER $current_env $previous_env" >&2
+fi
