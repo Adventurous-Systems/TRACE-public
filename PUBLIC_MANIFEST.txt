@@ -80,6 +80,7 @@ packages/api/src/env.ts
 packages/api/src/index.ts
 packages/api/src/lib/anchor-decision.test.ts
 packages/api/src/lib/anchor-decision.ts
+packages/api/src/lib/anchor.onchain.test.ts
 packages/api/src/lib/anchor.ts
 packages/api/src/lib/audit.ts
 packages/api/src/lib/chain/artifacts/material-registry.ts
