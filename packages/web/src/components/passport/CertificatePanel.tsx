@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { passports, type PassportCertificate } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/format';
 
 function shortHash(value: string | null) {
   if (!value) return '—';
@@ -108,10 +109,7 @@ export default function CertificatePanel({
     return [
       ['Tamper-evident fingerprint', certificate.certificateHash],
       ['Certificate ID', certificate.txHash],
-      [
-        'Registered on',
-        certificate.registeredAt ? new Date(certificate.registeredAt).toLocaleString() : null,
-      ],
+      ['Registered on', certificate.registeredAt ? formatDateTime(certificate.registeredAt) : null],
       ['Verification block', certificate.blockNumber ? `#${certificate.blockNumber}` : null],
       ['Network', certificate.networkLabel],
       ['Chain ID', certificate.chainId],
@@ -225,11 +223,15 @@ export default function CertificatePanel({
           {rows.map(([label, value]) => (
             <div key={label} className="flex gap-4">
               <dt className="text-gray-500 w-40 shrink-0">{label}</dt>
-              <dd className="font-mono text-xs break-all text-gray-700">
-                {label === 'Registered on' || label === 'Verification block' || label === 'Network'
-                  ? value
-                  : shortHash(value)}
-              </dd>
+              {/* Hashes and ids in a code font; human values (dates, block,
+                  network name) in the body font so they wrap between words. */}
+              {label === 'Registered on' ||
+              label === 'Verification block' ||
+              label === 'Network' ? (
+                <dd className="text-sm text-gray-700">{value}</dd>
+              ) : (
+                <dd className="font-mono text-xs break-all text-gray-700">{shortHash(value)}</dd>
+              )}
             </div>
           ))}
         </dl>

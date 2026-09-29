@@ -14,9 +14,23 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Logo } from '@/components/ui/Logo';
+import { shippingMethodLabel } from '@/lib/format';
+import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 
 function formatPrice(pence: number) {
   return `£${(pence / 100).toFixed(2)}`;
+}
+
+const LISTING_STATUS_LABELS: Record<string, string> = {
+  active: 'Available',
+  reserved: 'Reserved',
+  sold: 'Sold',
+  cancelled: 'No longer available',
+  expired: 'Expired',
+};
+
+function listingStatusLabel(status: string): string {
+  return LISTING_STATUS_LABELS[status] ?? status;
 }
 
 export default function ListingDetailPage() {
@@ -105,6 +119,9 @@ export default function ListingDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Main info */}
           <div className="md:col-span-2 space-y-4">
+            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border bg-gray-100">
+              <ListingPhoto src={listing.passport.photo} alt={listing.passport.productName} />
+            </div>
             <div>
               <h1 className="text-2xl font-bold">{listing.passport.productName}</h1>
               <p className="text-gray-500">
@@ -118,7 +135,9 @@ export default function ListingDetailPage() {
                   Grade {listing.passport.conditionGrade}
                 </Badge>
               )}
-              <Badge variant="outline">{listing.status}</Badge>
+              {listing.status !== 'active' && (
+                <Badge variant="outline">{listingStatusLabel(listing.status)}</Badge>
+              )}
             </div>
 
             {listing.passport.conditionNotes && (
@@ -255,7 +274,7 @@ export default function ListingDetailPage() {
                   )
                 ) : (
                   <p className="text-sm text-gray-500 text-center">
-                    This listing is {listing.status}.
+                    This listing is {listingStatusLabel(listing.status).toLowerCase()}.
                   </p>
                 )}
               </CardContent>
@@ -268,7 +287,7 @@ export default function ListingDetailPage() {
                   <p className="text-sm font-medium">Shipping / collection</p>
                   {listing.shippingOptions.map((opt, i) => (
                     <div key={i} className="text-sm text-gray-600">
-                      <span className="capitalize font-medium">{opt.method}</span>
+                      <span className="font-medium">{shippingMethodLabel(opt.method)}</span>
                       {opt.deliveryCostPence !== undefined && (
                         <span>
                           {' '}
@@ -281,7 +300,7 @@ export default function ListingDetailPage() {
                       {opt.deliveryRadiusMiles && (
                         <span> within {opt.deliveryRadiusMiles} miles</span>
                       )}
-                      {opt.notes && <span> — {opt.notes}</span>}
+                      {opt.notes && <p className="mt-0.5">{opt.notes}</p>}
                     </div>
                   ))}
                 </CardContent>

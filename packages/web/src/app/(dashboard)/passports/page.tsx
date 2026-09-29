@@ -17,6 +17,7 @@ import {
 } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
+import { formatDate } from '@/lib/format';
 
 const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   draft: 'outline',
@@ -174,7 +175,7 @@ export default function PassportsPage() {
                           {categoryLabel(p.categoryL1, p.categoryL2)}
                           {p.conditionGrade ? ` · Grade ${p.conditionGrade}` : ''}
                           {' · '}
-                          {new Date(p.createdAt).toLocaleDateString()}
+                          {formatDate(p.createdAt)}
                         </p>
                       </Link>
                       <div className="flex flex-wrap items-center gap-2 shrink-0">

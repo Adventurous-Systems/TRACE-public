@@ -52,7 +52,11 @@ function parseTargetActive(argv: string[]): number {
 function makeMinio(): MinioConfig {
   const bucket = process.env['MINIO_BUCKET_PASSPORTS'] ?? 'passports';
   const publicUrl =
-    process.env['MINIO_PUBLIC_URL'] ??
+    // `||`, not `??`: an empty MINIO_PUBLIC_URL (as in .env.example) means
+    // "not set", exactly as the API's env schema treats it. With `??` an empty
+    // value produced relative photo URLs that the browser resolved against
+    // the web app, so every seeded photo was broken on a stock local setup.
+    process.env['MINIO_PUBLIC_URL'] ||
     `http://${process.env['MINIO_ENDPOINT'] ?? 'localhost'}:${process.env['MINIO_PORT'] ?? '9000'}`;
   return {
     client: new Minio.Client({

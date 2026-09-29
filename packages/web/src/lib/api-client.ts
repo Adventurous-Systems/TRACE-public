@@ -406,6 +406,9 @@ export interface MarketplaceTransaction {
   disputeDeadline: string | null;
   notes: string | null;
   createdAt: string;
+  /** The material the order is for (present on the user's order list). */
+  productName?: string | null;
+  passportId?: string | null;
 }
 
 export interface AuditEvent {

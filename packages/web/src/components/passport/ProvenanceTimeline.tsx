@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { PassportDetail } from '@/lib/api-client';
+import { deconstructionMethodLabel, formatDate } from '@/lib/format';
 
 /** An append-only amendment to the passport (oldest → newest). */
 export interface AmendmentEntry {
@@ -25,7 +26,7 @@ interface Step {
   done: boolean;
 }
 
-const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString() : undefined);
+const fmt = (d?: string | null) => (d ? formatDate(d) : undefined);
 
 /** Honest provenance story built from the passport's own lifecycle data. */
 export default function ProvenanceTimeline({
@@ -50,7 +51,7 @@ export default function ProvenanceTimeline({
     steps.push({
       icon: Hammer,
       title: 'Deconstructed',
-      detail: passport.deconstructionMethod ?? undefined,
+      detail: deconstructionMethodLabel(passport.deconstructionMethod) || undefined,
       date: fmt(passport.deconstructionDate),
       done: true,
     });

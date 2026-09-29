@@ -151,6 +151,7 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
           conditionNotes: true,
           carbonSavingsVsNew: true,
           qrCodeUrl: true,
+          conditionPhotos: true,
         },
       },
       organisation: {
@@ -161,7 +162,13 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
 
   if (!listing) throw new NotFoundError(`Listing ${listingId} not found`);
 
-  return listing as unknown as ListingWithPassport;
+  // Same shape as searchListings: the first condition photo as `photo`, so
+  // the listing page can show the product (it showed none before).
+  const { conditionPhotos, ...passport } = listing.passport;
+  return {
+    ...listing,
+    passport: { ...passport, photo: (conditionPhotos as string[] | null)?.[0] ?? null },
+  } as unknown as ListingWithPassport;
 }
 
 export async function searchListings(
@@ -620,13 +627,30 @@ export async function getTransactionById(
   return tx;
 }
 
-export async function listUserTransactions(userId: string): Promise<Transaction[]> {
+/**
+ * A user's orders, each with the material it is for. Before this the Orders
+ * page showed only a status and an amount, not which material the order was
+ * for (2026-09-29 rehearsal, T1).
+ */
+export async function listUserTransactions(
+  userId: string,
+): Promise<Array<Transaction & { productName: string | null; passportId: string | null }>> {
   const data = await db.query.transactions.findMany({
     where: and(
       // buyer or seller
       sql`(${transactions.buyerId} = ${userId} OR ${transactions.sellerId} = ${userId})`,
     ),
     orderBy: [desc(transactions.createdAt)],
+    with: {
+      listing: {
+        columns: { passportId: true },
+        with: { passport: { columns: { productName: true } } },
+      },
+    },
   });
-  return data;
+  return data.map(({ listing, ...tx }) => ({
+    ...tx,
+    passportId: listing?.passportId ?? null,
+    productName: listing?.passport?.productName ?? null,
+  }));
 }
