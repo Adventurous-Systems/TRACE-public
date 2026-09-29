@@ -272,6 +272,12 @@ export async function updatePassport(
 
 export interface PassportIntegrityResult {
   match: boolean;
+  /**
+   * True when no fingerprint is recorded yet, because the passport is new or
+   * a change is waiting to be (re-)anchored. Nothing to compare against, so
+   * the result is "pending", never a mismatch.
+   */
+  pending: boolean;
   recomputedHash: string;
   storedHash: string | null;
 }
@@ -291,6 +297,7 @@ export async function verifyPassportIntegrity(
   const storedHash = passport.blockchainPassportHash;
   return {
     match: storedHash !== null && recomputedHash === storedHash,
+    pending: storedHash === null,
     recomputedHash,
     storedHash,
   };

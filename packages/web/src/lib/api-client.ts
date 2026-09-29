@@ -607,9 +607,12 @@ export const passports = {
   certificate: (id: string) => request<PassportCertificate>(`/api/v1/passports/${id}/certificate`),
 
   verifyIntegrity: (id: string) =>
-    request<{ match: boolean; recomputedHash: string; storedHash: string | null }>(
-      `/api/v1/passports/${id}/verify-integrity`,
-    ),
+    request<{
+      match: boolean;
+      pending: boolean;
+      recomputedHash: string;
+      storedHash: string | null;
+    }>(`/api/v1/passports/${id}/verify-integrity`),
 
   create: (data: unknown, token: string) =>
     request<PassportDetail>('/api/v1/passports', {

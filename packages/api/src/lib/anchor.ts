@@ -51,14 +51,36 @@ export async function simulatePassportAnchor(
  * Re-anchor a passport whose hashed data has just changed.
  *
  * In demo/simulation mode the fingerprint is recomputed synchronously, so the
- * trust seal is correct the instant the change lands. Otherwise a fresh anchor
- * job is queued; the jobId is time-suffixed so it never collides with the
- * passport's original anchor job.
+ * trust seal is correct the instant the change lands.
+ *
+ * On chain, the passport is first marked *pending*: its anchor columns are
+ * cleared, exactly as updatePassport() does for an edit. Then a fresh anchor
+ * job is queued (the jobId is time-suffixed so it never collides with the
+ * original anchor job). Clearing matters for two reasons, both found in the
+ * 2026-09-29 rehearsal:
+ *   - Honesty: until the new fingerprint is on chain, the certificate shows
+ *     "pending" and verify-integrity reports `pending`, instead of "verified"
+ *     next to a false "Mismatch".
+ *   - A safety net: if this job exhausts its retries (e.g. a chain outage),
+ *     the worker's sweep, which re-queues every non-draft passport without a
+ *     chain transaction, picks it up again. Previously such a passport stayed
+ *     stale on chain for good.
  */
 export async function reanchorPassport(passport: MaterialPassport): Promise<MaterialPassport> {
   if (env.DEMO_SIMULATE_ANCHOR) {
     return await simulatePassportAnchor(passport);
   }
+
+  const [pending] = await db
+    .update(materialPassports)
+    .set({
+      blockchainPassportHash: null,
+      blockchainTxHash: null,
+      blockchainAnchoredAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(materialPassports.id, passport.id))
+    .returning();
 
   await anchorQueue.add(
     'default',
@@ -66,5 +88,5 @@ export async function reanchorPassport(passport: MaterialPassport): Promise<Mate
     { jobId: `anchor-${passport.id}-${Date.now()}` },
   );
 
-  return passport;
+  return pending ?? passport;
 }

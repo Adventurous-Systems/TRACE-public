@@ -43,6 +43,9 @@ type IntegrityState =
   | { phase: 'idle' }
   | { phase: 'checking' }
   | { phase: 'error' }
+  // No fingerprint recorded yet: the latest change is still being anchored.
+  // Nothing to compare against, so this is neither a match nor a mismatch.
+  | { phase: 'pending' }
   | { phase: 'done'; match: boolean };
 
 // Live registry check. `null` from the API means the chain could not be read —
@@ -123,7 +126,7 @@ export default function CertificatePanel({
         passports.verifyIntegrity(passportId),
         new Promise((r) => setTimeout(r, 700)),
       ]);
-      setIntegrity({ phase: 'done', match: res.match });
+      setIntegrity(res.pending ? { phase: 'pending' } : { phase: 'done', match: res.match });
     } catch {
       // Not a mismatch — we simply could not reach the check. See D-07.
       setIntegrity({ phase: 'error' });
@@ -208,7 +211,8 @@ export default function CertificatePanel({
         ) : status === 'pending' ? (
           <div className="flex items-center gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
             <Fingerprint className="h-4 w-4 animate-pulse" />
-            Generating the tamper-evident fingerprint…
+            Recording the latest version of this passport — its tamper-evident fingerprint is being
+            prepared and anchored.
           </div>
         ) : (
           <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -269,6 +273,24 @@ export default function CertificatePanel({
                   className="gap-1.5"
                 >
                   <Fingerprint className="h-4 w-4" /> Try again
+                </Button>
+              </div>
+            )}
+            {integrity.phase === 'pending' && (
+              <div className="space-y-2 motion-safe:animate-fade-in-up">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  The latest version of this passport is still being anchored — there is no
+                  fingerprint to compare yet.
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={runIntegrityCheck}
+                  className="gap-1.5"
+                >
+                  <Fingerprint className="h-4 w-4" /> Check again
                 </Button>
               </div>
             )}
