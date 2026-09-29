@@ -32,7 +32,8 @@ export interface Product {
 
 const RECLAIMED = {
   deconstructionMethod: 'selective',
-  reclaimedBy: 'Stirling Community Reuse Hub',
+  // The hub's name everywhere else is "Stirling Reuse Hub" (owner, 2026-09-29).
+  reclaimedBy: 'Stirling Reuse Hub',
   deconstructionDate: new Date(Date.now() - 120 * DAY),
 } as const;
 
@@ -228,8 +229,9 @@ export const CATALOG: Product[] = [
     image: 'aluminium-stud-walling.jpg',
     passport: {
       productName: 'Reclaimed Aluminium Stud Walling',
-      categoryL1: 'structural-steel',
-      categoryL2: 'channels',
+      // Partition framing, not structural steel (owner, 2026-09-29).
+      categoryL1: 'partitions-linings',
+      categoryL2: 'metal-stud-framing',
       status: 'listed',
       countryOfOrigin: 'GB',
       ...RECLAIMED,

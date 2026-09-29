@@ -264,8 +264,9 @@ describe('curated-only browse', () => {
     orgId = org!.id;
     sellerId = seller!.id;
 
-    // Categories the real catalogue never uses (structural-steel,
-    // structural-timber, masonry, insulation — see scripts/lib/catalogue.ts),
+    // Categories the real catalogue never uses (it uses masonry,
+    // structural-timber, insulation and partitions-linings — see
+    // scripts/lib/catalogue.ts),
     // so the facets assertions below can tell this fixture's rows apart from
     // the live curated catalogue without depending on its exact contents.
     const [curatedPassport] = await db

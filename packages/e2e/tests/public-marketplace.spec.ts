@@ -54,8 +54,12 @@ test.describe('Public marketplace (logged out)', () => {
   test('category filter is narrowed to categories with stock', async ({ page }) => {
     await page.goto('/marketplace');
     const options = page.getByLabel('Filter by category').locator('option');
-    await expect(options).not.toHaveCount(11); // 10 categories + "All categories"
-    await expect(page.getByLabel('Filter by category')).toContainText('Structural Steel');
+    await expect(options).not.toHaveCount(12); // 11 categories + "All categories"
+    // Every curated catalogue product is in stock, so its categories are offered.
+    await expect(page.getByLabel('Filter by category')).toContainText('Masonry');
+    await expect(page.getByLabel('Filter by category')).toContainText(
+      'Internal Partitions & Linings',
+    );
   });
 
   // A search with no matches distinguishes "no results for these filters"

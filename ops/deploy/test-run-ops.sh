@@ -64,6 +64,9 @@ run_ops migrate
 run_ops demo-verify --env demo
 [[ "$(run_line)" == *" trace-demo-ops:$sha dist/scripts/demo-restore.js --verify --env demo" ]] \
   || fail 'demo-verify command line'
+run_ops demo-correct-catalogue --env demo --dry-run
+[[ "$(run_line)" == *" trace-demo-ops:$sha dist/scripts/demo-correct-catalogue.js --env demo --dry-run" ]] \
+  || fail 'demo-correct-catalogue command line'
 
 # Chain operations run the API image, which needs `node` passed explicitly.
 run_ops chain-deploy-registry --force
