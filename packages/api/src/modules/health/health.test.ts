@@ -67,4 +67,13 @@ describe('GET /health', () => {
       thor: expect.any(Boolean),
     });
   });
+
+  // F6 (2026-09-29 rehearsal): a chain outage must not make the API unready.
+  // Readiness is database + redis + object storage, whatever the chain's state.
+  it('does not gate readiness on the chain', async () => {
+    const res = await app.inject({ method: 'GET', url: '/health/ready' });
+    const { checks } = res.json<{ data: { checks: Record<string, boolean> } }>().data;
+    const coreUp = checks['database'] && checks['redis'] && checks['minio'];
+    expect(res.statusCode).toBe(coreUp ? 200 : 503);
+  });
 });
