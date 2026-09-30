@@ -120,3 +120,20 @@ Bringing it up, as root on the demo host (`<sha>` is the live release):
 
 To go back to simulation, set `DEMO_SIMULATE_ANCHOR=true` and redeploy. The
 site never depends on the chain in simulation mode.
+
+## Correcting the curated catalogue
+
+When a catalogue product's descriptive data is wrong (for example its
+category), fix it in `packages/db/scripts/lib/catalogue.ts`. New lots then get
+the corrected values. To correct the passports and lots that already exist,
+without touching visitor data, run:
+
+    /usr/local/libexec/trace-demo/run-ops.sh /var/lib/trace-demo/config/active.env demo-correct-catalogue --env demo --dry-run
+    /usr/local/libexec/trace-demo/run-ops.sh /var/lib/trace-demo/config/active.env demo-correct-catalogue --env demo --yes
+
+It changes only the allowlisted fields in
+`scripts/lib/catalogue-corrections.ts`: category, subcategory and
+reclaimed-by. It never changes names, lot numbers, grades, notes or photos.
+Anchored passports it corrects are marked pending, and the anchor worker
+re-anchors them within one sweep (about 5 minutes). Unlike `demo:restore`,
+it is safe on the public demo.

@@ -15,7 +15,7 @@ describe('D-08: CARBON_FACTOR_PER_KG keys are real category slugs', () => {
     }
   });
 
-  it('covers all ten categories, not a subset', () => {
+  it('covers every category, not a subset', () => {
     expect(Object.keys(CARBON_FACTOR_PER_KG).sort()).toEqual([...CATEGORY_L1_SLUGS].sort());
   });
 });

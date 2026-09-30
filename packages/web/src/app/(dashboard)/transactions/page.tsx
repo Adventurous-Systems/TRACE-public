@@ -10,6 +10,8 @@ import { getToken, getUser } from '@/lib/auth';
 import { track } from '@/lib/analytics';
 import { toast } from '@/components/ui/use-toast';
 import { getErrorMessage } from '@/lib/api-errors';
+import { formatDate } from '@/lib/format';
+import Link from 'next/link';
 
 const TX_STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   pending: 'warning',
@@ -153,10 +155,21 @@ export default function TransactionsPage() {
                             </span>
                           )}
                         </div>
+                        {tx.productName && (
+                          <p className="mt-1 text-sm font-medium text-gray-900">
+                            {tx.passportId ? (
+                              <Link href={`/passport/${tx.passportId}`} className="hover:underline">
+                                {tx.productName}
+                              </Link>
+                            ) : (
+                              tx.productName
+                            )}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">
-                          Order placed {new Date(tx.createdAt).toLocaleDateString()}
+                          Order placed {formatDate(tx.createdAt)}
                           {tx.disputeDeadline && tx.status === 'pending'
-                            ? ` · Dispute deadline ${new Date(tx.disputeDeadline).toLocaleDateString()}`
+                            ? ` · Dispute deadline ${formatDate(tx.disputeDeadline)}`
                             : ''}
                         </p>
                         {tx.notes && (

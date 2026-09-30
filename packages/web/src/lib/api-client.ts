@@ -406,6 +406,9 @@ export interface MarketplaceTransaction {
   disputeDeadline: string | null;
   notes: string | null;
   createdAt: string;
+  /** The material the order is for (present on the user's order list). */
+  productName?: string | null;
+  passportId?: string | null;
 }
 
 export interface AuditEvent {
@@ -607,9 +610,12 @@ export const passports = {
   certificate: (id: string) => request<PassportCertificate>(`/api/v1/passports/${id}/certificate`),
 
   verifyIntegrity: (id: string) =>
-    request<{ match: boolean; recomputedHash: string; storedHash: string | null }>(
-      `/api/v1/passports/${id}/verify-integrity`,
-    ),
+    request<{
+      match: boolean;
+      pending: boolean;
+      recomputedHash: string;
+      storedHash: string | null;
+    }>(`/api/v1/passports/${id}/verify-integrity`),
 
   create: (data: unknown, token: string) =>
     request<PassportDetail>('/api/v1/passports', {

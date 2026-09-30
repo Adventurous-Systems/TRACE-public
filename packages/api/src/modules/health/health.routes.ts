@@ -74,7 +74,13 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       checkMinio(),
       checkChain(),
     ]);
-    const ready = database && redis && minio && (env.DEMO_SIMULATE_ANCHOR || thor);
+    // The chain is reported but does not gate readiness. The site serves
+    // pages, listings and fingerprints without it; only (re-)anchoring and
+    // live on-chain checks need it, and those degrade honestly (passports
+    // show "pending", and "Check on chain now" says the chain couldn't be
+    // reached). Gating on it made a chain outage mark the API unhealthy and
+    // block every deploy (rehearsal finding F6, 2026-09-29).
+    const ready = database && redis && minio;
 
     return reply.status(ready ? 200 : 503).send({
       success: ready,

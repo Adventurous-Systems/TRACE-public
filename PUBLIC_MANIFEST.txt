@@ -80,6 +80,7 @@ packages/api/src/env.ts
 packages/api/src/index.ts
 packages/api/src/lib/anchor-decision.test.ts
 packages/api/src/lib/anchor-decision.ts
+packages/api/src/lib/anchor.onchain.test.ts
 packages/api/src/lib/anchor.ts
 packages/api/src/lib/audit.ts
 packages/api/src/lib/chain/artifacts/material-registry.ts
@@ -191,9 +192,12 @@ packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
 packages/db/migrations/meta/_journal.json
 packages/db/package.json
+packages/db/scripts/demo-correct-catalogue.ts
 packages/db/scripts/demo-replenish.ts
 packages/db/scripts/demo-restore.ts
 packages/db/scripts/demo-trim-active.ts
+packages/db/scripts/lib/catalogue-corrections.test.ts
+packages/db/scripts/lib/catalogue-corrections.ts
 packages/db/scripts/lib/catalogue.ts
 packages/db/scripts/lib/demo-content.ts
 packages/db/scripts/lib/demo-trim-policy.test.ts
@@ -285,6 +289,7 @@ packages/web/src/components/Analytics.tsx
 packages/web/src/components/DashboardLayout.tsx
 packages/web/src/components/DemoGuide.tsx
 packages/web/src/components/FeedbackWidget.tsx
+packages/web/src/components/marketplace/ListingPhoto.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx
 packages/web/src/components/passport/QrScanner.tsx
@@ -312,6 +317,10 @@ packages/web/src/lib/carbon-factors.ts
 packages/web/src/lib/categories.test.ts
 packages/web/src/lib/categories.ts
 packages/web/src/lib/confetti.ts
+packages/web/src/lib/format.test.ts
+packages/web/src/lib/format.ts
+packages/web/src/lib/passport-link.test.ts
+packages/web/src/lib/passport-link.ts
 packages/web/src/lib/trust-mode.test.ts
 packages/web/src/lib/trust-mode.ts
 packages/web/src/lib/utils.ts

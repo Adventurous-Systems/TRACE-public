@@ -13,6 +13,7 @@ import { Logo } from '@/components/ui/Logo';
 import CertificatePanel from '@/components/passport/CertificatePanel';
 import ProvenanceTimeline, { type AmendmentEntry } from '@/components/passport/ProvenanceTimeline';
 import Link from 'next/link';
+import { deconstructionMethodLabel, formatDate } from '@/lib/format';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -225,6 +226,36 @@ export default async function PublicPassportPage({ params }: Props) {
           <ProvenanceTimeline passport={passport} amendments={amendments} />
         </div>
 
+        {/* The passport's own QR code and Digital Link. It used to appear only
+            as a fallback when there was no photo, so passports with a photo
+            (all of the demo's) never showed it. */}
+        {passport.qrCodeUrl && (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-4 p-5 sm:flex-row">
+              <img
+                src={passport.qrCodeUrl}
+                alt={`QR code for the ${passport.productName} passport`}
+                className="h-32 w-32 shrink-0 rounded-lg border bg-white object-contain p-1"
+              />
+              <div className="space-y-1 text-center sm:text-left">
+                <p className="font-semibold">Passport QR code</p>
+                <p className="text-sm text-gray-600">
+                  Scan it to open this passport, e.g. from a label on the material itself. Anyone
+                  can re-check its fingerprint.
+                </p>
+                {passport.digitalLinkUri && (
+                  <a
+                    href={passport.digitalLinkUri}
+                    className="block break-all text-xs text-brand-600 hover:underline"
+                  >
+                    {passport.digitalLinkUri}
+                  </a>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid md:grid-cols-2 gap-6">
           {/* Product info */}
           <Card>
@@ -240,9 +271,7 @@ export default async function PublicPassportPage({ params }: Props) {
                   ['GTIN', passport.gtin],
                   [
                     'Production date',
-                    passport.productionDate
-                      ? new Date(passport.productionDate).toLocaleDateString()
-                      : null,
+                    passport.productionDate ? formatDate(passport.productionDate) : null,
                   ],
                   ['CE marking', passport.ceMarking ? 'Yes' : null],
                 ]
@@ -265,12 +294,13 @@ export default async function PublicPassportPage({ params }: Props) {
             <CardContent>
               <dl className="text-sm space-y-2">
                 {[
-                  ['Deconstruction method', passport.deconstructionMethod],
+                  [
+                    'Deconstruction method',
+                    deconstructionMethodLabel(passport.deconstructionMethod) || null,
+                  ],
                   [
                     'Deconstruction date',
-                    passport.deconstructionDate
-                      ? new Date(passport.deconstructionDate).toLocaleDateString()
-                      : null,
+                    passport.deconstructionDate ? formatDate(passport.deconstructionDate) : null,
                   ],
                   ['Reclaimed by', passport.reclaimedBy],
                   ['Previous building', passport.previousBuildingId],
@@ -375,7 +405,7 @@ export default async function PublicPassportPage({ params }: Props) {
         <div className="text-center text-xs text-gray-400 pt-4 pb-8">
           Passport ID: {passport.id}
           {' · '}
-          Registered {new Date(passport.createdAt).toLocaleDateString()}
+          Registered {formatDate(passport.createdAt)}
           {' · '}
           <Link href="https://trace.construction" className="hover:underline">
             TRACE Platform

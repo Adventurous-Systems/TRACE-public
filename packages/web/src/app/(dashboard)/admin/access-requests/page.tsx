@@ -12,6 +12,7 @@ import {
 } from '@/lib/api-client';
 import { getSession, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
+import { formatDateTime } from '@/lib/format';
 
 type AdminView = 'pending' | 'approved' | 'organisations';
 type PendingStatusFilter = 'pending' | 'rejected';
@@ -42,9 +43,8 @@ function formatRole(role: string) {
   return role.replace(/_/g, ' ');
 }
 
-function formatDate(value: string | null) {
-  if (!value) return 'Not reviewed yet';
-  return new Date(value).toLocaleString();
+function dateOrNotReviewed(value: string | null) {
+  return value ? formatDateTime(value) : 'Not reviewed yet';
 }
 
 export default function AdminAccessRequestsPage() {
@@ -584,8 +584,8 @@ export default function AdminAccessRequestsPage() {
                           </p>
                         </div>
                         <div className="text-sm text-gray-500">
-                          <p>Approved: {formatDate(request.reviewedAt)}</p>
-                          <p>Updated: {formatDate(request.updatedAt)}</p>
+                          <p>Approved: {dateOrNotReviewed(request.reviewedAt)}</p>
+                          <p>Updated: {dateOrNotReviewed(request.updatedAt)}</p>
                         </div>
                       </div>
                       <div className="grid gap-4 lg:grid-cols-3">
@@ -715,8 +715,8 @@ export default function AdminAccessRequestsPage() {
                             Status:{' '}
                             <span className="font-medium text-gray-800">{request.status}</span>
                           </p>
-                          <p>Submitted: {formatDate(request.createdAt)}</p>
-                          <p>Reviewed: {formatDate(request.reviewedAt)}</p>
+                          <p>Submitted: {dateOrNotReviewed(request.createdAt)}</p>
+                          <p>Reviewed: {dateOrNotReviewed(request.reviewedAt)}</p>
                         </div>
                       </div>
 

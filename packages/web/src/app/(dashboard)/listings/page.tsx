@@ -12,6 +12,7 @@ import { marketplace, type ListingSummary } from '@/lib/api-client';
 import { getToken, getUser, canCreateListing, hasOrganisation, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
+import { formatDate } from '@/lib/format';
 
 const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   active: 'success',
@@ -140,10 +141,8 @@ export default function ListingsPage() {
                         {categoryLabel(l.passport.categoryL1, l.passport.categoryL2)}
                         {l.passport.conditionGrade ? ` · Grade ${l.passport.conditionGrade}` : ''}
                         {' · Listed '}
-                        {new Date(l.createdAt).toLocaleDateString()}
-                        {l.expiresAt
-                          ? ` · Expires ${new Date(l.expiresAt).toLocaleDateString()}`
-                          : ''}
+                        {formatDate(l.createdAt)}
+                        {l.expiresAt ? ` · Expires ${formatDate(l.expiresAt)}` : ''}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 shrink-0">

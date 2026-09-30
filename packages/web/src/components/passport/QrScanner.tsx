@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Html5Qrcode as Html5QrcodeInstance } from 'html5-qrcode';
 import { useRouter } from 'next/navigation';
+import { passportIdFrom } from '@/lib/passport-link';
 
 // Dynamically import html5-qrcode to avoid SSR issues
 
@@ -35,21 +36,10 @@ export default function QrScanner() {
             setStatus('idle');
             scanner.stop().catch(() => null);
 
-            // Try to extract a passport ID from the URL
-            // Expected format: https://.../passport/<uuid>
-            try {
-              const url = new URL(decodedText);
-              const segments = url.pathname.split('/').filter(Boolean);
-              const passportIdx = segments.indexOf('passport');
-              if (passportIdx !== -1 && segments[passportIdx + 1]) {
-                router.push(`/passport/${segments[passportIdx + 1]}`);
-              } else {
-                // Fall back to navigating to the raw URL path
-                router.push(url.pathname);
-              }
-            } catch {
-              // Not a URL — display the raw result
-            }
+            // A TRACE QR encodes the passport's Digital Link; anything else
+            // is shown as the raw result.
+            const passportId = passportIdFrom(decodedText);
+            if (passportId) router.push(`/passport/${encodeURIComponent(passportId)}`);
           },
           () => {
             // Scan in progress — ignore decode errors
@@ -117,8 +107,8 @@ function ManualEntry() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = id.trim();
-    if (trimmed) router.push(`/passport/${trimmed}`);
+    const passportId = passportIdFrom(id);
+    if (passportId) router.push(`/passport/${encodeURIComponent(passportId)}`);
   }
 
   return (

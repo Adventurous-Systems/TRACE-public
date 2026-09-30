@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CountUp } from '@/components/ui/count-up';
 import { Logo } from '@/components/ui/Logo';
 import { DemoGuide } from '@/components/DemoGuide';
+import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 import { Recycle, Leaf } from 'lucide-react';
 
 const CONDITION_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
@@ -289,23 +290,10 @@ export default function MarketplacePage() {
                 >
                   <Card className="h-full overflow-hidden cursor-pointer transition-all group-hover:shadow-lg motion-safe:group-hover:-translate-y-0.5">
                     <div className="relative aspect-square overflow-hidden bg-gray-100">
-                      {listing.passport.photo ? (
-                        <img
-                          src={listing.passport.photo}
-                          alt={listing.passport.productName}
-                          className="h-full w-full object-cover transition-transform duration-300 motion-safe:group-hover:scale-105"
-                        />
-                      ) : listing.passport.qrCodeUrl ? (
-                        <img
-                          src={listing.passport.qrCodeUrl}
-                          alt=""
-                          className="h-full w-full object-contain p-6 opacity-30"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-gray-300">
-                          <Leaf className="h-10 w-10" />
-                        </div>
-                      )}
+                      <ListingPhoto
+                        src={listing.passport.photo}
+                        alt={listing.passport.productName}
+                      />
                       {listing.passport.carbonSavingsVsNew && (
                         <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-green-600/90 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
                           <Leaf className="h-3 w-3" /> {listing.passport.carbonSavingsVsNew} kgCO₂e
@@ -324,7 +312,10 @@ export default function MarketplacePage() {
                       )}
                     </div>
                     <CardContent className="p-4 space-y-1">
-                      <p className="font-semibold text-sm leading-tight line-clamp-1">
+                      <p
+                        className="font-semibold text-sm leading-tight line-clamp-2"
+                        title={listing.passport.productName}
+                      >
                         {listing.passport.productName}
                       </p>
                       <p className="text-xs text-gray-500">

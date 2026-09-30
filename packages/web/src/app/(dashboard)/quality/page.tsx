@@ -11,6 +11,7 @@ import { NoAccess } from '@/components/ui/load-state';
 import { quality, type QualityReportSummary } from '@/lib/api-client';
 import { getToken, getUser, canViewQuality, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
+import { formatDate } from '@/lib/format';
 
 const GRADE_COLORS: Record<string, string> = {
   A: 'bg-green-100 text-green-800',
@@ -164,7 +165,7 @@ export default function QualityReportsPage() {
                     </div>
 
                     <div className="text-xs text-gray-400 shrink-0 text-right">
-                      {new Date(report.createdAt).toLocaleDateString()}
+                      {formatDate(report.createdAt)}
                     </div>
                   </div>
                 </CardContent>
