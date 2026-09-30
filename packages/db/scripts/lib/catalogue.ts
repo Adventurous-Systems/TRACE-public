@@ -27,7 +27,8 @@ export interface Product {
   image: string;
   key: string;
   passport: SeedPassport;
-  listing: { pricePence: number; quantity: number; note?: string };
+  /** pricePence is per unit of measure; quantity is the lot size. */
+  listing: { pricePence: number; quantity: number; minOrderQuantity?: number; note?: string };
 }
 
 const RECLAIMED = {
@@ -89,7 +90,8 @@ export const CATALOG: Product[] = [
     listing: {
       pricePence: 360,
       quantity: 5000,
-      note: 'From £3.60 each — order quantity by arrangement.',
+      // Buyers now choose their quantity online (owner, 2026-09-30).
+      minOrderQuantity: 100,
     },
   },
   {
@@ -130,7 +132,6 @@ export const CATALOG: Product[] = [
     listing: {
       pricePence: 8200,
       quantity: 250,
-      note: 'From £82 per pack — order quantity by arrangement.',
     },
   },
   {

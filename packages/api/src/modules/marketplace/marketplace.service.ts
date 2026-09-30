@@ -1,4 +1,4 @@
-import { eq, and, or, ilike, gte, lte, desc, asc, sql, type SQL } from 'drizzle-orm';
+import { eq, and, or, ne, inArray, ilike, gte, lte, desc, asc, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   listings,
@@ -18,10 +18,12 @@ import {
   NotFoundError,
   ForbiddenError,
   ConflictError,
+  ValidationError,
 } from '@trace/core';
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 
-type TransactionWithListing = Transaction & { listing: Listing };
+/** Orders that still hold part of a lot: not yet completed, resolved or cancelled. */
+const OPEN_TRANSACTION_STATUSES = ['pending', 'confirmed', 'disputed'] as const;
 
 /**
  * The active-listing predicate every public browse surface shares
@@ -82,6 +84,8 @@ export async function createListing(
       pricePence: input.pricePence,
       currency: input.currency,
       quantity: input.quantity,
+      quantityAvailable: input.quantity,
+      minOrderQuantity: input.minOrderQuantity,
       shippingOptions: input.shippingOptions as Array<{
         method: string;
         deliveryRadiusMiles?: number;
@@ -219,6 +223,8 @@ export async function searchListings(
       pricePence: listings.pricePence,
       currency: listings.currency,
       quantity: listings.quantity,
+      quantityAvailable: listings.quantityAvailable,
+      minOrderQuantity: listings.minOrderQuantity,
       shippingOptions: listings.shippingOptions,
       status: listings.status,
       blockchainTxHash: listings.blockchainTxHash,
@@ -260,6 +266,8 @@ export async function searchListings(
     pricePence: row.pricePence,
     currency: row.currency,
     quantity: row.quantity,
+    quantityAvailable: row.quantityAvailable,
+    minOrderQuantity: row.minOrderQuantity,
     shippingOptions: row.shippingOptions,
     status: row.status,
     blockchainTxHash: row.blockchainTxHash,
@@ -290,13 +298,18 @@ export async function searchListings(
   };
 }
 
+/**
+ * totalCarbonSavedKg: what reusing everything still on offer would save
+ * against new materials, i.e. each passport's per-unit saving times the
+ * quantity still available (finding 3: it used to add per-unit figures).
+ */
 export async function getMarketplaceStats(options: { curatedOnly?: boolean } = {}): Promise<{
   totalCarbonSavedKg: number;
   activeCount: number;
 }> {
   const [row] = await db
     .select({
-      total: sql<number>`coalesce(sum(cast(${materialPassports.carbonSavingsVsNew} as double precision)), 0)`,
+      total: sql<number>`coalesce(sum(cast(${materialPassports.carbonSavingsVsNew} as double precision) * ${listings.quantityAvailable}), 0)`,
       count: sql<number>`cast(count(*) as int)`,
     })
     .from(listings)
@@ -384,20 +397,54 @@ export async function updateListing(
     throw new ConflictError(`Cannot update listing with status '${listing.status}'`);
   }
 
-  const updateSet: Record<string, unknown> = {};
-  if (input.pricePence !== undefined) updateSet['pricePence'] = input.pricePence;
-  if (input.quantity !== undefined) updateSet['quantity'] = input.quantity;
-  if (input.shippingOptions !== undefined) updateSet['shippingOptions'] = input.shippingOptions;
-  if (input.expiresAt !== undefined) updateSet['expiresAt'] = input.expiresAt;
+  return db.transaction(async (tx) => {
+    // Lock the row so an offer can't take stock between the check and the write.
+    const [current] = await tx
+      .select()
+      .from(listings)
+      .where(eq(listings.id, listingId))
+      .for('update');
+    if (!current || current.status !== 'active') {
+      throw new ConflictError(
+        `Cannot update listing with status '${current?.status ?? 'missing'}'`,
+      );
+    }
 
-  const [updated] = await db
-    .update(listings)
-    .set(updateSet)
-    .where(eq(listings.id, listingId))
-    .returning();
+    const updateSet: Partial<Listing> = {};
+    if (input.pricePence !== undefined) updateSet.pricePence = input.pricePence;
+    if (input.quantity !== undefined) {
+      // Orders already placed keep their share of the lot.
+      const committed = current.quantity - current.quantityAvailable;
+      if (input.quantity < committed) {
+        throw new ConflictError(
+          `Orders already hold ${committed} of this lot, so the quantity cannot go below that`,
+        );
+      }
+      updateSet.quantity = input.quantity;
+      updateSet.quantityAvailable = input.quantity - committed;
+    }
+    if (input.minOrderQuantity !== undefined) {
+      if (input.minOrderQuantity > (updateSet.quantity ?? current.quantity)) {
+        throw new ValidationError('The minimum order cannot be more than the quantity listed');
+      }
+      updateSet.minOrderQuantity = input.minOrderQuantity;
+    }
+    if (input.shippingOptions !== undefined) {
+      updateSet.shippingOptions = input.shippingOptions as Listing['shippingOptions'];
+    }
+    if (input.expiresAt !== undefined) updateSet.expiresAt = input.expiresAt;
+    // A lot whose remaining stock is all ordered is no longer on offer.
+    if (updateSet.quantityAvailable === 0) updateSet.status = 'reserved';
 
-  if (!updated) throw new Error('Update failed');
-  return updated;
+    const [updated] = await tx
+      .update(listings)
+      .set(updateSet)
+      .where(eq(listings.id, listingId))
+      .returning();
+
+    if (!updated) throw new Error('Update failed');
+    return updated;
+  });
 }
 
 export async function cancelListing(listingId: string, organisationId: string): Promise<Listing> {
@@ -411,6 +458,20 @@ export async function cancelListing(listingId: string, organisationId: string): 
   }
   if (!['active', 'reserved'].includes(listing.status)) {
     throw new ConflictError(`Cannot cancel listing with status '${listing.status}'`);
+  }
+  const [open] = await db
+    .select({ count: sql<number>`cast(count(*) as int)` })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.listingId, listingId),
+        inArray(transactions.status, [...OPEN_TRANSACTION_STATUSES]),
+      ),
+    );
+  if ((open?.count ?? 0) > 0) {
+    throw new ConflictError(
+      `This listing has ${open!.count} open order(s); accept, reject or cancel them first`,
+    );
   }
 
   const [cancelled] = await db
@@ -432,11 +493,20 @@ export async function cancelListing(listingId: string, organisationId: string): 
 
 // ─── Transaction: Make Offer ─────────────────────────────────────────────────
 
+/**
+ * Order part (or all) of a lot. The order holds its quantity until it is
+ * completed, resolved or cancelled; the listing stays on the marketplace while
+ * anything is left, and is reserved once every unit is held.
+ */
 export async function makeOffer(input: MakeOfferInput, buyerId: string): Promise<Transaction> {
   return db.transaction(async (tx) => {
-    const listing = await tx.query.listings.findFirst({
-      where: eq(listings.id, input.listingId),
-    });
+    // Lock the listing: concurrent offers on one lot queue here, so between
+    // them buyers can never take more than is available.
+    const [listing] = await tx
+      .select()
+      .from(listings)
+      .where(eq(listings.id, input.listingId))
+      .for('update');
 
     if (!listing) throw new NotFoundError(`Listing ${input.listingId} not found`);
     if (listing.status !== 'active') {
@@ -445,49 +515,94 @@ export async function makeOffer(input: MakeOfferInput, buyerId: string): Promise
     if (listing.sellerId === buyerId) {
       throw new ForbiddenError('Cannot buy your own listing');
     }
-
     if (listing.expiresAt && listing.expiresAt < new Date()) {
-      await tx.update(listings).set({ status: 'expired' }).where(eq(listings.id, listing.id));
       throw new ConflictError('Listing has expired');
     }
 
-    // Claim the active listing before creating its transaction. The status
-    // predicate makes this a compare-and-set: concurrent buyers cannot each
-    // turn the same listing into a retained pending transaction.
-    const [reserved] = await tx
-      .update(listings)
-      .set({ status: 'reserved' })
-      .where(and(eq(listings.id, listing.id), eq(listings.status, 'active')))
-      .returning();
-
-    if (!reserved) {
-      throw new ConflictError('Listing is no longer available');
+    const available = listing.quantityAvailable;
+    const quantity = input.quantity ?? Math.min(listing.minOrderQuantity, available);
+    if (quantity > available) {
+      throw new ConflictError(
+        `Only ${available} of this lot ${available === 1 ? 'is' : 'are'} left`,
+      );
+    }
+    // Below the minimum only when that is everything that's left.
+    if (quantity < listing.minOrderQuantity && quantity < available) {
+      throw new ValidationError(`The minimum order for this lot is ${listing.minOrderQuantity}`);
     }
 
+    const remaining = available - quantity;
+    await tx
+      .update(listings)
+      .set({ quantityAvailable: remaining, ...(remaining === 0 ? { status: 'reserved' } : {}) })
+      .where(eq(listings.id, listing.id));
+
+    const unitPricePence = input.offerPence ?? listing.pricePence;
     const [transaction] = await tx
       .insert(transactions)
       .values({
-        listingId: reserved.id,
+        listingId: listing.id,
         buyerId,
-        sellerId: reserved.sellerId,
-        amountPence: input.offerPence ?? reserved.pricePence,
+        sellerId: listing.sellerId,
+        quantity,
+        amountPence: unitPricePence * quantity,
         status: 'pending',
-        disputeDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        // The dispute window opens when the seller accepts.
+        disputeDeadline: null,
         notes: input.notes ?? null,
       })
       .returning();
 
     if (!transaction) throw new Error('Failed to create transaction');
 
-    await tx
-      .update(materialPassports)
-      .set({ status: 'reserved', updatedAt: new Date() })
-      .where(eq(materialPassports.id, reserved.passportId));
+    if (remaining === 0) {
+      await tx
+        .update(materialPassports)
+        .set({ status: 'reserved', updatedAt: new Date() })
+        .where(eq(materialPassports.id, listing.passportId));
+    }
 
     return transaction;
   });
 }
+
 // ─── Transaction: Update Status ──────────────────────────────────────────────
+
+const DISPUTE_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The order steps:
+ *
+ *   pending   --seller accepts-->           confirmed
+ *   pending   --seller rejects-->           cancelled  (quantity returned)
+ *   pending   --buyer or seller cancels-->  cancelled  (quantity returned)
+ *   confirmed --buyer confirms delivery-->  completed  (sale final)
+ *   confirmed --buyer flags a problem-->    disputed
+ *   confirmed --buyer or seller cancels-->  cancelled  (quantity returned)
+ *   disputed  --platform admin resolves-->  resolved   (the sale stands)
+ *
+ * A buyer can't confirm delivery of an order the seller hasn't accepted.
+ */
+const TRANSITIONS: Record<
+  UpdateTransactionInput['action'],
+  { from: readonly string[]; to: string; by: 'buyer' | 'seller' | 'party' | 'platform_admin' }
+> = {
+  accept: { from: ['pending'], to: 'confirmed', by: 'seller' },
+  reject: { from: ['pending'], to: 'cancelled', by: 'seller' },
+  cancel: { from: ['pending', 'confirmed'], to: 'cancelled', by: 'party' },
+  confirm_delivery: { from: ['confirmed'], to: 'completed', by: 'buyer' },
+  flag_dispute: { from: ['confirmed'], to: 'disputed', by: 'buyer' },
+  resolve_dispute: { from: ['disputed'], to: 'resolved', by: 'platform_admin' },
+};
+
+const ACTION_WORDING: Record<UpdateTransactionInput['action'], string> = {
+  accept: 'accept',
+  reject: 'reject',
+  cancel: 'cancel',
+  confirm_delivery: 'confirm delivery of',
+  flag_dispute: 'flag a problem with',
+  resolve_dispute: 'resolve',
+};
 
 export async function updateTransaction(
   transactionId: string,
@@ -495,115 +610,125 @@ export async function updateTransaction(
   userId: string,
   role: string,
 ): Promise<Transaction> {
-  const txRaw = await db.query.transactions.findFirst({
-    where: eq(transactions.id, transactionId),
-    with: { listing: true },
-  });
+  const step = TRANSITIONS[input.action];
+  if (!step) throw new ConflictError('Unknown action');
 
-  if (!txRaw) throw new NotFoundError(`Transaction ${transactionId} not found`);
-  const tx = txRaw as TransactionWithListing;
+  return db.transaction(async (dbTx) => {
+    const [order] = await dbTx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+      .for('update');
+    if (!order) throw new NotFoundError(`Transaction ${transactionId} not found`);
 
-  // Permission checks by action
-  if (input.action === 'confirm_delivery' && tx.buyerId !== userId) {
-    throw new ForbiddenError('Only the buyer can confirm delivery');
-  }
-  if (input.action === 'cancel' && tx.sellerId !== userId && tx.buyerId !== userId) {
-    throw new ForbiddenError('Only buyer or seller can cancel');
-  }
-  if (input.action === 'flag_dispute' && tx.buyerId !== userId) {
-    throw new ForbiddenError('Only the buyer can flag a dispute');
-  }
-  // No dispute-resolution governance exists yet (no arbiter role, no CBT/DAO
-  // voting) — platform_admin is the interim authority. Revisit when governance
-  // lands; keep this ownership check aligned with the route authorization.
-  if (input.action === 'resolve_dispute' && role !== 'platform_admin') {
-    throw new ForbiddenError('Only a platform administrator can resolve a dispute');
-  }
+    const isBuyer = order.buyerId === userId;
+    const isSeller = order.sellerId === userId;
+    // No dispute-resolution governance exists yet (no arbiter role, no CBT/DAO
+    // voting) — platform_admin is the interim authority. Revisit when governance
+    // lands; keep this ownership check aligned with the route authorization.
+    const allowed =
+      (step.by === 'buyer' && isBuyer) ||
+      (step.by === 'seller' && isSeller) ||
+      (step.by === 'party' && (isBuyer || isSeller)) ||
+      (step.by === 'platform_admin' && role === 'platform_admin');
+    if (!allowed) {
+      const who = {
+        buyer: 'the buyer',
+        seller: 'the seller',
+        party: 'the buyer or the seller',
+        platform_admin: 'a platform administrator',
+      }[step.by];
+      throw new ForbiddenError(`Only ${who} can ${ACTION_WORDING[input.action]} this order`);
+    }
+    if (!step.from.includes(order.status)) {
+      const hint =
+        order.status === 'pending' && input.action === 'confirm_delivery'
+          ? ' — the seller has not accepted it yet'
+          : '';
+      throw new ConflictError(
+        `Cannot ${ACTION_WORDING[input.action]} an order that is ${order.status}${hint}`,
+      );
+    }
 
-  let newStatus: string;
+    const [listing] = await dbTx
+      .select()
+      .from(listings)
+      .where(eq(listings.id, order.listingId))
+      .for('update');
+    if (!listing) throw new NotFoundError(`Listing ${order.listingId} not found`);
 
-  switch (input.action) {
-    case 'confirm_delivery':
-      if (tx.status !== 'pending' && tx.status !== 'confirmed') {
-        throw new ConflictError(
-          `Cannot confirm delivery on transaction with status '${tx.status}'`,
+    const updateSet: Partial<Transaction> = { status: step.to };
+    if (input.notes) updateSet.notes = input.notes;
+    if (step.to === 'confirmed') {
+      updateSet.disputeDeadline = new Date(Date.now() + DISPUTE_WINDOW_MS);
+    }
+
+    if (step.to === 'cancelled') {
+      // Give the order's share back to the lot. A lot that was fully held
+      // returns to the marketplace.
+      const reopened = listing.status === 'reserved';
+      await dbTx
+        .update(listings)
+        .set({
+          quantityAvailable: Math.min(listing.quantity, listing.quantityAvailable + order.quantity),
+          ...(reopened ? { status: 'active' } : {}),
+        })
+        .where(eq(listings.id, listing.id));
+      if (reopened) {
+        await dbTx
+          .update(materialPassports)
+          .set({ status: 'listed', updatedAt: new Date() })
+          .where(eq(materialPassports.id, listing.passportId));
+      }
+    }
+
+    if (step.to === 'completed' || step.to === 'resolved') {
+      // The lot is sold once nothing is left and no other order is open.
+      const [others] = await dbTx
+        .select({ count: sql<number>`cast(count(*) as int)` })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.listingId, listing.id),
+            ne(transactions.id, order.id),
+            inArray(transactions.status, [...OPEN_TRANSACTION_STATUSES]),
+          ),
         );
+      if (listing.quantityAvailable === 0 && (others?.count ?? 0) === 0) {
+        await dbTx.update(listings).set({ status: 'sold' }).where(eq(listings.id, listing.id));
+        await dbTx
+          .update(materialPassports)
+          .set({ status: 'sold', updatedAt: new Date() })
+          .where(eq(materialPassports.id, listing.passportId));
       }
-      newStatus = 'confirmed';
-      break;
 
-    case 'flag_dispute':
-      if (tx.status !== 'pending' && tx.status !== 'confirmed') {
-        throw new ConflictError(`Cannot flag dispute on transaction with status '${tx.status}'`);
-      }
-      newStatus = 'disputed';
-      break;
+      // EPCIS transfer event
+      await dbTx.insert(passportEvents).values({
+        passportId: listing.passportId,
+        eventType: 'TransactionEvent',
+        eventData: {
+          action: 'ADD',
+          bizStep: 'urn:epcglobal:cbv:bizstep:selling',
+          disposition: 'urn:epcglobal:cbv:disp:sold',
+          transactionId,
+          buyerId: order.buyerId,
+          quantity: order.quantity,
+          amountPence: order.amountPence,
+        },
+        actorId: userId,
+      });
+    }
 
-    case 'resolve_dispute':
-      if (tx.status !== 'disputed') {
-        throw new ConflictError('Transaction is not in disputed state');
-      }
-      newStatus = 'resolved';
-      break;
+    const [updated] = await dbTx
+      .update(transactions)
+      .set(updateSet)
+      .where(and(eq(transactions.id, transactionId), eq(transactions.status, order.status)))
+      .returning();
 
-    case 'cancel':
-      if (!['pending', 'confirmed'].includes(tx.status)) {
-        throw new ConflictError(`Cannot cancel transaction with status '${tx.status}'`);
-      }
-      newStatus = 'cancelled';
-      // Revert listing and passport
-      await db.update(listings).set({ status: 'active' }).where(eq(listings.id, tx.listingId));
-      await db
-        .update(materialPassports)
-        .set({ status: 'listed', updatedAt: new Date() })
-        .where(eq(materialPassports.id, tx.listing.passportId));
-      break;
-
-    default:
-      throw new ConflictError('Unknown action');
-  }
-
-  const updateSet: Record<string, unknown> = { status: newStatus };
-  if (input.notes) updateSet['notes'] = input.notes;
-
-  // If confirmed and past dispute deadline, auto-complete
-  if (newStatus === 'confirmed' && tx.disputeDeadline && tx.disputeDeadline < new Date()) {
-    updateSet['status'] = 'completed';
-    newStatus = 'completed';
-  }
-
-  if (newStatus === 'completed') {
-    // Mark listing sold, passport sold
-    await db.update(listings).set({ status: 'sold' }).where(eq(listings.id, tx.listingId));
-    await db
-      .update(materialPassports)
-      .set({ status: 'sold', updatedAt: new Date() })
-      .where(eq(materialPassports.id, tx.listing.passportId));
-
-    // EPCIS transfer event
-    await db.insert(passportEvents).values({
-      passportId: tx.listing.passportId,
-      eventType: 'TransactionEvent',
-      eventData: {
-        action: 'ADD',
-        bizStep: 'urn:epcglobal:cbv:bizstep:selling',
-        disposition: 'urn:epcglobal:cbv:disp:sold',
-        transactionId,
-        buyerId: tx.buyerId,
-        amountPence: tx.amountPence,
-      },
-      actorId: userId,
-    });
-  }
-
-  const [updated] = await db
-    .update(transactions)
-    .set(updateSet)
-    .where(eq(transactions.id, transactionId))
-    .returning();
-
-  if (!updated) throw new Error('Update failed');
-  return updated;
+    if (!updated)
+      throw new ConflictError('The order changed while this was being saved; try again');
+    return updated;
+  });
 }
 
 export async function getTransactionById(
@@ -644,7 +769,7 @@ export async function listUserTransactions(
     with: {
       listing: {
         columns: { passportId: true },
-        with: { passport: { columns: { productName: true } } },
+        with: { passport: { columns: { productName: true, unitOfMeasure: true } } },
       },
     },
   });
@@ -652,5 +777,6 @@ export async function listUserTransactions(
     ...tx,
     passportId: listing?.passportId ?? null,
     productName: listing?.passport?.productName ?? null,
+    unitOfMeasure: listing?.passport?.unitOfMeasure ?? null,
   }));
 }

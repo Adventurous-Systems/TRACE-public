@@ -229,6 +229,8 @@ async function main() {
             pricePence: product.listing.pricePence,
             currency: 'GBP',
             quantity: product.listing.quantity,
+            quantityAvailable: product.listing.quantity,
+            minOrderQuantity: product.listing.minOrderQuantity ?? 1,
             status: 'active',
             shippingOptions: [
               { method: 'both', notes: product.listing.note ?? 'Delivery from FK7 or collection' },

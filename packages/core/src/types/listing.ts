@@ -22,7 +22,12 @@ export interface Listing {
   sellerId: string;
   pricePence: number;
   currency: string;
+  /** The lot size, in the passport's unit of measure. */
   quantity: number;
+  /** What open and completed orders have not taken. */
+  quantityAvailable: number;
+  /** The smallest order a buyer may place (unless less than that is left). */
+  minOrderQuantity: number;
   shippingOptions?: ShippingOption[];
   status: ListingStatus;
   expiresAt?: Date;
@@ -35,6 +40,9 @@ export interface Transaction {
   listingId: string;
   buyerId: string;
   sellerId: string;
+  /** How much of the lot this order takes. */
+  quantity: number;
+  /** The order total: unit price × quantity. */
   amountPence: number;
   status: TransactionStatus;
   disputeDeadline?: Date;

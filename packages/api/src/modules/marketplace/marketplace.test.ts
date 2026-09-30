@@ -62,6 +62,7 @@ describe('marketplace buyer flow', () => {
         pricePence: 12500,
         currency: 'GBP',
         quantity: 1,
+        quantityAvailable: 1,
         shippingOptions: [{ method: 'collection' }],
         status: 'active',
       })
@@ -157,6 +158,7 @@ describe('D-03: transaction authorization', () => {
         pricePence: 5000,
         currency: 'GBP',
         quantity: 1,
+        quantityAvailable: 1,
         shippingOptions: [{ method: 'collection' }],
         status: 'active',
       })
@@ -204,6 +206,15 @@ describe('D-03: transaction authorization', () => {
   });
 
   it('403s resolve_dispute for the buyer, the seller and an unrelated account', async () => {
+    // A problem can be flagged only once the seller has accepted the order.
+    const acceptRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/transactions/${transactionId}`,
+      headers: sellerAuth,
+      payload: { action: 'accept' },
+    });
+    expect(acceptRes.statusCode).toBe(200);
+
     const flagRes = await app.inject({
       method: 'PATCH',
       url: `/api/v1/marketplace/transactions/${transactionId}`,
@@ -302,6 +313,7 @@ describe('curated-only browse', () => {
         pricePence: 500,
         currency: 'GBP',
         quantity: 1,
+        quantityAvailable: 1,
         shippingOptions: [{ method: 'collection' }],
         status: 'active',
       })
@@ -315,6 +327,7 @@ describe('curated-only browse', () => {
         pricePence: 500,
         currency: 'GBP',
         quantity: 1,
+        quantityAvailable: 1,
         shippingOptions: [{ method: 'collection' }],
         status: 'active',
       })
@@ -366,5 +379,213 @@ describe('curated-only browse', () => {
     expect(facets.categoryL1).not.toContain('roofing');
     expect(facets.conditionGrade).toContain('D');
     expect(facets.conditionGrade).not.toContain('C');
+  });
+});
+
+// Buying part of a lot, and the order steps (owner decision 2026-09-30; plan
+// ai-os technical/2026-09-30-units-quantity-plan.md, slices U2, U3 and U5).
+describe('part of a lot and the order steps', () => {
+  let app: TestApp;
+  let sellerAuth: { authorization: string };
+  let buyerAuth: { authorization: string };
+  let secondBuyerAuth: { authorization: string };
+  const authByUserId = new Map<string, { authorization: string }>();
+  let listingId: string;
+  let passportId: string;
+
+  async function makeBuyer(label: string) {
+    const email = `lot-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+    const [user] = await db
+      .insert(users)
+      .values({
+        email,
+        passwordHash: await bcrypt.hash('LotTest1234!', 10),
+        name: `Lot ${label}`,
+        role: 'buyer',
+        organisationId: null,
+      })
+      .returning();
+    const auth = await getAuthHeader(app, email, 'LotTest1234!');
+    authByUserId.set(user!.id, auth);
+    return auth;
+  }
+
+  const offer = (auth: { authorization: string }, payload: Record<string, unknown> = {}) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/v1/marketplace/offers',
+      headers: auth,
+      payload: { listingId, ...payload },
+    });
+  const act = (auth: { authorization: string }, id: string, action: string) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/transactions/${id}`,
+      headers: auth,
+      payload: { action },
+    });
+  const lot = async () =>
+    (await db.query.listings.findFirst({ where: eq(listings.id, listingId) }))!;
+  const passportStatus = async () =>
+    (await db.query.materialPassports.findFirst({ where: eq(materialPassports.id, passportId) }))!
+      .status;
+  const idOf = (res: { json: <T>() => T }) => res.json<{ data: { id: string } }>().data.id;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    const org = await db.query.organisations.findFirst({
+      where: eq(organisations.slug, 'stirling'),
+    });
+    const seller = await db.query.users.findFirst({
+      where: eq(users.email, 'staff@stirlingreuse.com'),
+    });
+    sellerAuth = await getAuthHeader(app, HUB_STAFF.email, HUB_STAFF.password);
+    buyerAuth = await makeBuyer('buyer');
+    secondBuyerAuth = await makeBuyer('second');
+
+    const [passport] = await db
+      .insert(materialPassports)
+      .values({
+        organisationId: org!.id,
+        registeredBy: seller!.id,
+        productName: `Lot Test Bricks ${Date.now()}`,
+        categoryL1: 'masonry',
+        unitOfMeasure: 'each',
+        conditionGrade: 'B',
+        status: 'listed',
+      })
+      .returning();
+    passportId = passport!.id;
+
+    const [listing] = await db
+      .insert(listings)
+      .values({
+        passportId,
+        organisationId: org!.id,
+        sellerId: seller!.id,
+        pricePence: 300,
+        currency: 'GBP',
+        quantity: 10,
+        quantityAvailable: 10,
+        minOrderQuantity: 2,
+        shippingOptions: [{ method: 'collection' }],
+        status: 'active',
+      })
+      .returning();
+    listingId = listing!.id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('an offer without a quantity takes the minimum order, at the unit price times the quantity', async () => {
+    const res = await offer(buyerAuth);
+    expect(res.statusCode).toBe(201);
+    const order = res.json<{
+      data: { quantity: number; amountPence: number; disputeDeadline: string | null };
+    }>().data;
+    expect(order.quantity).toBe(2);
+    expect(order.amountPence).toBe(600);
+    expect(order.disputeDeadline).toBeNull();
+    expect((await lot()).quantityAvailable).toBe(8);
+    expect((await lot()).status).toBe('active');
+    expect(await passportStatus()).toBe('listed');
+  });
+
+  it('refuses an order below the minimum while more than that is left, and more than is left', async () => {
+    expect((await offer(buyerAuth, { quantity: 1 })).statusCode).toBe(400);
+    expect((await offer(buyerAuth, { quantity: 9 })).statusCode).toBe(409);
+    expect((await lot()).quantityAvailable).toBe(8);
+  });
+
+  it('never lets concurrent offers take more than is left between them', async () => {
+    const results = await Promise.all([
+      offer(buyerAuth, { quantity: 5 }),
+      offer(secondBuyerAuth, { quantity: 5 }),
+    ]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+    expect((await lot()).quantityAvailable).toBe(3);
+  });
+
+  it('follows the order steps: the seller accepts before the buyer can confirm delivery', async () => {
+    const id = idOf(await offer(secondBuyerAuth, { quantity: 2 }));
+    expect((await lot()).quantityAvailable).toBe(1);
+
+    const early = await act(secondBuyerAuth, id, 'confirm_delivery');
+    expect(early.statusCode).toBe(409);
+    expect(early.json<{ error: { message: string } }>().error.message).toMatch(/not accepted/);
+    expect((await act(secondBuyerAuth, id, 'accept')).statusCode).toBe(403);
+
+    const accepted = await act(sellerAuth, id, 'accept');
+    expect(accepted.statusCode).toBe(200);
+    const confirmed = accepted.json<{ data: { status: string; disputeDeadline: string | null } }>()
+      .data;
+    expect(confirmed.status).toBe('confirmed');
+    expect(confirmed.disputeDeadline).not.toBeNull();
+
+    const done = await act(secondBuyerAuth, id, 'confirm_delivery');
+    expect(done.json<{ data: { status: string } }>().data.status).toBe('completed');
+    // Part of the lot is still for sale.
+    expect((await lot()).status).toBe('active');
+    expect(await passportStatus()).toBe('listed');
+  });
+
+  it('gives the share of a cancelled or rejected order back to the lot', async () => {
+    const id = idOf(await offer(buyerAuth, { quantity: 1 }));
+    expect((await lot()).quantityAvailable).toBe(0);
+    expect((await lot()).status).toBe('reserved');
+    expect(await passportStatus()).toBe('reserved');
+
+    expect((await act(sellerAuth, id, 'reject')).statusCode).toBe(200);
+    expect((await lot()).quantityAvailable).toBe(1);
+    expect((await lot()).status).toBe('active');
+    expect(await passportStatus()).toBe('listed');
+
+    const again = idOf(await offer(buyerAuth, { quantity: 1 }));
+    expect((await act(buyerAuth, again, 'cancel')).statusCode).toBe(200);
+    expect((await lot()).quantityAvailable).toBe(1);
+  });
+
+  it('keeps a seller from cancelling a listing, or shrinking the lot, under open orders', async () => {
+    const [first] = await db.query.transactions.findMany({
+      where: (t, { and: all, eq: is }) => all(is(t.listingId, listingId), is(t.status, 'pending')),
+    });
+    expect(first).toBeDefined();
+    const cancel = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/listings/${listingId}`,
+      headers: sellerAuth,
+      payload: { action: 'cancel' },
+    });
+    expect(cancel.statusCode).toBe(409);
+    const shrink = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/listings/${listingId}`,
+      headers: sellerAuth,
+      payload: { quantity: 3 },
+    });
+    expect(shrink.statusCode).toBe(409);
+  });
+
+  it('sells the lot only when the last unit is sold and no order is still open', async () => {
+    const open = await db.query.transactions.findMany({
+      where: (t, { and: all, eq: is }) => all(is(t.listingId, listingId), is(t.status, 'pending')),
+    });
+    const last = idOf(await offer(secondBuyerAuth, { quantity: 1 }));
+    expect((await lot()).status).toBe('reserved');
+
+    await act(sellerAuth, last, 'accept');
+    await act(secondBuyerAuth, last, 'confirm_delivery');
+    // The earlier open orders still hold part of the lot.
+    expect((await lot()).status).toBe('reserved');
+
+    for (const order of open) {
+      await act(sellerAuth, order.id, 'accept');
+      const auth = authByUserId.get(order.buyerId)!;
+      expect((await act(auth, order.id, 'confirm_delivery')).statusCode).toBe(200);
+    }
+    expect((await lot()).status).toBe('sold');
+    expect(await passportStatus()).toBe('sold');
   });
 });
