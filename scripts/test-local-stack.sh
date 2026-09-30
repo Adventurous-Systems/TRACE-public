@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Black-box tests for local-stack.sh. docker, pnpm, node and curl are fakes on
 # PATH that log their calls; nothing real is built, started or deleted.
-set -euo pipefail
+set -Eeuo pipefail
+# Never exit silently: name the line and command that failed.
+trap 'echo "FAIL: line $LINENO: $BASH_COMMAND" >&2' ERR
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 STACK="$repo_root/scripts/local-stack.sh"
@@ -54,7 +56,7 @@ stack() {
     "$STACK" "$@"
 }
 fail() { echo "FAIL: $*" >&2; cat "$log" >&2 2>/dev/null || true; exit 1; }
-line_of() { grep -n -- "$1" "$log" | head -1 | cut -d: -f1; }
+line_of() { grep -n -- "$1" "$log" | head -1 | cut -d: -f1 || true; }
 
 # Without .env nothing runs.
 : > "$log"
