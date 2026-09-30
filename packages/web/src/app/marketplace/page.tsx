@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { clearSession, getUser, type StoredUser } from '@/lib/auth';
 import { track } from '@/lib/analytics';
 import { marketplace, type ListingSummary } from '@/lib/api-client';
-import { unitLabel, MATERIAL_CATEGORIES, getCategoryBySlug } from '@trace/core';
+import { perUnit, MATERIAL_CATEGORIES, getCategoryBySlug } from '@trace/core';
 import { subcategoryLabel } from '@/lib/categories';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -298,7 +298,7 @@ export default function MarketplacePage() {
                         <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-green-600/90 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
                           <Leaf className="h-3 w-3" /> {listing.passport.carbonSavingsVsNew} kgCO₂e
                           {listing.passport.unitOfMeasure
-                            ? `/${unitLabel(listing.passport.unitOfMeasure)}`
+                            ? ` ${perUnit(listing.passport.unitOfMeasure)}`
                             : ''}
                         </span>
                       )}
@@ -328,6 +328,12 @@ export default function MarketplacePage() {
                       <div className="flex items-center justify-between pt-1">
                         <span className="text-lg font-bold text-brand-700">
                           {formatPrice(listing.pricePence)}
+                          {listing.passport.unitOfMeasure && (
+                            <span className="ml-0.5 text-xs font-medium text-gray-500">
+                              {' '}
+                              {perUnit(listing.passport.unitOfMeasure)}
+                            </span>
+                          )}
                         </span>
                         <span className="text-xs text-gray-400 truncate max-w-[55%]">
                           {listing.organisation.name}

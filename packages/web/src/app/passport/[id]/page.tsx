@@ -4,7 +4,7 @@ import {
   type PassportCertificate,
   type PassportDetail,
 } from '@/lib/api-client';
-import { unitLabel } from '@trace/core';
+import { unitLabel, perUnit } from '@trace/core';
 import { categoryPath } from '@/lib/categories';
 import { Leaf, Clock, Recycle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -189,7 +189,7 @@ export default async function PublicPassportPage({ params }: Props) {
               </p>
               <p className="text-xs text-gray-500">
                 kgCO₂e saved vs new
-                {passport.unitOfMeasure ? ` · per ${unitLabel(passport.unitOfMeasure)}` : ''}
+                {passport.unitOfMeasure ? ` · ${perUnit(passport.unitOfMeasure)}` : ''}
               </p>
             </div>
           )}
@@ -345,19 +345,19 @@ export default async function PublicPassportPage({ params }: Props) {
                     [
                       'GWP total',
                       passport.gwpTotal
-                        ? `${passport.gwpTotal} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                        ? `${passport.gwpTotal} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                         : null,
                     ],
                     [
                       'Embodied carbon',
                       passport.embodiedCarbon
-                        ? `${passport.embodiedCarbon} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                        ? `${passport.embodiedCarbon} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                         : null,
                     ],
                     [
                       'Carbon savings vs new',
                       passport.carbonSavingsVsNew
-                        ? `${passport.carbonSavingsVsNew} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                        ? `${passport.carbonSavingsVsNew} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                         : null,
                     ],
                     [

@@ -151,6 +151,7 @@ packages/contracts/test/QualityAssurance.test.ts
 packages/contracts/tsconfig.json
 packages/core/package.json
 packages/core/src/constants/categories.ts
+packages/core/src/constants/config.test.ts
 packages/core/src/constants/config.ts
 packages/core/src/constants/demo-catalogue.ts
 packages/core/src/constants/demo-personas.ts

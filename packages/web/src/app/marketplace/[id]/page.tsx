@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { marketplace, type ListingSummary } from '@/lib/api-client';
-import { unitLabel } from '@trace/core';
+import { formatQuantity, perUnit } from '@trace/core';
 import { getToken, getUser, type StoredUser } from '@/lib/auth';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -16,6 +16,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Logo } from '@/components/ui/Logo';
 import { shippingMethodLabel } from '@/lib/format';
 import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
+
+function PriceUnit({ unit }: { unit: string | null | undefined }) {
+  const per = perUnit(unit);
+  return per ? (
+    <>
+      {' '}
+      <span className="ml-1 text-base font-medium text-gray-500">{per}</span>
+    </>
+  ) : null;
+}
 
 function formatPrice(pence: number) {
   return `£${(pence / 100).toFixed(2)}`;
@@ -169,18 +179,13 @@ export default function ListingDetailPage() {
                       <dd className="text-green-600">
                         {listing.passport.carbonSavingsVsNew} kgCO₂e
                         {listing.passport.unitOfMeasure
-                          ? ` per ${unitLabel(listing.passport.unitOfMeasure)}`
+                          ? ` ${perUnit(listing.passport.unitOfMeasure)}`
                           : ''}
                       </dd>
                     </>
                   )}
                   <dt className="text-gray-500">Quantity</dt>
-                  <dd>
-                    {listing.quantity}
-                    {listing.passport.unitOfMeasure
-                      ? ` ${unitLabel(listing.passport.unitOfMeasure)}`
-                      : ''}
-                  </dd>
+                  <dd>{formatQuantity(listing.quantity, listing.passport.unitOfMeasure)}</dd>
                   <dt className="text-gray-500">Currency</dt>
                   <dd>{listing.currency}</dd>
                   <dt className="text-gray-500">Supplier hub</dt>
@@ -204,6 +209,7 @@ export default function ListingDetailPage() {
               <CardContent className="p-5 space-y-3">
                 <p className="text-3xl font-bold text-brand-700">
                   {formatPrice(listing.pricePence)}
+                  <PriceUnit unit={listing.passport.unitOfMeasure} />
                 </p>
                 <p className="text-sm text-gray-600">
                   This public research showcase is read-only. Transactions and offers are disabled.
@@ -215,6 +221,7 @@ export default function ListingDetailPage() {
                 <div>
                   <p className="text-3xl font-bold text-brand-700">
                     {formatPrice(listing.pricePence)}
+                    <PriceUnit unit={listing.passport.unitOfMeasure} />
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     GBP · price includes VAT if applicable

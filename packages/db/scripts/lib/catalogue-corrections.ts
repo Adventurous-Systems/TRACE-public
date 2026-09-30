@@ -10,7 +10,12 @@
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 import type { Product } from './catalogue.js';
 
-export const CORRECTABLE_FIELDS = ['categoryL1', 'categoryL2', 'reclaimedBy'] as const;
+export const CORRECTABLE_FIELDS = [
+  'categoryL1',
+  'categoryL2',
+  'reclaimedBy',
+  'unitOfMeasure',
+] as const;
 export type CorrectableField = (typeof CORRECTABLE_FIELDS)[number];
 
 /** Corrected values, typed like their columns (categoryL1 is never null). */
@@ -18,6 +23,7 @@ export interface CatalogueCorrections {
   categoryL1?: string;
   categoryL2?: string | null;
   reclaimedBy?: string | null;
+  unitOfMeasure?: string | null;
 }
 
 interface PassportLike {
@@ -26,6 +32,7 @@ interface PassportLike {
   categoryL1: string;
   categoryL2: string | null;
   reclaimedBy: string | null;
+  unitOfMeasure: string | null;
 }
 
 /** A catalogue product's curated passport or one of its numbered lots. */
