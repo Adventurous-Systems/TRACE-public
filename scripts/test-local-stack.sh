@@ -71,6 +71,12 @@ if stack reset 2>/dev/null; then fail 'reset must require --yes'; fi
 # up: build, chain identity, containers, registry, seed, then the processes.
 : > "$log"
 stack up >/dev/null || fail 'up failed'
+# The processes start in the background and log their own start
+# asynchronously; wait for all three before reading the call order.
+for _ in $(seq 1 50); do
+  [[ $(grep -cE '^node (dist/index.js|dist/worker.js|node_modules/next)' "$log") -ge 3 ]] && break
+  sleep 0.1
+done
 b=$(line_of 'pnpm build'); g=$(line_of 'solo-genesis'); c=$(line_of 'compose .* up -d --wait')
 r=$(line_of 'chain-deploy-registry'); m=$(line_of 'pnpm --filter @trace/db migrate')
 s=$(line_of 'demo:restore -- --env local --yes'); a=$(line_of 'node dist/index.js')
@@ -97,7 +103,12 @@ grep -q "$tmp/state/chain/genesis.json:/genesis.json:ro" "$tmp/state/compose.ove
 [[ "$(stack status)" == *'api: running'* ]] || fail 'status must show the API running'
 for name in api worker web; do
   # The recorded PID must be the process itself, or stop leaves it running.
-  ps -o args= -p "$(<"$tmp/state/$name.pid")" | grep -q "fake-long-running-$$" \
+  pid=$(<"$tmp/state/$name.pid")
+  for _ in $(seq 1 50); do
+    ps -o args= -p "$pid" | grep -q "fake-long-running-$$" && break
+    sleep 0.1
+  done
+  ps -o args= -p "$pid" | grep -q "fake-long-running-$$" \
     || fail "$name.pid must be the $name process, not a wrapper"
 done
 # up must return even when its output is piped (no process holds the pipe).
