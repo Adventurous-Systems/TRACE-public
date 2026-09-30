@@ -110,6 +110,9 @@ stack stop
 stack up >/dev/null || fail 'second up failed'
 ! grep -qE 'solo-genesis|chain-deploy-registry|db seed' "$log" || fail 'a second up must not redo one-time steps'
 grep -q 'pnpm --filter @trace/db migrate' "$log" || fail 'every up must apply new migrations'
+: > "$log"
+stack rebuild >/dev/null || fail 'rebuild failed'
+grep -q 'pnpm --filter @trace/db migrate' "$log" || fail 'rebuild must apply new migrations'
 stack stop
 [[ "$(stack status)" == *'api: stopped'* ]] || fail 'stop must stop the API'
 

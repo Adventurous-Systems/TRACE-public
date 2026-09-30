@@ -4,7 +4,7 @@
 #
 #   pnpm stack up          build, start the containers, seed, deploy the registry, start
 #   pnpm stack start|stop|restart|status
-#   pnpm stack rebuild     build again and restart the API, worker and web
+#   pnpm stack rebuild     build again, apply new migrations, restart the API, worker and web
 #   pnpm stack logs <api|worker|web>
 #   pnpm stack restore     put the curated demo data back (demo:restore, local only)
 #   pnpm stack test        run the unit and integration tests against trace_test
@@ -245,7 +245,7 @@ case "$command" in
   start) ensure_chain_identity; start ;;
   stop) stop ;;
   restart) stop; start ;;
-  rebuild) build; stop; start ;;
+  rebuild) build; write_api_env; migrate; stop; start ;;
   status) status ;;
   logs)
     case "${1:-}" in api|worker|web) tail -n 100 -f "$STATE/$1.log" ;; *) die 'usage: logs <api|worker|web>' ;; esac ;;
