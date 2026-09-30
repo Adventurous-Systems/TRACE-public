@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatPrice,
   deconstructionMethodLabel,
   formatDate,
   formatDateTime,
@@ -33,5 +34,12 @@ describe('labels', () => {
   it('falls back to the value for unknown ones, and empty for none', () => {
     expect(shippingMethodLabel('drone')).toBe('drone');
     expect(deconstructionMethodLabel(undefined)).toBe('');
+  });
+});
+
+describe('formatPrice', () => {
+  it('shows pounds with pence and thousands separators', () => {
+    expect(formatPrice(360)).toBe('£3.60');
+    expect(formatPrice(1800000)).toBe('£18,000.00');
   });
 });

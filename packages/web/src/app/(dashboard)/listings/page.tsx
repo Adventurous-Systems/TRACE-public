@@ -12,7 +12,7 @@ import { marketplace, type ListingSummary } from '@/lib/api-client';
 import { getToken, getUser, canCreateListing, hasOrganisation, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatPrice } from '@/lib/format';
 
 const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   active: 'success',
@@ -21,10 +21,6 @@ const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline
   expired: 'outline',
   cancelled: 'outline',
 };
-
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
-}
 
 export default function ListingsPage() {
   // J-12: a buyer navigating here directly saw "No listings yet." with a

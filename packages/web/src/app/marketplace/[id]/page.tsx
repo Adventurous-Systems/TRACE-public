@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { marketplace, type ListingSummary } from '@/lib/api-client';
-import { formatQuantity, perUnit } from '@trace/core';
+import { formatQuantity, perUnit, unitLabel } from '@trace/core';
+import { defaultOrderQuantity, orderQuantityProblem } from '@/lib/order-quantity';
 import { getToken, getUser, type StoredUser } from '@/lib/auth';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -14,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Logo } from '@/components/ui/Logo';
-import { shippingMethodLabel } from '@/lib/format';
+import { shippingMethodLabel, formatPrice } from '@/lib/format';
 import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 
 function PriceUnit({ unit }: { unit: string | null | undefined }) {
@@ -25,10 +26,6 @@ function PriceUnit({ unit }: { unit: string | null | undefined }) {
       <span className="ml-1 text-base font-medium text-gray-500">{per}</span>
     </>
   ) : null;
-}
-
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
 }
 
 const LISTING_STATUS_LABELS: Record<string, string> = {
@@ -50,6 +47,7 @@ export default function ListingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [offerLoading, setOfferLoading] = useState(false);
   const [notes, setNotes] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [user, setUser] = useState<StoredUser | null>(null);
@@ -59,7 +57,10 @@ export default function ListingDetailPage() {
     setUser(getUser());
     marketplace
       .getListing(params.id)
-      .then(setListing)
+      .then((found) => {
+        setListing(found);
+        setQuantity(defaultOrderQuantity(found));
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [params.id]);
@@ -76,7 +77,10 @@ export default function ListingDetailPage() {
     setOfferLoading(true);
     setError('');
     try {
-      const offerPayload: { listingId: string; notes?: string } = { listingId: params.id };
+      const offerPayload: { listingId: string; quantity: number; notes?: string } = {
+        listingId: params.id,
+        quantity,
+      };
       if (notes) offerPayload.notes = notes;
       await marketplace.makeOffer(offerPayload, token);
       track('make-offer', {
@@ -84,7 +88,9 @@ export default function ListingDetailPage() {
         hasCustomNote: notes.trim().length > 0,
         priceBand: priceBand(listing?.pricePence ?? 0),
       });
-      setSuccess('Offer placed. Track it in your Orders — the seller will see it there too.');
+      setSuccess(
+        'Order placed. The seller accepts or rejects it; follow it under Orders, where they see it too.',
+      );
       toast({ title: 'Offer placed', description: 'Track it in your Orders.', variant: 'success' });
     } catch (e) {
       setError(getErrorMessage(e, 'place this offer'));
@@ -108,6 +114,8 @@ export default function ListingDetailPage() {
       </div>
     );
   }
+
+  const quantityProblem = orderQuantityProblem(quantity, listing);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -181,11 +189,37 @@ export default function ListingDetailPage() {
                         {listing.passport.unitOfMeasure
                           ? ` ${perUnit(listing.passport.unitOfMeasure)}`
                           : ''}
+                        {listing.quantityAvailable > 1 && (
+                          <span className="block text-xs text-gray-500">
+                            {Math.round(
+                              Number(listing.passport.carbonSavingsVsNew) *
+                                listing.quantityAvailable,
+                            ).toLocaleString('en-GB')}{' '}
+                            kgCO₂e for the{' '}
+                            {formatQuantity(
+                              listing.quantityAvailable,
+                              listing.passport.unitOfMeasure,
+                            )}{' '}
+                            available
+                          </span>
+                        )}
                       </dd>
                     </>
                   )}
-                  <dt className="text-gray-500">Quantity</dt>
-                  <dd>{formatQuantity(listing.quantity, listing.passport.unitOfMeasure)}</dd>
+                  <dt className="text-gray-500">Available</dt>
+                  <dd>
+                    {formatQuantity(listing.quantityAvailable, listing.passport.unitOfMeasure)}
+                    {listing.quantityAvailable !== listing.quantity &&
+                      ` of ${formatQuantity(listing.quantity, listing.passport.unitOfMeasure)}`}
+                  </dd>
+                  {listing.minOrderQuantity > 1 && (
+                    <>
+                      <dt className="text-gray-500">Minimum order</dt>
+                      <dd>
+                        {formatQuantity(listing.minOrderQuantity, listing.passport.unitOfMeasure)}
+                      </dd>
+                    </>
+                  )}
                   <dt className="text-gray-500">Currency</dt>
                   <dd>{listing.currency}</dd>
                   <dt className="text-gray-500">Supplier hub</dt>
@@ -259,6 +293,35 @@ export default function ListingDetailPage() {
                     </div>
                   ) : (
                     <>
+                      <div className="space-y-1">
+                        <label htmlFor="order-quantity" className="text-sm font-medium">
+                          Quantity
+                          {listing.passport.unitOfMeasure &&
+                            listing.passport.unitOfMeasure !== 'each' &&
+                            ` (${unitLabel(listing.passport.unitOfMeasure)})`}
+                        </label>
+                        <input
+                          id="order-quantity"
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={listing.quantityAvailable}
+                          step={1}
+                          value={Number.isNaN(quantity) ? '' : quantity}
+                          onChange={(e) => setQuantity(e.target.valueAsNumber)}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                        {quantityProblem ? (
+                          <p className="text-xs text-red-600">{quantityProblem}</p>
+                        ) : (
+                          <p className="text-sm text-gray-700">
+                            Total{' '}
+                            <span className="font-semibold">
+                              {formatPrice(listing.pricePence * quantity)}
+                            </span>
+                          </p>
+                        )}
+                      </div>
                       <textarea
                         placeholder="Add a note to the seller (optional)"
                         value={notes}
@@ -270,12 +333,12 @@ export default function ListingDetailPage() {
                       <Button
                         className="w-full bg-brand-600 hover:bg-brand-700"
                         onClick={handleMakeOffer}
-                        disabled={offerLoading}
+                        disabled={offerLoading || quantityProblem !== null}
                       >
-                        {offerLoading ? 'Placing offer…' : 'Make offer at asking price'}
+                        {offerLoading ? 'Placing order…' : 'Order at asking price'}
                       </Button>
                       <p className="text-xs text-gray-400 text-center">
-                        You will receive confirmation from the seller.
+                        The seller accepts or rejects your order.
                       </p>
                     </>
                   )

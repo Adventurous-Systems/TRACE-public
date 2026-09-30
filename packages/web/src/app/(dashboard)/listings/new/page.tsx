@@ -22,6 +22,7 @@ export default function NewListingPage() {
   const [passportId, setPassportId] = useState(searchParams.get('passportId') ?? '');
   const [pricePounds, setPricePounds] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [minOrderQuantity, setMinOrderQuantity] = useState('1');
   const [shippingMethod, setShippingMethod] = useState<'collection' | 'delivery' | 'both'>(
     'collection',
   );
@@ -76,6 +77,7 @@ export default function NewListingPage() {
       pricePence,
       currency: 'GBP',
       quantity: parseInt(quantity, 10) || 1,
+      minOrderQuantity: parseInt(minOrderQuantity, 10) || 1,
       shippingOptions: [shippingOption],
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
     };
@@ -150,7 +152,7 @@ export default function NewListingPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="price">Price (£) *</Label>
+                  <Label htmlFor="price">Price per unit (£) *</Label>
                   <Input
                     id="price"
                     type="number"
@@ -163,7 +165,7 @@ export default function NewListingPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="quantity">Quantity</Label>
+                  <Label htmlFor="quantity">Quantity in this lot</Label>
                   <Input
                     id="quantity"
                     type="number"
@@ -171,6 +173,20 @@ export default function NewListingPage() {
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="min-order">Minimum order</Label>
+                  <Input
+                    id="min-order"
+                    type="number"
+                    min="1"
+                    value={minOrderQuantity}
+                    onChange={(e) => setMinOrderQuantity(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Buyers order any amount from this up to what is left. Price and quantity use the
+                    passport&apos;s unit of measure.
+                  </p>
                 </div>
               </div>
 

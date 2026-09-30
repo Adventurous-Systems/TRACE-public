@@ -188,6 +188,7 @@ packages/db/migrations/0004_cultured_overlord.sql
 packages/db/migrations/0005_warm_cargill.sql
 packages/db/migrations/0006_unit_of_measure.sql
 packages/db/migrations/0007_chain_id.sql
+packages/db/migrations/0008_listing_quantity.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
@@ -320,6 +321,8 @@ packages/web/src/lib/categories.ts
 packages/web/src/lib/confetti.ts
 packages/web/src/lib/format.test.ts
 packages/web/src/lib/format.ts
+packages/web/src/lib/order-quantity.test.ts
+packages/web/src/lib/order-quantity.ts
 packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
 packages/web/src/lib/trust-mode.test.ts

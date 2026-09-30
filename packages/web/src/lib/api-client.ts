@@ -380,7 +380,12 @@ export interface ListingSummary {
   sellerId: string;
   pricePence: number;
   currency: string;
+  /** The lot size, in the passport's unit of measure. */
   quantity: number;
+  /** What open and completed orders have not taken. */
+  quantityAvailable: number;
+  /** The smallest order a buyer may place, unless less than that is left. */
+  minOrderQuantity: number;
   shippingOptions: ListingShippingOption[];
   status: string;
   expiresAt: string | null;
@@ -401,6 +406,9 @@ export interface MarketplaceTransaction {
   listingId: string;
   buyerId: string;
   sellerId: string;
+  /** How much of the lot the order takes. */
+  quantity: number;
+  /** The order total. */
   amountPence: number;
   status: string;
   disputeDeadline: string | null;
@@ -409,6 +417,7 @@ export interface MarketplaceTransaction {
   /** The material the order is for (present on the user's order list). */
   productName?: string | null;
   passportId?: string | null;
+  unitOfMeasure?: string | null;
 }
 
 export interface AuditEvent {
@@ -494,7 +503,10 @@ export const marketplace = {
       token,
     }),
 
-  makeOffer: (data: { listingId: string; offerPence?: number; notes?: string }, token: string) =>
+  makeOffer: (
+    data: { listingId: string; quantity?: number; offerPence?: number; notes?: string },
+    token: string,
+  ) =>
     request<MarketplaceTransaction>('/api/v1/marketplace/offers', {
       method: 'POST',
       body: JSON.stringify(data),

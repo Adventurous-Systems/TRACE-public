@@ -10,8 +10,9 @@ import { getToken, getUser } from '@/lib/auth';
 import { track } from '@/lib/analytics';
 import { toast } from '@/components/ui/use-toast';
 import { getErrorMessage } from '@/lib/api-errors';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatPrice } from '@/lib/format';
 import Link from 'next/link';
+import { formatQuantity } from '@trace/core';
 
 const TX_STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   pending: 'warning',
@@ -22,9 +23,15 @@ const TX_STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outl
   cancelled: 'outline',
 };
 
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
-}
+// What each order step means to the people involved.
+const TX_STATUS_LABELS: Record<string, string> = {
+  pending: 'Awaiting seller',
+  confirmed: 'Accepted',
+  disputed: 'Problem flagged',
+  resolved: 'Resolved',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
 
 function ActionButtons({
   tx,
@@ -58,41 +65,42 @@ function ActionButtons({
 
   const isBuyer = tx.buyerId === userId;
   const isSeller = tx.sellerId === userId;
+  const open = tx.status === 'pending' || tx.status === 'confirmed';
 
-  if (tx.status === 'cancelled' || tx.status === 'completed') return null;
+  function button(action: string, label: string, busy: string, primary = false) {
+    return (
+      <Button
+        key={action}
+        size="sm"
+        variant={primary ? 'default' : 'outline'}
+        className={primary ? 'bg-green-600 hover:bg-green-700 text-white' : undefined}
+        onClick={() => act(action)}
+        disabled={loading !== null}
+      >
+        {loading === action ? busy : label}
+      </Button>
+    );
+  }
 
+  const buttons = [
+    isSeller && tx.status === 'pending' && button('accept', 'Accept order', 'Accepting…', true),
+    isSeller && tx.status === 'pending' && button('reject', 'Reject', 'Rejecting…'),
+    isBuyer &&
+      tx.status === 'confirmed' &&
+      button('confirm_delivery', 'Confirm delivery', 'Confirming…', true),
+    isBuyer &&
+      tx.status === 'confirmed' &&
+      button('flag_dispute', 'Report a problem', 'Reporting…'),
+    (isBuyer || isSeller) && open && button('cancel', 'Cancel order', 'Cancelling…'),
+  ].filter(Boolean);
+
+  if (buttons.length === 0) return null;
   return (
-    <div className="flex gap-2 flex-wrap">
-      {isBuyer && (tx.status === 'pending' || tx.status === 'confirmed') && (
-        <Button
-          size="sm"
-          className="bg-green-600 hover:bg-green-700 text-white"
-          onClick={() => act('confirm_delivery')}
-          disabled={loading !== null}
-        >
-          {loading === 'confirm_delivery' ? 'Confirming…' : 'Confirm delivery'}
-        </Button>
+    <div className="space-y-2">
+      {isBuyer && tx.status === 'pending' && (
+        <p className="text-xs text-gray-500">Waiting for the seller to accept or reject it.</p>
       )}
-      {isBuyer && (tx.status === 'pending' || tx.status === 'confirmed') && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => act('flag_dispute')}
-          disabled={loading !== null}
-        >
-          {loading === 'flag_dispute' ? 'Flagging…' : 'Flag dispute'}
-        </Button>
-      )}
-      {(isBuyer || isSeller) && (tx.status === 'pending' || tx.status === 'confirmed') && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => act('cancel')}
-          disabled={loading !== null}
-        >
-          {loading === 'cancel' ? 'Cancelling…' : 'Cancel'}
-        </Button>
-      )}
+      <div className="flex gap-2 flex-wrap">{buttons}</div>
     </div>
   );
 }
@@ -139,7 +147,7 @@ export default function TransactionsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant={TX_STATUS_COLORS[tx.status] ?? 'outline'}>
-                            {tx.status}
+                            {TX_STATUS_LABELS[tx.status] ?? tx.status}
                           </Badge>
                           <span className="font-semibold text-sm">
                             {formatPrice(tx.amountPence)}
@@ -166,10 +174,13 @@ export default function TransactionsPage() {
                             )}
                           </p>
                         )}
+                        <p className="text-sm text-gray-700">
+                          Quantity {formatQuantity(tx.quantity, tx.unitOfMeasure)}
+                        </p>
                         <p className="text-xs text-gray-500 mt-1">
                           Order placed {formatDate(tx.createdAt)}
-                          {tx.disputeDeadline && tx.status === 'pending'
-                            ? ` · Dispute deadline ${formatDate(tx.disputeDeadline)}`
+                          {tx.disputeDeadline && tx.status === 'confirmed'
+                            ? ` · Report a problem by ${formatDate(tx.disputeDeadline)}`
                             : ''}
                         </p>
                         {tx.notes && (

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { clearSession, getUser, type StoredUser } from '@/lib/auth';
 import { track } from '@/lib/analytics';
 import { marketplace, type ListingSummary } from '@/lib/api-client';
+import { formatPrice } from '@/lib/format';
 import { perUnit, MATERIAL_CATEGORIES, getCategoryBySlug } from '@trace/core';
 import { subcategoryLabel } from '@/lib/categories';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,10 +24,6 @@ const CONDITION_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outl
   C: 'warning',
   D: 'outline',
 };
-
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
-}
 
 export default function MarketplacePage() {
   const [items, setItems] = useState<ListingSummary[]>([]);
@@ -177,8 +174,10 @@ export default function MarketplacePage() {
           <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-800 motion-safe:animate-fade-in-up">
             <Recycle className="h-4 w-4 shrink-0" />
             <span>
-              <CountUp value={stats.totalCarbonSavedKg} className="font-bold" /> kg CO₂e saved
-              across {stats.activeCount} material{stats.activeCount !== 1 ? 's' : ''}
+              Reusing everything listed here saves{' '}
+              <CountUp value={stats.totalCarbonSavedKg} className="font-bold" /> kg CO₂e compared
+              with new materials, across {stats.activeCount} material
+              {stats.activeCount !== 1 ? 's' : ''}
             </span>
           </div>
         )}
