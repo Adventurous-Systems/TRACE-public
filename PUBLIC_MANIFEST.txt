@@ -333,7 +333,9 @@ pnpm-workspace.yaml
 scripts/auth-smoke.sh
 scripts/check-public-boundary.mjs
 scripts/init-local-env.mjs
+scripts/local-stack.sh
 scripts/smoke-test.sh
+scripts/test-local-stack.sh
 tsconfig.base.json
 tsconfig.json
 turbo.json

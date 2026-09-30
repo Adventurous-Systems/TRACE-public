@@ -154,6 +154,29 @@ For application development, leave only the four data services running and use
 `pnpm --filter @trace/api dev` plus `pnpm --filter @trace/web dev`. The API and
 web development servers use ports 3001 and 3000 respectively.
 
+### Testing the demo end to end, with real anchoring
+
+`pnpm stack up` builds everything and runs the public buyer demo on this
+machine, anchoring passports on a local Thor Solo chain. It is the environment
+to test a milestone in by hand before it is released:
+
+```bash
+pnpm stack up        # build, containers, chain identity, registry, seed, start
+pnpm stack status    # API, worker and web processes; the registry address
+pnpm stack rebuild   # after a code change: build and restart
+pnpm stack restore   # put the curated demo data back
+pnpm stack test      # unit and integration tests, against trace_test and Redis db 1
+pnpm stack stop
+pnpm stack reset --yes   # delete the local database, chain and .local-stack/
+```
+
+The web runs on http://localhost:3000 and the API on http://localhost:3001; sign
+in with the personas below. The stack gets its own chain identity (a deployer
+key and genesis, never reused elsewhere), kept in the gitignored `.local-stack/`
+with the generated API environment and the logs. It shares the Compose project
+in `.env`, so `reset` also removes that project's volumes. If this machine can't
+pull the MinIO mirror, set `TRACE_LOCAL_MINIO_IMAGE` to a local MinIO image.
+
 `TRACE_DEPLOYMENT_PROFILE=self_hosted` retains registration and all mutation
 flows. `public_showcase` is API-enforced read-only mode. `public_buyer_demo`
 is the hosted evergreen demo profile: anonymous visitors can browse, newly

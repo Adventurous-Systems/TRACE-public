@@ -54,3 +54,6 @@ assets/incoming/
 
 # Local files
 .local/
+
+# Local on-chain stack (scripts/local-stack.sh): chain key, env, logs
+.local-stack/
