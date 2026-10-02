@@ -209,14 +209,16 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
     });
     await j.step('order 250 bricks', () => placeOrder(j, kbriq.id, 250));
     await j.step('from the listing, the way to Orders', async () => {
-      const link = j.page.getByRole('link', { name: 'Orders' });
+      const link = j.page.getByRole('link', { name: 'Orders', exact: true });
       const shown = await link.count();
-      if (shown) await link.first().click();
-      await j.page.waitForLoadState('networkidle');
-      return `"Orders" link on the listing page: ${shown}; landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
+      if (shown) {
+        await link.click();
+        await j.page.waitForURL(/\/transactions/, { timeout: 10_000 });
+      }
+      return `"Orders" in the listing page's header: ${shown}; landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
     });
     await j.step('listing after the order', async () => {
-      await j.page.reload({ waitUntil: 'networkidle' });
+      await j.goto(`/marketplace/${kbriq.id}`);
       return (await j.page.locator('dl').innerText()).replace(/\s+/g, ' ').slice(0, 260);
     });
     await j.step('order 5 blocks', () => placeOrder(j, blocks.id, 5));
@@ -360,8 +362,8 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
         .first()
         .click();
       await j.page.waitForLoadState('networkidle');
-      const asks = await j.page.locator('main label').allInnerTexts();
-      return `the form asks for: ${asks.join(' | ').replace(/\s+/g, ' ').slice(0, 220)}`;
+      const form = (await j.page.locator('main').innerText()).replace(/\s+/g, ' ');
+      return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}: ${form.slice(0, 260)}`;
     });
     await j.step('file a report that changes the grade to C', async () => {
       await j.goto(`/quality/new?passportId=${bricks.passportId}`);
