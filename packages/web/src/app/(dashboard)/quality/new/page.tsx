@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { quality } from '@/lib/api-client';
+import { quality, type InspectionMaterial } from '@/lib/api-client';
 import { getToken } from '@/lib/auth';
+import { MaterialPicker } from '@/components/quality/MaterialPicker';
+import { MaterialUnderInspection } from '@/components/quality/MaterialUnderInspection';
 import { getErrorMessage } from '@/lib/api-errors';
 
 const GRADES = ['A', 'B', 'C', 'D'] as const;
@@ -25,9 +27,22 @@ export default function SubmitQualityReportPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const passportId = searchParams.get('passportId') ?? '';
+  const [token, setToken] = useState<string | null>(null);
+  const [material, setMaterial] = useState<InspectionMaterial | null>(null);
+
+  // Arriving from a material's page or the work queue (?passportId=…) starts
+  // with that material already chosen.
+  useEffect(() => {
+    const current = getToken();
+    setToken(current);
+    if (!current || !passportId) return;
+    quality
+      .materials({ q: passportId, limit: 5 }, current)
+      .then((res) => setMaterial(res.data.find((m) => m.id === passportId) ?? null))
+      .catch(() => undefined);
+  }, [passportId]);
 
   const [form, setForm] = useState({
-    passportId,
     structuralScore: '',
     aestheticScore: '',
     environmentalScore: '',
@@ -49,15 +64,19 @@ export default function SubmitQualityReportPage() {
     setError(null);
     setSubmitting(true);
 
-    const token = getToken();
     if (!token) {
       router.push('/login');
+      return;
+    }
+    if (!material) {
+      setError('Choose the material this report is about.');
+      setSubmitting(false);
       return;
     }
 
     try {
       const payload: Parameters<typeof quality.submit>[0] = {
-        passportId: form.passportId,
+        passportId: material.id,
         photoUrls: [],
       };
       if (form.reportNotes) payload.reportNotes = form.reportNotes;
@@ -97,28 +116,26 @@ export default function SubmitQualityReportPage() {
         <div>
           <h1 className="text-2xl font-bold">Submit Quality Report</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Assess the condition of this material for reuse
+            Choose the material, then assess its condition for reuse
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Passport ID */}
+          {/* The material */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Material passport</CardTitle>
+              <CardTitle className="text-base">
+                {material ? 'Material being inspected' : 'Which material are you inspecting?'}
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-1">
-                <Label htmlFor="passportId">Passport ID</Label>
-                <Input
-                  id="passportId"
-                  name="passportId"
-                  value={form.passportId}
-                  onChange={handleChange}
-                  placeholder="UUID of the material passport"
-                  required
-                />
-              </div>
+              {material ? (
+                <MaterialUnderInspection material={material} onChange={() => setMaterial(null)} />
+              ) : token ? (
+                <MaterialPicker token={token} onSelect={setMaterial} />
+              ) : (
+                <p className="text-sm text-gray-400">Loading…</p>
+              )}
             </CardContent>
           </Card>
 
@@ -229,7 +246,7 @@ export default function SubmitQualityReportPage() {
           <div className="flex gap-3">
             <Button
               type="submit"
-              disabled={submitting || !form.passportId}
+              disabled={submitting || !material}
               className="bg-brand-600 hover:bg-brand-700"
             >
               {submitting ? 'Submitting…' : 'Submit report'}

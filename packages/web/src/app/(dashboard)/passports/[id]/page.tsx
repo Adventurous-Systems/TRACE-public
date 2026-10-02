@@ -13,7 +13,8 @@ import {
   type PassportDetail,
   type QualityReportSummary,
 } from '@/lib/api-client';
-import { unitLabel, perUnit } from '@trace/core';
+import { unitLabel, perUnit, INSPECTION_SOURCE_LABELS } from '@trace/core';
+import { reportedBy } from '@/lib/inspection';
 import { getToken, isHubStaff, isSupplier, getUser } from '@/lib/auth';
 import { categoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -331,9 +332,9 @@ export default function PassportDetailPage() {
 
                     {r.reportNotes && <p className="text-sm text-gray-600">{r.reportNotes}</p>}
 
-                    {r.inspector && (
-                      <p className="text-xs text-gray-400">Inspector: {r.inspector.name}</p>
-                    )}
+                    <p className="text-xs text-gray-400">
+                      {INSPECTION_SOURCE_LABELS[r.source]} · {reportedBy(r)}
+                    </p>
                   </div>
                 ))}
               </div>

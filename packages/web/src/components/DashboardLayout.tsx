@@ -56,6 +56,15 @@ export default function DashboardLayout({ children }: Props) {
       { href: '/marketplace', label: 'Marketplace' },
       { href: '/scan', label: 'Scan QR' },
     ];
+  } else if (user.role === 'inspector') {
+    // An inspector audits other organisations' materials and holds none: no
+    // passports, listings or orders of their own to show.
+    navLinks = [
+      { href: '/dashboard', label: 'Dashboard' },
+      { href: '/quality', label: 'Quality reports' },
+      { href: '/marketplace', label: 'Marketplace' },
+      { href: '/scan', label: 'Scan QR' },
+    ];
   } else {
     navLinks = [
       { href: '/dashboard', label: 'Dashboard' },
