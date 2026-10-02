@@ -346,32 +346,62 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
     await j.step('orders: can the admin see the flagged order?', () => ordersSummary(j));
   });
 
-  // ── 7. The inspector re-grades a material ────────────────────────────────
+  // ── 7. The inspector finds a material and re-grades it ───────────────────
   await rehearsal.journey('7 inspector', 'inspector', async (j) => {
-    await j.step('dashboard', async () => {
+    const main = async (length = 260) =>
+      (await j.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, length);
+    await j.step('dashboard: a work queue', async () => {
       await j.goto('/dashboard');
-      return (await j.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 200);
+      const links = await j.page.locator('nav a').allInnerTexts();
+      return `nav [${links.map((l) => l.trim()).join(', ')}]: ${await main()}`;
     });
     await j.step('quality reports', async () => {
       await j.goto('/quality');
-      return (await j.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 200);
+      return main(200);
     });
     await j.step('start a new report from the reports page', async () => {
       await j.page
         .getByRole('link', { name: /new report/i })
         .first()
         .click();
+      await j.page.waitForURL(/\/quality\/new/);
       await j.page.waitForLoadState('networkidle');
-      const form = (await j.page.locator('main').innerText()).replace(/\s+/g, ' ');
-      return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}: ${form.slice(0, 260)}`;
+      const asksForId = await j.page.getByLabel('Passport ID').count();
+      return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}, ${
+        asksForId ? 'ASKS FOR A PASSPORT ID' : 'no ID field'
+      }: ${await main()}`;
+    });
+    await j.step('find the bricks by name', async () => {
+      const searched = j.page.waitForResponse((r) =>
+        /quality\/materials\?.*q=Facing/.test(r.url()),
+      );
+      await j.page.getByLabel('Search materials').fill('Facing Bricks');
+      await searched;
+      const found = j.page.getByRole('list', { name: 'Materials' }).getByRole('listitem');
+      await found.filter({ hasText: BRICKS }).first().waitFor();
+      const rows = (await found.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').slice(0, 110));
+      return `${rows.length} found: ${rows.join(' | ')}`;
+    });
+    await j.step('a search that matches nothing', async () => {
+      await j.page.getByLabel('Search materials').fill('zzz no such material');
+      await j.page.getByText(/No registered material matches/).waitFor();
+      return (await j.text(/No registered material matches[^.]*\./)) ?? 'no message';
+    });
+    await j.step('choose the bricks: the material stays in view', async () => {
+      await j.page.getByLabel('Search materials').fill('Facing Bricks');
+      const found = j.page.getByRole('list', { name: 'Materials' }).getByRole('listitem');
+      await found.filter({ hasText: BRICKS }).getByRole('button', { name: 'Inspect' }).click();
+      await j.page.getByText('Material being inspected').waitFor();
+      return main(420);
     });
     await j.step('file a report that changes the grade to C', async () => {
-      await j.goto(`/quality/new?passportId=${bricks.passportId}`);
+      await j.page.locator('#structuralScore').fill('7');
       await j.page.getByRole('button', { name: /^C\s*Fair$/ }).click();
       await j.page.locator('textarea').first().fill('Rehearsal: chipped arrises on about a third.');
       await j.page.getByRole('button', { name: /submit report/i }).click();
-      await j.page.waitForLoadState('networkidle');
-      return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
+      await j.page.waitForURL(/\/quality$/);
+      await j.page.getByRole('link', { name: BRICKS }).first().waitFor();
+      return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}: ${await main(240)}`;
     });
     for (const wait of [0, 8, 20]) {
       await j.step(`the public passport ${wait}s after the report`, async () => {
@@ -379,12 +409,20 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
         await j.goto(`/passport/${bricks.passportId}`);
         const badge = await j.text(/Blockchain verified|Pending verification|Verification failed/);
         const grade = await j.text(/Grade [A-D] —/);
+        const basis = await j.text(/Set by independent inspection on[^.]*|Declared by [^.]*/);
         await j.page.getByRole('button', { name: /verify integrity/i }).click();
         await j.page.waitForTimeout(2000);
         const integrity = await j.text(/Untampered|Mismatch|still being anchored|Couldn/);
-        return `badge "${badge}", ${grade}, integrity "${integrity}"`;
+        return `badge "${badge}", ${grade}, "${basis}", integrity "${integrity}"`;
       });
     }
+    await j.step('a material nobody has inspected says so', async () => {
+      await j.goto(`/passport/${kbriq.passportId}`);
+      const page = await j.page.locator('body').innerText();
+      return [/Not yet independently inspected[^.]*\./, /Declared by [^.\n]*/]
+        .map((pattern) => pattern.exec(page)?.[0] ?? 'MISSING')
+        .join(' / ');
+    });
   });
 
   // ── 8. Hub staff, and a supplier ─────────────────────────────────────────
