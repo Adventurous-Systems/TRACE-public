@@ -120,7 +120,7 @@ export default function DashboardLayout({ children }: Props) {
                 <Link
                   key={l.href}
                   href={l.href}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  className={`whitespace-nowrap px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     pathname === l.href || pathname?.startsWith(l.href + '/')
                       ? 'bg-brand-50 text-brand-700'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -132,7 +132,9 @@ export default function DashboardLayout({ children }: Props) {
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500 hidden sm:block">{user.email}</span>
+            <span className="text-sm text-gray-500 hidden xl:block truncate max-w-[14rem]">
+              {user.email}
+            </span>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               Sign out
             </Button>

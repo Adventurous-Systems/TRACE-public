@@ -418,6 +418,12 @@ export interface MarketplaceTransaction {
   productName?: string | null;
   passportId?: string | null;
   unitOfMeasure?: string | null;
+  /** Placed before quantity ordering: it took the whole lot at one unit's price. */
+  legacyWholeLot?: boolean;
+  /** Which side of the order the signed-in user is on (order list only). */
+  viewerSide?: 'buyer' | 'seller';
+  /** The order steps the signed-in user may take now (order list only). */
+  allowedActions?: string[];
 }
 
 export interface AuditEvent {
@@ -503,10 +509,7 @@ export const marketplace = {
       token,
     }),
 
-  makeOffer: (
-    data: { listingId: string; quantity?: number; offerPence?: number; notes?: string },
-    token: string,
-  ) =>
+  makeOffer: (data: { listingId: string; quantity?: number; notes?: string }, token: string) =>
     request<MarketplaceTransaction>('/api/v1/marketplace/offers', {
       method: 'POST',
       body: JSON.stringify(data),
