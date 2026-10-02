@@ -15,6 +15,9 @@ const BLOCKS = 'Reclaimed Aerated Concrete Blocks';
 const SISALWOOL = 'Sisalwool 100';
 const BRICKS = 'Reclaimed Facing Bricks';
 
+/** The marketplace's carbon figure counts up; read it only once it has settled. */
+const COUNT_UP_MS = 2000;
+
 interface ListingSummary {
   id: string;
   passportId: string;
@@ -82,6 +85,7 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
     });
     await j.step('marketplace', async () => {
       await j.goto('/marketplace');
+      await j.page.waitForTimeout(COUNT_UP_MS);
       return `${await j.text(/Reusing everything|CO₂e saved/)} · ${await j.text(/\d+ listings?/)}`;
     });
     await j.step('filter by category', async () => {
@@ -214,6 +218,7 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
     });
     await j.step('marketplace without the staircase', async () => {
       await j.goto('/marketplace');
+      await j.page.waitForTimeout(COUNT_UP_MS);
       const shown = await j.page.getByText(STAIRCASE).count();
       return `${await j.text(/Reusing everything/)} · staircase shown: ${shown}`;
     });
