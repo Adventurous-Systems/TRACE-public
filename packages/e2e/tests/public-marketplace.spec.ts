@@ -31,7 +31,9 @@ test.describe('Public marketplace (logged out)', () => {
 
     const cta = page.getByRole('link', { name: /sign up to buy this material/i });
     await expect(cta).toBeVisible();
-    await expect(page.getByRole('button', { name: /make offer/i })).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: /order at asking price|make offer/i }),
+    ).toHaveCount(0);
 
     await cta.click();
     await expect(page).toHaveURL(/\/register/);

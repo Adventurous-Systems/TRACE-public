@@ -27,7 +27,8 @@ export interface Product {
   image: string;
   key: string;
   passport: SeedPassport;
-  listing: { pricePence: number; quantity: number; note?: string };
+  /** pricePence is per unit of measure; quantity is the lot size. */
+  listing: { pricePence: number; quantity: number; minOrderQuantity?: number; note?: string };
 }
 
 const RECLAIMED = {
@@ -43,6 +44,7 @@ export const CATALOG: Product[] = [
     image: 'kbriq-medero-dark-grey.jpg',
     passport: {
       productName: 'K-BRIQ® — Medero Dark Grey',
+      unitOfMeasure: 'each',
       categoryL1: 'masonry',
       categoryL2: 'facing-brick',
       status: 'listed',
@@ -88,7 +90,8 @@ export const CATALOG: Product[] = [
     listing: {
       pricePence: 360,
       quantity: 5000,
-      note: 'From £3.60 each — order quantity by arrangement.',
+      // Buyers now choose their quantity online (owner, 2026-09-30).
+      minOrderQuantity: 100,
     },
   },
   {
@@ -96,6 +99,7 @@ export const CATALOG: Product[] = [
     image: 'sisalwool-100.jpg',
     passport: {
       productName: 'Sisalwool 100 — Natural Fibre Insulation',
+      unitOfMeasure: 'pack',
       categoryL1: 'insulation',
       categoryL2: 'natural-fibre',
       status: 'listed',
@@ -128,7 +132,6 @@ export const CATALOG: Product[] = [
     listing: {
       pricePence: 8200,
       quantity: 250,
-      note: 'From £82 per pack — order quantity by arrangement.',
     },
   },
   {
@@ -136,6 +139,7 @@ export const CATALOG: Product[] = [
     image: 'aerated-concrete-blocks.jpg',
     passport: {
       productName: 'Reclaimed Aerated Concrete Blocks',
+      unitOfMeasure: 'each',
       categoryL1: 'masonry',
       categoryL2: 'aac-block',
       status: 'listed',
@@ -157,6 +161,7 @@ export const CATALOG: Product[] = [
     image: 'concrete-lintels.jpg',
     passport: {
       productName: 'Reclaimed Concrete Lintels',
+      unitOfMeasure: 'each',
       categoryL1: 'masonry',
       categoryL2: 'lintel',
       status: 'listed',
@@ -178,6 +183,7 @@ export const CATALOG: Product[] = [
     image: 'facing-bricks.jpg',
     passport: {
       productName: 'Reclaimed Facing Bricks',
+      unitOfMeasure: 'each',
       categoryL1: 'masonry',
       categoryL2: 'facing-brick',
       status: 'listed',
@@ -199,6 +205,7 @@ export const CATALOG: Product[] = [
     image: 'prefabricated-staircase.jpg',
     passport: {
       productName: 'Reclaimed Prefabricated Staircase',
+      unitOfMeasure: 'each',
       categoryL1: 'structural-timber',
       categoryL2: 'softwood',
       status: 'listed',
@@ -229,6 +236,7 @@ export const CATALOG: Product[] = [
     image: 'aluminium-stud-walling.jpg',
     passport: {
       productName: 'Reclaimed Aluminium Stud Walling',
+      unitOfMeasure: 'each',
       // Partition framing, not structural steel (owner, 2026-09-29).
       categoryL1: 'partitions-linings',
       categoryL2: 'metal-stud-framing',

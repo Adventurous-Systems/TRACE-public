@@ -12,7 +12,16 @@ export const CONDITION_GRADES = ['A', 'B', 'C', 'D'] as const;
 
 // Unit a material is counted/sold by. Gives quantities, price, and carbon a clear
 // basis (e.g. "12 kgCO₂e per block", "£45 / m²").
-export const UNITS_OF_MEASURE = ['each', 'm2', 'm', 'kg', 'tonne', 'pallet', 'set'] as const;
+export const UNITS_OF_MEASURE = [
+  'each',
+  'm2',
+  'm',
+  'kg',
+  'tonne',
+  'pallet',
+  'set',
+  'pack',
+] as const;
 
 // Human-readable labels for each unit (UI display).
 export const UNIT_OF_MEASURE_LABELS: Record<(typeof UNITS_OF_MEASURE)[number], string> = {
@@ -23,12 +32,36 @@ export const UNIT_OF_MEASURE_LABELS: Record<(typeof UNITS_OF_MEASURE)[number], s
   tonne: 'tonne',
   pallet: 'pallet',
   set: 'set',
+  pack: 'pack',
+};
+
+// Units counted in whole things, which take a plural ("250 packs").
+const COUNTED_UNIT_PLURALS: Record<string, string> = {
+  tonne: 'tonnes',
+  pallet: 'pallets',
+  set: 'sets',
+  pack: 'packs',
 };
 
 // Display label for a stored unit-of-measure code, falling back to the raw value.
 export function unitLabel(u?: string | null): string {
   if (!u) return '';
   return (UNIT_OF_MEASURE_LABELS as Record<string, string>)[u] ?? u;
+}
+
+/** What a unit price or per-unit figure is quoted per: "each", "per m²"; '' if unknown. */
+export function perUnit(u?: string | null): string {
+  if (!u) return '';
+  return u === 'each' ? 'each' : `per ${unitLabel(u)}`;
+}
+
+/** A quantity in its unit: "5,000" (each or unknown), "120 m²", "1 pack", "250 packs". */
+export function formatQuantity(quantity: number, u?: string | null): string {
+  const n = quantity.toLocaleString('en-GB');
+  if (!u || u === 'each') return n;
+  const plural = COUNTED_UNIT_PLURALS[u];
+  if (plural) return `${n} ${quantity === 1 ? unitLabel(u) : plural}`;
+  return `${n} ${unitLabel(u)}`;
 }
 
 export const DECONSTRUCTION_METHODS = ['selective', 'mechanical', 'manual', 'mixed'] as const;

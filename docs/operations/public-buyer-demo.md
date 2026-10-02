@@ -132,8 +132,8 @@ without touching visitor data, run:
     /usr/local/libexec/trace-demo/run-ops.sh /var/lib/trace-demo/config/active.env demo-correct-catalogue --env demo --yes
 
 It changes only the allowlisted fields in
-`scripts/lib/catalogue-corrections.ts`: category, subcategory and
-reclaimed-by. It never changes names, lot numbers, grades, notes or photos.
+`scripts/lib/catalogue-corrections.ts`: category, subcategory,
+reclaimed-by and unit of measure. It never changes names, lot numbers, grades, notes or photos.
 Anchored passports it corrects are marked pending, and the anchor worker
 re-anchors them within one sweep (about 5 minutes). Unlike `demo:restore`,
 it is safe on the public demo.

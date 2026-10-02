@@ -512,7 +512,9 @@ async function main() {
           keep!.status !== 'active' ||
           keep!.expiresAt !== null ||
           keep!.pricePence !== product.listing.pricePence ||
-          keep!.quantity !== product.listing.quantity;
+          keep!.quantity !== product.listing.quantity ||
+          keep!.quantityAvailable !== product.listing.quantity ||
+          keep!.minOrderQuantity !== (product.listing.minOrderQuantity ?? 1);
 
         if (needsFix) {
           listingFixes += 1;
@@ -524,6 +526,9 @@ async function main() {
                 expiresAt: null,
                 pricePence: product.listing.pricePence,
                 quantity: product.listing.quantity,
+                // Step 3 removes the curated orders, so the whole lot is free.
+                quantityAvailable: product.listing.quantity,
+                minOrderQuantity: product.listing.minOrderQuantity ?? 1,
               })
               .where(eq(schema.listings.id, keep!.id));
           }

@@ -50,6 +50,8 @@ export {
   UNITS_OF_MEASURE,
   UNIT_OF_MEASURE_LABELS,
   unitLabel,
+  perUnit,
+  formatQuantity,
   USER_ROLES,
   ORGANISATION_TYPES,
   LISTING_STATUSES,

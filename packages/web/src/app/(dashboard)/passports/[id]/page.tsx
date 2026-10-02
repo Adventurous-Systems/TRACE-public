@@ -13,7 +13,7 @@ import {
   type PassportDetail,
   type QualityReportSummary,
 } from '@/lib/api-client';
-import { unitLabel } from '@trace/core';
+import { unitLabel, perUnit } from '@trace/core';
 import { getToken, isHubStaff, isSupplier, getUser } from '@/lib/auth';
 import { categoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -239,19 +239,19 @@ export default function PassportDetailPage() {
                 [
                   'Embodied carbon',
                   passport.embodiedCarbon
-                    ? `${passport.embodiedCarbon} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                    ? `${passport.embodiedCarbon} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                     : '—',
                 ],
                 [
                   'Carbon savings vs new',
                   passport.carbonSavingsVsNew
-                    ? `${passport.carbonSavingsVsNew} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                    ? `${passport.carbonSavingsVsNew} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                     : '—',
                 ],
                 [
                   'GWP total',
                   passport.gwpTotal
-                    ? `${passport.gwpTotal} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                    ? `${passport.gwpTotal} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                     : '—',
                 ],
                 [

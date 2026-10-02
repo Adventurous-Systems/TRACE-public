@@ -5,7 +5,7 @@
  * demo:restore also converges catalogue fields, but it rewrites names, grades
  * and transactions and is banned on the public demo. This command changes only
  * the allowlisted fields in lib/catalogue-corrections.ts (category,
- * subcategory, reclaimed-by). A corrected passport's fingerprint changes, so:
+ * subcategory, reclaimed-by, unit of measure). A corrected passport's fingerprint changes, so:
  *   - an anchored passport is marked pending (anchor columns cleared) and the
  *     anchor worker's sweep re-anchors it on chain (repairing ownership where
  *     needed); nothing is ever left with a stale anchor;

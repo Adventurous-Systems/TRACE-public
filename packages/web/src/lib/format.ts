@@ -62,3 +62,11 @@ export function shippingMethodLabel(method: string | null | undefined): string {
   if (!method) return '';
   return SHIPPING_LABELS[method] ?? method;
 }
+
+/** An amount in pence as pounds: "£3.60", "£18,000.00". */
+export function formatPrice(pence: number): string {
+  return `£${(pence / 100).toLocaleString('en-GB', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}

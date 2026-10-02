@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { UNITS_OF_MEASURE } from '@trace/core';
 import { CATALOG, SEED_TAG } from './catalogue.js';
 import { catalogueCorrections, isCatalogueLot } from './catalogue-corrections.js';
 
@@ -13,6 +14,7 @@ function lot(overrides: Record<string, unknown> = {}) {
     categoryL1: 'structural-steel',
     categoryL2: 'channels',
     reclaimedBy: 'Reconditioning partners',
+    unitOfMeasure: 'each',
     ...overrides,
   };
 }
@@ -27,6 +29,22 @@ test('the reclaiming hub is "Stirling Reuse Hub" throughout the catalogue', () =
     assert.notEqual(product.passport.reclaimedBy, 'Stirling Community Reuse Hub', product.key);
   }
   assert.equal(bricks.passport.reclaimedBy, 'Stirling Reuse Hub');
+});
+
+test('every catalogue product says what it is sold per', () => {
+  for (const product of CATALOG) {
+    const unit = product.passport.unitOfMeasure;
+    assert.ok(unit && (UNITS_OF_MEASURE as readonly string[]).includes(unit), product.key);
+  }
+});
+
+test('a lot seeded before units existed gets its unit, and nothing else changes', () => {
+  const current = lot({
+    categoryL1: 'partitions-linings',
+    categoryL2: 'metal-stud-framing',
+    unitOfMeasure: null,
+  });
+  assert.deepEqual(catalogueCorrections(current, studWalling), { unitOfMeasure: 'each' });
 });
 
 test('a lot filed under the old category gets exactly the category corrected', () => {
