@@ -57,7 +57,7 @@ export async function blockchainRoutes(app: FastifyInstance): Promise<void> {
     ]);
 
     if (!chainTx.transaction && !chainTx.receipt && !localLog) {
-      throw new NotFoundError(`Blockchain transaction ${txHash} not found`);
+      throw new NotFoundError('Blockchain transaction', txHash);
     }
 
     const decoded = chainTx.firstCallData ? decodeClause(chainTx.firstCallData) : null;

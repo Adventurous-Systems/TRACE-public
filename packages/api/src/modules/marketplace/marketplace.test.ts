@@ -589,3 +589,213 @@ describe('part of a lot and the order steps', () => {
     expect(await passportStatus()).toBe('sold');
   });
 });
+
+// Fixes from the trading-journeys rehearsal, round 1 (2026-10-02): findings F1,
+// F2, F5 and F12 in ai-os technical/2026-10-02-trading-journeys-rehearsal.md.
+describe('rehearsal round 1 fixes', () => {
+  let app: TestApp;
+  let adminSellerAuth: { authorization: string };
+  let staffAuth: { authorization: string };
+  let outsiderAuth: { authorization: string };
+  let buyerAuth: { authorization: string };
+  let orgId: string;
+  let hubAdminId: string;
+
+  const HUB_ADMIN = getTestPersona('hubAdmin');
+  const SUPPLIER = getTestPersona('supplier');
+
+  async function lot(values: { quantity: number; pricePence?: number; minOrderQuantity?: number }) {
+    const [passport] = await db
+      .insert(materialPassports)
+      .values({
+        organisationId: orgId,
+        registeredBy: hubAdminId,
+        productName: `Round 1 Lot ${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        categoryL1: 'masonry',
+        conditionGrade: 'B',
+        status: 'listed',
+      })
+      .returning();
+    const [listing] = await db
+      .insert(listings)
+      .values({
+        passportId: passport!.id,
+        organisationId: orgId,
+        sellerId: hubAdminId,
+        pricePence: values.pricePence ?? 200,
+        currency: 'GBP',
+        quantity: values.quantity,
+        quantityAvailable: values.quantity,
+        minOrderQuantity: values.minOrderQuantity ?? 1,
+        shippingOptions: [{ method: 'collection' }],
+        status: 'active',
+      })
+      .returning();
+    return { listingId: listing!.id, passportId: passport!.id };
+  }
+  const offer = (auth: { authorization: string }, payload: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: '/api/v1/marketplace/offers', headers: auth, payload });
+  const act = (auth: { authorization: string }, id: string, action: string) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/transactions/${id}`,
+      headers: auth,
+      payload: { action },
+    });
+  const patchListing = (id: string, payload: Record<string, unknown>) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/listings/${id}`,
+      headers: adminSellerAuth,
+      payload,
+    });
+  const statuses = async (ids: { listingId: string; passportId: string }) => ({
+    listing: (await db.query.listings.findFirst({ where: eq(listings.id, ids.listingId) }))!.status,
+    passport: (await db.query.materialPassports.findFirst({
+      where: eq(materialPassports.id, ids.passportId),
+    }))!.status,
+  });
+  const idOf = (res: { json: <T>() => T }) => res.json<{ data: { id: string } }>().data.id;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    const org = await db.query.organisations.findFirst({
+      where: eq(organisations.slug, 'stirling'),
+    });
+    const hubAdmin = await db.query.users.findFirst({ where: eq(users.email, HUB_ADMIN.email) });
+    orgId = org!.id;
+    hubAdminId = hubAdmin!.id;
+    adminSellerAuth = await getAuthHeader(app, HUB_ADMIN.email, HUB_ADMIN.password);
+    staffAuth = await getAuthHeader(app, HUB_STAFF.email, HUB_STAFF.password);
+    outsiderAuth = await getAuthHeader(app, SUPPLIER.email, SUPPLIER.password);
+
+    const email = `round1-buyer-${Date.now()}@example.com`;
+    await db.insert(users).values({
+      email,
+      passwordHash: await bcrypt.hash('Round1Test1234!', 10),
+      name: 'Round 1 Buyer',
+      role: 'buyer',
+      organisationId: null,
+    });
+    buyerAuth = await getAuthHeader(app, email, 'Round1Test1234!');
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('F1: refuses an order whose total is beyond the limit, and a price beyond it', async () => {
+    const dear = await lot({ quantity: 2, pricePence: 1_500_000_000 });
+    const res = await offer(buyerAuth, { listingId: dear.listingId, quantity: 2 });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: { message: string } }>().error.message).toMatch(/smaller quantity/);
+    expect((await patchListing(dear.listingId, { pricePence: 3_000_000_000 })).statusCode).toBe(
+      400,
+    );
+  });
+
+  it('F5: the price is the asking price, whatever a buyer sends', async () => {
+    const cheap = await lot({ quantity: 5, pricePence: 300 });
+    const res = await offer(buyerAuth, { listingId: cheap.listingId, quantity: 5, offerPence: 1 });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ data: { amountPence: number } }>().data.amountPence).toBe(1500);
+  });
+
+  it('F2: a lot shrunk to what is ordered is reserved, and so is its passport', async () => {
+    const held = await lot({ quantity: 6 });
+    await offer(buyerAuth, { listingId: held.listingId, quantity: 4 });
+    expect((await patchListing(held.listingId, { quantity: 4 })).statusCode).toBe(200);
+    expect(await statuses(held)).toEqual({ listing: 'reserved', passport: 'reserved' });
+  });
+
+  it('F2: a lot shrunk to what has been sold is sold, and so is its passport', async () => {
+    const partSold = await lot({ quantity: 4 });
+    const id = idOf(await offer(buyerAuth, { listingId: partSold.listingId, quantity: 2 }));
+    await act(adminSellerAuth, id, 'accept');
+    await act(buyerAuth, id, 'confirm_delivery');
+    expect(await statuses(partSold)).toEqual({ listing: 'active', passport: 'listed' });
+    expect((await patchListing(partSold.listingId, { quantity: 2 })).statusCode).toBe(200);
+    expect(await statuses(partSold)).toEqual({ listing: 'sold', passport: 'sold' });
+  });
+
+  it("F12: a hub's orders belong to the hub: any of its staff sees and answers them", async () => {
+    const hubLot = await lot({ quantity: 3 });
+    const id = idOf(await offer(buyerAuth, { listingId: hubLot.listingId, quantity: 1 }));
+
+    // The listing was created by the hub admin; hub staff is another member.
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/v1/marketplace/transactions',
+      headers: staffAuth,
+    });
+    const seen = list
+      .json<{ data: Array<{ id: string; viewerSide: string; allowedActions: string[] }> }>()
+      .data.find((o) => o.id === id);
+    expect(seen?.viewerSide).toBe('seller');
+    expect(seen?.allowedActions.sort()).toEqual(['accept', 'cancel', 'reject']);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/v1/marketplace/transactions/${id}`,
+          headers: staffAuth,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await act(staffAuth, id, 'accept')).statusCode).toBe(200);
+  });
+
+  it('F12: a seller of another organisation neither sees nor answers them', async () => {
+    const hubLot = await lot({ quantity: 3 });
+    const id = idOf(await offer(buyerAuth, { listingId: hubLot.listingId, quantity: 1 }));
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/v1/marketplace/transactions',
+      headers: outsiderAuth,
+    });
+    expect(list.json<{ data: Array<{ id: string }> }>().data.map((o) => o.id)).not.toContain(id);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/v1/marketplace/transactions/${id}`,
+          headers: outsiderAuth,
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect((await act(outsiderAuth, id, 'accept')).statusCode).toBe(403);
+    expect((await act(outsiderAuth, id, 'cancel')).statusCode).toBe(403);
+  });
+
+  it("F12: the buyer's list says what the buyer can do, and hub staff can't buy from their hub", async () => {
+    const hubLot = await lot({ quantity: 3 });
+    const id = idOf(await offer(buyerAuth, { listingId: hubLot.listingId, quantity: 1 }));
+    const mine = (
+      await app.inject({
+        method: 'GET',
+        url: '/api/v1/marketplace/transactions',
+        headers: buyerAuth,
+      })
+    )
+      .json<{ data: Array<{ id: string; viewerSide: string; allowedActions: string[] }> }>()
+      .data.find((o) => o.id === id);
+    expect(mine).toMatchObject({ viewerSide: 'buyer', allowedActions: ['cancel'] });
+
+    await act(adminSellerAuth, id, 'accept');
+    const after = (
+      await app.inject({
+        method: 'GET',
+        url: '/api/v1/marketplace/transactions',
+        headers: buyerAuth,
+      })
+    )
+      .json<{ data: Array<{ id: string; allowedActions: string[] }> }>()
+      .data.find((o) => o.id === id);
+    expect(after?.allowedActions.sort()).toEqual(['cancel', 'confirm_delivery', 'flag_dispute']);
+
+    expect((await offer(staffAuth, { listingId: hubLot.listingId, quantity: 1 })).statusCode).toBe(
+      403,
+    );
+  });
+});

@@ -32,6 +32,7 @@ const order = (over: Partial<OrderRow> = {}): OrderRow => ({
   quantity: 2,
   amountPence: 600,
   disputeDeadline: null,
+  legacyWholeLot: false,
   ...over,
 });
 const rules = (violations: Violation[], severity: Violation['severity'] = 'error') =>
@@ -122,14 +123,32 @@ test('an accepted order has a dispute deadline; a minimum order fits the lot', (
   assert.ok(rules(check([listing({ minOrderQuantity: 11 })])).includes('minimum-order'));
 });
 
-test('an order from before part-of-a-lot ordering is a warning, not an error', () => {
-  const violations = check(
-    [listing({ status: 'reserved', quantityAvailable: 0 })],
-    [order({ quantity: 10, amountPence: 365, disputeDeadline: new Date() })],
-    [passport({ status: 'reserved' })],
+test('an order marked as placed before part-of-a-lot ordering is accepted as it is', () => {
+  const old = order({
+    quantity: 10,
+    amountPence: 365,
+    disputeDeadline: new Date(),
+    legacyWholeLot: true,
+  });
+  assert.deepEqual(
+    check(
+      [listing({ status: 'reserved', quantityAvailable: 0 })],
+      [old],
+      [passport({ status: 'reserved' })],
+    ),
+    [],
   );
-  assert.deepEqual(rules(violations), []);
-  assert.deepEqual(rules(violations, 'warning'), ['legacy-order', 'legacy-order']);
+  // The same row without the mark does not fit the current model.
+  assert.deepEqual(
+    rules(
+      check(
+        [listing({ status: 'reserved', quantityAvailable: 0 })],
+        [{ ...old, legacyWholeLot: false }],
+        [passport({ status: 'reserved' })],
+      ),
+    ),
+    ['dispute-window', 'order-amount'],
+  );
 });
 
 test('a stored fingerprint that no longer matches the data is an error; pending is not', () => {

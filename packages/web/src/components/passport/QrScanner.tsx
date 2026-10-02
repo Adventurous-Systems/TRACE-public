@@ -58,7 +58,13 @@ export default function QrScanner() {
 
     return () => {
       mounted = false;
-      scannerRef.current?.stop().catch(() => null);
+      // stop() throws, rather than rejects, when the camera never started
+      // (no camera, or permission refused), so guard both ways.
+      try {
+        scannerRef.current?.stop().catch(() => null);
+      } catch {
+        // Nothing was running.
+      }
     };
   }, [router]);
 

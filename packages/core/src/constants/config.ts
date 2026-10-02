@@ -64,6 +64,13 @@ export function formatQuantity(quantity: number, u?: string | null): string {
   return `${n} ${unitLabel(u)}`;
 }
 
+// Money is whole pence in a 32-bit integer column. These limits keep every
+// price, and every order total, inside it with room to spare.
+/** The most a unit price or an order total may be: £20,000,000.00. */
+export const MAX_AMOUNT_PENCE = 2_000_000_000;
+/** The most units a lot may hold. */
+export const MAX_LOT_QUANTITY = 1_000_000_000;
+
 export const DECONSTRUCTION_METHODS = ['selective', 'mechanical', 'manual', 'mixed'] as const;
 
 export const USER_ROLES = [

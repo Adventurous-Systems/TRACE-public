@@ -17,7 +17,7 @@ import { formatQuantity } from '@trace/core';
 const TX_STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   pending: 'warning',
   confirmed: 'success',
-  disputed: 'default',
+  disputed: 'warning',
   resolved: 'success',
   completed: 'success',
   cancelled: 'outline',
@@ -33,15 +33,32 @@ const TX_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-function ActionButtons({
-  tx,
-  userId,
-  onUpdate,
-}: {
-  tx: MarketplaceTransaction;
-  userId: string;
-  onUpdate: () => void;
-}) {
+// The order steps a person can take, in the order they are offered. Which of
+// them apply to an order comes from the API (allowedActions), so the rules
+// live in one place. resolve_dispute has no screen yet.
+const ACTIONS: Array<{ action: string; label: string; busy: string; primary?: boolean }> = [
+  { action: 'accept', label: 'Accept order', busy: 'Accepting…', primary: true },
+  { action: 'reject', label: 'Reject', busy: 'Rejecting…' },
+  { action: 'confirm_delivery', label: 'Confirm delivery', busy: 'Confirming…', primary: true },
+  { action: 'flag_dispute', label: 'Report a problem', busy: 'Reporting…' },
+  { action: 'cancel', label: 'Cancel order', busy: 'Cancelling…' },
+];
+
+/** What happens next, for the side that is waiting. */
+function nextStep(tx: MarketplaceTransaction): string | null {
+  if (tx.status === 'pending' && tx.viewerSide === 'buyer') {
+    return 'Waiting for the seller to accept or reject it.';
+  }
+  if (tx.status === 'confirmed' && tx.viewerSide === 'seller') {
+    return 'The buyer confirms delivery once the material arrives.';
+  }
+  if (tx.status === 'disputed') {
+    return 'A problem was reported. The platform team reviews it; there is nothing more to do for now.';
+  }
+  return null;
+}
+
+function ActionButtons({ tx, onUpdate }: { tx: MarketplaceTransaction; onUpdate: () => void }) {
   const token = getToken()!;
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -49,7 +66,10 @@ function ActionButtons({
     setLoading(action);
     try {
       await marketplace.updateTransaction(tx.id, action, token);
-      track('transaction-update', { transactionAction: action, isBuyer: tx.buyerId === userId });
+      track('transaction-update', {
+        transactionAction: action,
+        isBuyer: tx.viewerSide === 'buyer',
+      });
       onUpdate();
     } catch (e) {
       // J-10: was a native alert() carrying the raw ApiError message.
@@ -58,49 +78,37 @@ function ActionButtons({
         description: getErrorMessage(e, 'complete this action'),
         variant: 'destructive',
       });
+      // Someone else may have acted on the order first; show where it stands.
+      onUpdate();
     } finally {
       setLoading(null);
     }
   }
 
-  const isBuyer = tx.buyerId === userId;
-  const isSeller = tx.sellerId === userId;
-  const open = tx.status === 'pending' || tx.status === 'confirmed';
+  const allowed = tx.allowedActions ?? [];
+  const buttons = ACTIONS.filter(({ action }) => allowed.includes(action));
+  const next = nextStep(tx);
+  if (buttons.length === 0 && !next) return null;
 
-  function button(action: string, label: string, busy: string, primary = false) {
-    return (
-      <Button
-        key={action}
-        size="sm"
-        variant={primary ? 'default' : 'outline'}
-        className={primary ? 'bg-green-600 hover:bg-green-700 text-white' : undefined}
-        onClick={() => act(action)}
-        disabled={loading !== null}
-      >
-        {loading === action ? busy : label}
-      </Button>
-    );
-  }
-
-  const buttons = [
-    isSeller && tx.status === 'pending' && button('accept', 'Accept order', 'Accepting…', true),
-    isSeller && tx.status === 'pending' && button('reject', 'Reject', 'Rejecting…'),
-    isBuyer &&
-      tx.status === 'confirmed' &&
-      button('confirm_delivery', 'Confirm delivery', 'Confirming…', true),
-    isBuyer &&
-      tx.status === 'confirmed' &&
-      button('flag_dispute', 'Report a problem', 'Reporting…'),
-    (isBuyer || isSeller) && open && button('cancel', 'Cancel order', 'Cancelling…'),
-  ].filter(Boolean);
-
-  if (buttons.length === 0) return null;
   return (
     <div className="space-y-2">
-      {isBuyer && tx.status === 'pending' && (
-        <p className="text-xs text-gray-500">Waiting for the seller to accept or reject it.</p>
+      {next && <p className="text-xs text-gray-500">{next}</p>}
+      {buttons.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {buttons.map(({ action, label, busy, primary }) => (
+            <Button
+              key={action}
+              size="sm"
+              variant={primary ? 'default' : 'outline'}
+              className={primary ? 'bg-green-600 hover:bg-green-700 text-white' : undefined}
+              onClick={() => act(action)}
+              disabled={loading !== null}
+            >
+              {loading === action ? busy : label}
+            </Button>
+          ))}
+        </div>
       )}
-      <div className="flex gap-2 flex-wrap">{buttons}</div>
     </div>
   );
 }
@@ -152,14 +160,16 @@ export default function TransactionsPage() {
                           <span className="font-semibold text-sm">
                             {formatPrice(tx.amountPence)}
                           </span>
-                          {user && tx.buyerId === user.id && (
+                          {tx.viewerSide === 'buyer' && (
                             <span className="text-xs bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">
-                              You are buyer
+                              You are buying
                             </span>
                           )}
-                          {user && tx.sellerId === user.id && (
+                          {tx.viewerSide === 'seller' && (
                             <span className="text-xs bg-purple-50 text-purple-700 rounded px-1.5 py-0.5">
-                              You are seller
+                              {user && tx.sellerId === user.id
+                                ? 'You are selling'
+                                : 'Your organisation is selling'}
                             </span>
                           )}
                         </div>
@@ -175,7 +185,9 @@ export default function TransactionsPage() {
                           </p>
                         )}
                         <p className="text-sm text-gray-700">
-                          Quantity {formatQuantity(tx.quantity, tx.unitOfMeasure)}
+                          {tx.legacyWholeLot
+                            ? 'The whole lot, at the price shown. Placed before orders had a quantity.'
+                            : `Quantity ${formatQuantity(tx.quantity, tx.unitOfMeasure)}`}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">
                           Order placed {formatDate(tx.createdAt)}
@@ -189,7 +201,7 @@ export default function TransactionsPage() {
                       </div>
                     </div>
 
-                    {user && <ActionButtons tx={tx} userId={user.id} onUpdate={load} />}
+                    <ActionButtons tx={tx} onUpdate={load} />
                   </li>
                 ))}
               </ul>

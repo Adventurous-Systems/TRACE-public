@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { marketplace, type ListingSummary } from '@/lib/api-client';
+import { ApiError, marketplace, type ListingSummary } from '@/lib/api-client';
 import { formatQuantity, perUnit, unitLabel } from '@trace/core';
 import { defaultOrderQuantity, orderQuantityProblem } from '@/lib/order-quantity';
 import { getToken, getUser, type StoredUser } from '@/lib/auth';
@@ -91,9 +91,26 @@ export default function ListingDetailPage() {
       setSuccess(
         'Order placed. The seller accepts or rejects it; follow it under Orders, where they see it too.',
       );
-      toast({ title: 'Offer placed', description: 'Track it in your Orders.', variant: 'success' });
+      toast({ title: 'Order placed', description: 'Track it in your Orders.', variant: 'success' });
     } catch (e) {
-      setError(getErrorMessage(e, 'place this offer'));
+      // A refusal (400/409) nearly always means the lot changed after this
+      // page loaded. Show what is true now instead of a bare failure; the
+      // server's own wording is never shown (J-10).
+      const changed =
+        e instanceof ApiError && (e.status === 409 || e.status === 400)
+          ? await marketplace.getListing(params.id).catch(() => null)
+          : null;
+      if (changed) {
+        setListing(changed);
+        setQuantity(defaultOrderQuantity(changed));
+        setError(
+          changed.status !== 'active'
+            ? 'Someone else has just ordered the rest of this lot.'
+            : `This lot changed while you were looking at it: ${formatQuantity(changed.quantityAvailable, changed.passport.unitOfMeasure)} left now. Check the quantity and order again.`,
+        );
+      } else {
+        setError(getErrorMessage(e, 'place this order'));
+      }
     } finally {
       setOfferLoading(false);
     }
@@ -262,7 +279,18 @@ export default function ListingDetailPage() {
                   </p>
                 </div>
 
-                {listing.status === 'active' ? (
+                {/* Above the form, so it still shows when the lot has just been
+                    fully ordered and the form is gone. */}
+                {error && <p className="text-xs text-red-600">{error}</p>}
+                {user?.organisationId && user.organisationId === listing.organisationId ? (
+                  /* A seller can't order from their own organisation's lot. */
+                  <div className="text-sm text-gray-600 bg-gray-50 border rounded-md p-3 space-y-2">
+                    <p>This is your organisation&apos;s listing.</p>
+                    <Link href="/listings" className="font-medium text-brand-600 hover:underline">
+                      Manage listings
+                    </Link>
+                  </div>
+                ) : listing.status === 'active' ? (
                   !user ? (
                     /* Logged-out visitors get a sign-up CTA, never a buy button. */
                     <div className="space-y-3">
@@ -292,7 +320,13 @@ export default function ListingDetailPage() {
                       </Link>
                     </div>
                   ) : (
-                    <>
+                    <form
+                      className="space-y-4"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!offerLoading && quantityProblem === null) void handleMakeOffer();
+                      }}
+                    >
                       <div className="space-y-1">
                         <label htmlFor="order-quantity" className="text-sm font-medium">
                           Quantity
@@ -321,6 +355,11 @@ export default function ListingDetailPage() {
                             </span>
                           </p>
                         )}
+                        {listing.quantityAvailable < listing.minOrderQuantity && (
+                          <p className="text-xs text-gray-500">
+                            Less than the minimum order is left, so you can order what remains.
+                          </p>
+                        )}
                       </div>
                       <textarea
                         placeholder="Add a note to the seller (optional)"
@@ -329,10 +368,9 @@ export default function ListingDetailPage() {
                         rows={3}
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
                       />
-                      {error && <p className="text-xs text-red-600">{error}</p>}
                       <Button
+                        type="submit"
                         className="w-full bg-brand-600 hover:bg-brand-700"
-                        onClick={handleMakeOffer}
                         disabled={offerLoading || quantityProblem !== null}
                       >
                         {offerLoading ? 'Placing order…' : 'Order at asking price'}
@@ -340,7 +378,7 @@ export default function ListingDetailPage() {
                       <p className="text-xs text-gray-400 text-center">
                         The seller accepts or rejects your order.
                       </p>
-                    </>
+                    </form>
                   )
                 ) : (
                   <p className="text-sm text-gray-500 text-center">

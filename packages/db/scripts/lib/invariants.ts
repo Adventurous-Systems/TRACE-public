@@ -4,8 +4,8 @@
  *
  * Pure rules over plain rows, so they can be tested with crafted data and run
  * read-only against any environment (check-invariants.ts). An `error` is data
- * the application should never produce; a `warning` is expected only for rows
- * that predate a model change and is worth a human look.
+ * the application should never produce; a `warning` is worth a human look
+ * (none are raised today).
  */
 
 /** Orders that still hold part of a lot (mirrors the API's open statuses). */
@@ -29,6 +29,8 @@ export interface OrderRow {
   quantity: number;
   amountPence: number;
   disputeDeadline: Date | null;
+  /** Placed before part-of-a-lot ordering: whole lot, one unit's price. */
+  legacyWholeLot: boolean;
 }
 
 export interface PassportRow {
@@ -181,23 +183,21 @@ export function checkInvariants(data: {
     ) {
       add('error', 'dispute-window', subject, `${order.status} without a dispute deadline`);
     }
-    // Orders placed before part-of-a-lot ordering took the whole lot for one
-    // unit's price, and had a dispute deadline from the moment of the offer.
-    if (order.status === 'pending' && order.disputeDeadline) {
-      add(
-        'warning',
-        'legacy-order',
-        subject,
-        'pending with a dispute deadline (placed before 0008)',
-      );
-    }
-    if (order.quantity > 0 && order.amountPence % order.quantity !== 0) {
-      add(
-        'warning',
-        'legacy-order',
-        subject,
-        `amount ${order.amountPence}p is not a unit price × quantity ${order.quantity}`,
-      );
+    // An order placed before part-of-a-lot ordering took the whole lot for one
+    // unit's price and had a dispute deadline from the start; that is what
+    // legacyWholeLot records. Any other order must fit the current model.
+    if (!order.legacyWholeLot) {
+      if (order.status === 'pending' && order.disputeDeadline) {
+        add('error', 'dispute-window', subject, 'pending with a dispute deadline');
+      }
+      if (order.quantity > 0 && order.amountPence % order.quantity !== 0) {
+        add(
+          'error',
+          'order-amount',
+          subject,
+          `amount ${order.amountPence}p is not a unit price × quantity ${order.quantity}`,
+        );
+      }
     }
   }
 

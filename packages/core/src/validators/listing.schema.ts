@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_AMOUNT_PENCE, MAX_LOT_QUANTITY } from '../constants/config.js';
 
 const ShippingOptionSchema = z.object({
   method: z.enum(['collection', 'delivery', 'both']),
@@ -10,10 +11,10 @@ const ShippingOptionSchema = z.object({
 export const CreateListingSchema = z
   .object({
     passportId: z.string().uuid(),
-    pricePence: z.number().int().positive(),
+    pricePence: z.number().int().positive().max(MAX_AMOUNT_PENCE),
     currency: z.string().length(3).default('GBP'),
-    quantity: z.number().int().positive().default(1),
-    minOrderQuantity: z.number().int().positive().default(1),
+    quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).default(1),
+    minOrderQuantity: z.number().int().positive().max(MAX_LOT_QUANTITY).default(1),
     shippingOptions: z.array(ShippingOptionSchema).min(1),
     expiresAt: z.coerce.date().optional(),
   })
@@ -25,9 +26,9 @@ export const CreateListingSchema = z
 export type CreateListingInput = z.infer<typeof CreateListingSchema>;
 
 export const UpdateListingSchema = z.object({
-  pricePence: z.number().int().positive().optional(),
-  quantity: z.number().int().positive().optional(),
-  minOrderQuantity: z.number().int().positive().optional(),
+  pricePence: z.number().int().positive().max(MAX_AMOUNT_PENCE).optional(),
+  quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
+  minOrderQuantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   shippingOptions: z.array(ShippingOptionSchema).min(1).optional(),
   expiresAt: z.coerce.date().optional(),
 });
@@ -36,9 +37,10 @@ export type UpdateListingInput = z.infer<typeof UpdateListingSchema>;
 
 export const MakeOfferSchema = z.object({
   listingId: z.string().uuid(),
-  // How much of the lot to buy; defaults to the listing's minimum order.
-  quantity: z.number().int().positive().optional(),
-  offerPence: z.number().int().positive().optional(), // unit price; if absent, the asking price
+  // How much of the lot to buy; defaults to the listing's minimum order. The
+  // price is the listing's asking price: buyers cannot name their own until
+  // offers are a designed feature (owner decision, 2026-10-02).
+  quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   notes: z.string().max(500).optional(),
 });
 

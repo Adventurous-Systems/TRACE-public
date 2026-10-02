@@ -351,6 +351,9 @@ export const transactions = pgTable(
       .references(() => users.id),
     // How much of the lot this order takes; amountPence is its total.
     quantity: integer('quantity').default(1).notNull(),
+    // Placed before part-of-a-lot ordering (migration 0008): it took the whole
+    // lot, and amountPence is one unit's price, not a total.
+    legacyWholeLot: boolean('legacy_whole_lot').default(false).notNull(),
     amountPence: integer('amount_pence').notNull(),
     status: text('status').default('pending').notNull(),
     // pending | confirmed | disputed | resolved | completed | cancelled

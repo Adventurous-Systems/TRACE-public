@@ -879,7 +879,7 @@ export default function RegisterWizard() {
               <CardDescription>
                 {certificate?.status === 'simulated'
                   ? 'TRACE is preparing the passport’s tamper-evident trust record.'
-                  : 'TRACE is registering the passport fingerprint on VeChainThor.'}
+                  : 'TRACE is registering the passport fingerprint on the blockchain.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">

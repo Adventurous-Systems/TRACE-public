@@ -418,6 +418,12 @@ export interface MarketplaceTransaction {
   productName?: string | null;
   passportId?: string | null;
   unitOfMeasure?: string | null;
+  /** Placed before quantity ordering: it took the whole lot at one unit's price. */
+  legacyWholeLot?: boolean;
+  /** Which side of the order the signed-in user is on (order list only). */
+  viewerSide?: 'buyer' | 'seller';
+  /** The order steps the signed-in user may take now (order list only). */
+  allowedActions?: string[];
 }
 
 export interface AuditEvent {
@@ -503,10 +509,7 @@ export const marketplace = {
       token,
     }),
 
-  makeOffer: (
-    data: { listingId: string; quantity?: number; offerPence?: number; notes?: string },
-    token: string,
-  ) =>
+  makeOffer: (data: { listingId: string; quantity?: number; notes?: string }, token: string) =>
     request<MarketplaceTransaction>('/api/v1/marketplace/offers', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -648,8 +651,9 @@ export const passports = {
   uploadPhoto: async (id: string, file: File, token: string): Promise<PassportDetail> => {
     const formData = new FormData();
     formData.append('file', file);
-    const apiBase = process.env['NEXT_PUBLIC_API_URL'] ?? '';
-    const response = await fetch(`${apiBase}/api/v1/passports/${id}/photos`, {
+    // The same base as every other call. This used to fall back to '' (the web
+    // server's own origin), which only works behind a reverse proxy.
+    const response = await fetch(`${getApiUrl()}/api/v1/passports/${id}/photos`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,

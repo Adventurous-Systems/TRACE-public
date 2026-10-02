@@ -42,8 +42,10 @@ export interface Transaction {
   sellerId: string;
   /** How much of the lot this order takes. */
   quantity: number;
-  /** The order total: unit price × quantity. */
+  /** The order total: unit price × quantity (one unit's price if legacyWholeLot). */
   amountPence: number;
+  /** Placed before part-of-a-lot ordering: it took the whole lot. */
+  legacyWholeLot: boolean;
   status: TransactionStatus;
   disputeDeadline?: Date;
   blockchainTxHash?: string;

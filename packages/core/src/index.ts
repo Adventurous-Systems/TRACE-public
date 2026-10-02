@@ -52,6 +52,8 @@ export {
   unitLabel,
   perUnit,
   formatQuantity,
+  MAX_AMOUNT_PENCE,
+  MAX_LOT_QUANTITY,
   USER_ROLES,
   ORGANISATION_TYPES,
   LISTING_STATUSES,
