@@ -21,3 +21,19 @@ export const QualityQuerySchema = z.object({
 });
 
 export type QualityQueryInput = z.infer<typeof QualityQuerySchema>;
+
+// The materials an inspector can choose from when starting a report.
+export const InspectionMaterialsQuerySchema = z.object({
+  /** Matches the material's name, its serial number, or the start of its ID. */
+  q: z.string().trim().max(100).optional(),
+  categoryL1: z.string().max(100).optional(),
+  /** "true": only materials with no independent inspection yet. */
+  uninspected: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(50).default(20),
+});
+
+export type InspectionMaterialsQuery = z.infer<typeof InspectionMaterialsQuerySchema>;

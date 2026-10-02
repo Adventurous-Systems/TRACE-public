@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { CreateQualityReportSchema } from '@trace/core';
+import { CreateQualityReportSchema, InspectionMaterialsQuerySchema } from '@trace/core';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { recordAuditEvent } from '../../lib/audit.js';
 import {
@@ -7,6 +7,8 @@ import {
   getReportsByPassport,
   getReportById,
   listInspectorReports,
+  listMaterialsForInspection,
+  getInspectionSummary,
   disputeReport,
 } from './quality.service.js';
 
@@ -18,9 +20,10 @@ export async function qualityRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, authorize('inspector', 'hub_admin', 'platform_admin')] },
     async (request, reply) => {
       const input = CreateQualityReportSchema.parse(request.body);
-      const { sub: inspectorId } = request.user;
-
-      const report = await createQualityReport(input, inspectorId);
+      const report = await createQualityReport(input, {
+        id: request.user.sub,
+        role: request.user.role,
+      });
       await recordAuditEvent({
         actor: request.user,
         action: 'quality_report.create',
@@ -36,8 +39,31 @@ export async function qualityRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ── GET /api/v1/quality/materials ─────────────────────────────────────────
+  // Inspector: the registered materials to choose from when starting a report,
+  // least recently inspected first. Search by name, serial number or ID.
+  app.get(
+    '/materials',
+    { preHandler: [authenticate, authorize('inspector', 'hub_admin', 'platform_admin')] },
+    async (request, reply) => {
+      const query = InspectionMaterialsQuerySchema.parse(request.query);
+      return reply.send({ success: true, data: await listMaterialsForInspection(query) });
+    },
+  );
+
+  // ── GET /api/v1/quality/summary ───────────────────────────────────────────
+  // Inspector: the counts on their dashboard
+  app.get(
+    '/summary',
+    { preHandler: [authenticate, authorize('inspector', 'hub_admin', 'platform_admin')] },
+    async (request, reply) => {
+      return reply.send({ success: true, data: await getInspectionSummary(request.user.sub) });
+    },
+  );
+
   // ── GET /api/v1/quality/reports/passport/:passportId ─────────────────────
-  // Public: get all quality reports for a passport
+  // Public: the quality reports for a passport, with each reporter's name and
+  // role (never their email address or id)
   app.get<{ Params: { passportId: string } }>(
     '/reports/passport/:passportId',
     async (request, reply) => {

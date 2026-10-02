@@ -191,6 +191,7 @@ packages/db/migrations/0007_chain_id.sql
 packages/db/migrations/0008_listing_quantity.sql
 packages/db/migrations/0009_legacy_orders.sql
 packages/db/migrations/0010_release_safety.sql
+packages/db/migrations/0011_inspection_role.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
