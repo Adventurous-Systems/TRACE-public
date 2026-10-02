@@ -8,6 +8,7 @@ import { marketplace, type ListingSummary } from '@/lib/api-client';
 import { formatPrice } from '@/lib/format';
 import { perUnit, MATERIAL_CATEGORIES, getCategoryBySlug } from '@trace/core';
 import { subcategoryLabel } from '@/lib/categories';
+import { AccountNav } from '@/components/marketplace/AccountNav';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -111,52 +112,7 @@ export default function MarketplacePage() {
               Marketplace
             </span>
           </Link>
-          <div className="trace-self-hosted-only flex items-center gap-2 sm:gap-3">
-            {user?.role === 'buyer' && (
-              <>
-                {/* A buyer who has just purchased needs to reach their order.
-                    Without this the public marketplace shell was a dead end:
-                    "Orders" only exists inside DashboardLayout, so after making
-                    an offer and navigating back here there was no way to find
-                    the purchase. */}
-                <Link href="/transactions">
-                  <Button variant="outline" size="sm">
-                    Orders
-                  </Button>
-                </Link>
-                <Link href="/access-request">
-                  <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
-                    Request seller access
-                  </Button>
-                </Link>
-              </>
-            )}
-            {user && user.role === 'supplier' && (
-              <Link href="/passports">
-                <Button variant="outline" size="sm">
-                  My materials
-                </Button>
-              </Link>
-            )}
-            {user && user.role !== 'buyer' && user.role !== 'supplier' && (
-              <Link href="/dashboard">
-                <Button variant="outline" size="sm">
-                  Dashboard
-                </Button>
-              </Link>
-            )}
-            {user ? (
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
-                Sign out
-              </Button>
-            ) : (
-              <Link href="/login">
-                <Button variant="outline" size="sm">
-                  Sign in
-                </Button>
-              </Link>
-            )}
-          </div>
+          <AccountNav user={user} onSignOut={handleSignOut} />
         </div>
       </header>
 

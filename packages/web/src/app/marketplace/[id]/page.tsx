@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { ApiError, marketplace, type ListingSummary } from '@/lib/api-client';
 import { formatQuantity, perUnit, unitLabel } from '@trace/core';
 import { defaultOrderQuantity, orderQuantityProblem } from '@/lib/order-quantity';
-import { getToken, getUser, type StoredUser } from '@/lib/auth';
+import { clearSession, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { AccountNav } from '@/components/marketplace/AccountNav';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
 import { track, priceBand } from '@/lib/analytics';
@@ -144,9 +145,19 @@ export default function ListingDetailPage() {
           >
             ← Marketplace
           </Link>
-          <Link href="/" className="flex items-center" aria-label="TRACE home">
-            <Logo className="h-6" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <AccountNav
+              user={user}
+              onSignOut={() => {
+                clearSession();
+                setUser(null);
+              }}
+              loginNext={`/marketplace/${params.id}`}
+            />
+            <Link href="/" className="flex items-center" aria-label="TRACE home">
+              <Logo className="h-6" />
+            </Link>
+          </div>
         </div>
       </header>
 
