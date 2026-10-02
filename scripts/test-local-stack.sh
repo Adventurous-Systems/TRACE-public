@@ -143,6 +143,8 @@ done
 grep -q 'pnpm -s rehearse | .* CURATED=1 ' "$log" || fail 'journeys must run against the stack as the curated-only demo'
 grep -q 'pnpm test | .* DB=trace_test ' "$log" || fail 'tests must use trace_test'
 grep -q 'migrate | .* DB=trace_upgrade ' "$log" || fail 'the upgrade must run in its scratch database'
+grep -q 'demo:replenish -- --env local --yes | .* DB=trace_upgrade ' "$log" \
+  || fail 'the upgrade must prove the previous release works on the new schema'
 ! grep -q 'demo:restore .* DB=trace_upgrade' "$log" || fail 'the upgrade rehearsal must not restore'
 grep -q 'docker compose .* psql .* drop database if exists trace_upgrade' "$log" || fail 'the scratch database must be dropped'
 evidence=$(ls -d "$tmp/state/rehearsal"/abc123def456-*)

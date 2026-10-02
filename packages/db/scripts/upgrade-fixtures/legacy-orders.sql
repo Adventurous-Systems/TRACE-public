@@ -11,6 +11,7 @@
 --   resolved   listing and passport reserved (nothing moved a resolved order on)
 --   completed  listing sold, passport sold
 --   cancelled  listing active, passport listed
+-- Plus one lot left reserved with no order at all.
 CREATE TEMP TABLE legacy_plan (product text, order_status text, listing_status text, passport_status text);
 INSERT INTO legacy_plan VALUES
   ('K-BRIQ%',                            'pending',   'reserved', 'reserved'),
@@ -35,5 +36,15 @@ INSERT INTO transactions (listing_id, buyer_id, seller_id, amount_pence, status,
 
 UPDATE listings l SET status = lot.listing_status FROM legacy_lots lot WHERE l.id = lot.listing_id;
 UPDATE material_passports p SET status = lot.passport_status FROM legacy_lots lot WHERE p.id = lot.passport_id;
+
+-- A lot the old model left "reserved" with no order at all (seen on the live
+-- demo, 2026-10-02): nothing holds it, and nothing would ever release it.
+UPDATE listings l SET status = 'reserved'
+  FROM material_passports p
+  WHERE p.id = l.passport_id AND p.product_name LIKE 'Reclaimed Aluminium Stud Walling%'
+    AND p.custom_attributes->>'seedSource' IS NOT NULL AND l.status = 'active';
+UPDATE material_passports SET status = 'reserved'
+  WHERE product_name LIKE 'Reclaimed Aluminium Stud Walling%'
+    AND custom_attributes->>'seedSource' IS NOT NULL;
 
 SELECT count(*) AS legacy_orders FROM transactions WHERE notes LIKE 'legacy fixture:%';
