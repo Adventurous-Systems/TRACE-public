@@ -14,6 +14,7 @@ const STAIRCASE = 'Reclaimed Prefabricated Staircase';
 const BLOCKS = 'Reclaimed Aerated Concrete Blocks';
 const SISALWOOL = 'Sisalwool 100';
 const BRICKS = 'Reclaimed Facing Bricks';
+const LINTELS = 'Reclaimed Concrete Lintels';
 
 /** The marketplace's carbon figure counts up; read it only once it has settled. */
 const COUNT_UP_MS = 2000;
@@ -75,6 +76,7 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
   const blocks = await curated(rehearsal, BLOCKS);
   const sisalwool = await curated(rehearsal, SISALWOOL);
   const bricks = await curated(rehearsal, BRICKS);
+  const lintels = await curated(rehearsal, LINTELS);
   const nowhere = '00000000-0000-4000-8000-000000000000';
 
   // ── 1. An anonymous visitor ──────────────────────────────────────────────
@@ -216,6 +218,23 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       await j.page.reload({ waitUntil: 'networkidle' });
       return (await j.text(/This listing is .*/)) ?? 'the order form is still shown';
     });
+    await j.step(
+      'order on a page that has gone stale',
+      async () => {
+        // Someone else takes the rest of the lintels after this page loaded.
+        await j.goto(`/marketplace/${lintels.id}`);
+        const rival = await rehearsal.register('stale rival');
+        const taken = await rehearsal.api('POST', '/api/v1/marketplace/offers', {
+          token: rival.token,
+          body: { listingId: lintels.id, quantity: 14 },
+        });
+        await j.page.getByRole('button', { name: /order at asking price/i }).click();
+        await j.page.waitForTimeout(2000);
+        const said = (await j.page.locator('p.text-red-600').allInnerTexts()).join(' | ');
+        return `rival order HTTP ${taken.status}; this page says: "${said}"`;
+      },
+      { expectIssues: /409/ },
+    );
     await j.step('marketplace without the staircase', async () => {
       await j.goto('/marketplace');
       await j.page.waitForTimeout(COUNT_UP_MS);
@@ -251,6 +270,11 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
         .click();
       await order(j, STAIRCASE).getByText('Cancelled').waitFor({ timeout: 8000 });
       return (await order(j, STAIRCASE).innerText()).replace(/\s+/g, ' ');
+    });
+    await j.step('own listing: no order form', async () => {
+      await j.goto(`/marketplace/${kbriq.id}`);
+      const form = await j.page.getByLabel('Quantity').count();
+      return `order form: ${form}; ${(await j.text(/your organisation.s listing/i)) ?? 'no notice'}`;
     });
     await j.step('listings', async () => {
       await j.goto('/listings');

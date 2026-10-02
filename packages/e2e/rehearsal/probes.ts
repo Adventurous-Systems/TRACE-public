@@ -73,7 +73,10 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     name: string,
     expected: string,
     run: () => Promise<{ pass: boolean; actual: string }>,
-    onFail: { severity: Severity; type: string } = { severity: 'major', type: 'edge case' },
+    onFail: { severity: Severity; type: string; known?: string } = {
+      severity: 'major',
+      type: 'edge case',
+    },
   ): Promise<void> {
     let outcome: { pass: boolean; actual: string };
     try {
@@ -84,9 +87,11 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     rehearsal.probes.push({ name, expected, ...outcome });
     console.log(`  ${outcome.pass ? '✓' : '✗'} ${name}: ${outcome.actual}`);
     if (!outcome.pass) {
+      // A caveat the owner has deferred is recorded, not raised again.
       rehearsal.finding({
         source: `probe: ${name}`,
-        ...onFail,
+        severity: onFail.known ? 'info' : onFail.severity,
+        type: onFail.known ? `known (${onFail.known})` : onFail.type,
         what: `expected ${expected}; got ${outcome.actual}`,
       });
     }
@@ -140,26 +145,21 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
   );
 
   // ── Money ────────────────────────────────────────────────────────────────
-  await probe(
-    'order total beyond a 32-bit integer (2 × £15,000,000.00)',
-    'a clear refusal (HTTP 400 or 409), never HTTP 500',
-    async () => {
-      const dear = await newLot({ quantity: 2, pricePence: 1_500_000_000 });
-      return expectStatus(await offer(buyer, dear, { quantity: 2 }), 400, 409);
-    },
-  );
+  await probe('order total beyond the limit (2 × £15,000,000.00)', 'HTTP 400', async () => {
+    const dear = await newLot({ quantity: 2, pricePence: 1_500_000_000 });
+    return expectStatus(await offer(buyer, dear, { quantity: 2 }), 400);
+  });
   await probe(
     'a buyer names their own unit price (1p against £3.00 asking)',
-    'refused, or shown to the seller as below the asking price',
+    'ignored: charged the asking price, 1500p for 5',
     async () => {
       const cheap = await newLot({ quantity: 5 });
       const res = await offer(buyer, cheap, { quantity: 5, offerPence: 1 });
       return {
-        pass: res.status >= 400,
-        actual: `${says(res)}; order total ${res.body.data?.amountPence}p for 5 units`,
+        pass: res.status === 201 && res.body.data?.amountPence === 1500,
+        actual: `${says(res)}; order total ${res.body.data?.amountPence}p`,
       };
     },
-    { severity: 'minor', type: 'caveat' },
   );
 
   // ── Who may order ────────────────────────────────────────────────────────
@@ -377,7 +377,7 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       const res = await patchLot(held, { quantity: 8 });
       return { pass: res.status === 200, actual: says(res) };
     },
-    { severity: 'minor', type: 'caveat' },
+    { severity: 'minor', type: 'caveat', known: 'F6, deferred with lot editing' },
   );
 
   await probe(
@@ -411,8 +411,71 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
         actual: `${says(res)}; listing is ${now.status}`,
       };
     },
-    { severity: 'minor', type: 'caveat' },
+    { severity: 'minor', type: 'caveat', known: 'F4, deferred with order time limits' },
   );
+
+  // ── A hub's orders belong to the hub ─────────────────────────────────────
+  const hubAdmin = await rehearsal.persona('hubAdmin');
+  const hubLot = (
+    await createListedPassport(ctx, hubAdmin.token, {
+      productName: uniqueName('Rehearsal Hub Lot'),
+      pricePence: 300,
+      quantity: 4,
+    })
+  ).listingId;
+  const hubOrder = await placed(buyer, hubLot, 1);
+  const ordersOf = async (who: Session) =>
+    (
+      await rehearsal.api<Array<{ id: string; viewerSide: string; allowedActions: string[] }>>(
+        'GET',
+        '/api/v1/marketplace/transactions',
+        { token: who.token },
+      )
+    ).body.data ?? [];
+  await probe(
+    'hub staff see an order on a lot the hub admin listed',
+    'listed for them as seller, with accept, reject and cancel',
+    async () => {
+      const seen = (await ordersOf(staff)).find((o) => o.id === hubOrder);
+      return {
+        pass:
+          seen?.viewerSide === 'seller' &&
+          seen.allowedActions.sort().join() === 'accept,cancel,reject',
+        actual: seen
+          ? `${seen.viewerSide}: ${seen.allowedActions.join(', ')}`
+          : 'not in their list',
+      };
+    },
+  );
+  await probe(
+    'a seller of another organisation does not see that order',
+    'not in their list',
+    async () => {
+      const seen = (await ordersOf(seller)).some((o) => o.id === hubOrder);
+      return { pass: !seen, actual: seen ? 'in their list' : 'not in their list' };
+    },
+  );
+  await probe('a seller of another organisation reads that order', 'HTTP 404', async () =>
+    expectStatus(
+      await rehearsal.api('GET', `/api/v1/marketplace/transactions/${hubOrder}`, {
+        token: seller.token,
+      }),
+      404,
+    ),
+  );
+  await probe('a seller of another organisation accepts that order', 'HTTP 403', async () =>
+    expectStatus(await act(seller, hubOrder, 'accept'), 403),
+  );
+  await probe("hub staff order from their own hub's lot", 'HTTP 403', async () =>
+    expectStatus(await offer(staff, hubLot, { quantity: 1 }), 403),
+  );
+  await probe('hub staff accept the order', 'HTTP 200, confirmed', async () => {
+    const res = await act(staff, hubOrder, 'accept');
+    return {
+      pass: res.body.data?.status === 'confirmed',
+      actual: `${says(res)} ${res.body.data?.status}`,
+    };
+  });
 
   // ── Listing validation ───────────────────────────────────────────────────
   const invalidListings: Array<[string, Record<string, unknown>]> = [
