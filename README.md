@@ -177,6 +177,32 @@ with the generated API environment and the logs. It shares the Compose project
 in `.env`, so `reset` also removes that project's volumes. If this machine can't
 pull the MinIO mirror, set `TRACE_LOCAL_MINIO_IMAGE` to a local MinIO image.
 
+### Rehearsing a milestone
+
+Before a milestone is tested by hand, `pnpm stack rehearse` runs everything
+that can be checked automatically against the running stack and keeps the
+evidence in `.local-stack/rehearsal/<commit>-<time>/`:
+
+- the unit, integration and browser test suites;
+- **stakeholder journeys** (`packages/e2e/rehearsal/journeys.ts`): a visitor, a
+  new buyer, the demo buyer, the hub as seller, the platform admin, the
+  inspector, hub staff, a supplier and a buyer on a phone, with a screenshot
+  per step and every console error, failed request and broken image recorded;
+- **API probes** (`rehearsal/probes.ts`): inputs, sequences and races a browser
+  will not produce, each with the outcome it should have;
+- the read-only crawler (`pnpm --filter @trace/e2e explore`): accessibility
+  and mobile overflow;
+- **data invariants** (`pnpm stack check`): stock adds up with orders, statuses
+  agree, no stranded orders, no stale fingerprints. The same check runs
+  read-only on a deployment as `run-ops.sh <env> demo-check-invariants`;
+- **an upgrade rehearsal** (`pnpm stack upgrade [ref]`): the given release
+  (default `origin/main`) is built in a scratch database, given old-model
+  orders in every state (`packages/db/scripts/upgrade-fixtures/`), then
+  migrated to this checkout and checked.
+
+A failing part never stops the rest. The journeys and probes gather evidence
+for a reviewer; they are not pass/fail tests, and their findings need triage.
+
 `TRACE_DEPLOYMENT_PROFILE=self_hosted` retains registration and all mutation
 flows. `public_showcase` is API-enforced read-only mode. `public_buyer_demo`
 is the hosted evergreen demo profile: anonymous visitors can browse, newly

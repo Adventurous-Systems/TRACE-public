@@ -25,7 +25,13 @@ export interface ListedPassport {
 export async function createListedPassport(
   ctx: APIRequestContext,
   token: string,
-  opts: { productName: string; pricePence?: number; quantity?: number; minOrderQuantity?: number },
+  opts: {
+    productName: string;
+    pricePence?: number;
+    quantity?: number;
+    minOrderQuantity?: number;
+    expiresAt?: string;
+  },
 ): Promise<ListedPassport> {
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -51,6 +57,7 @@ export async function createListedPassport(
       quantity: opts.quantity ?? 1,
       minOrderQuantity: opts.minOrderQuantity ?? 1,
       shippingOptions: [{ method: 'collection' }],
+      ...(opts.expiresAt ? { expiresAt: opts.expiresAt } : {}),
     },
   });
   expect(lRes.ok(), `create listing (HTTP ${lRes.status()})`).toBeTruthy();

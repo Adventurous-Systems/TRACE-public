@@ -57,3 +57,4 @@ assets/incoming/
 
 # Local on-chain stack (scripts/local-stack.sh): chain key, env, logs
 .local-stack/
+rehearsal-report/
