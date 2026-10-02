@@ -50,7 +50,7 @@ function nextStep(tx: MarketplaceTransaction): string | null {
     return 'Waiting for the seller to accept or reject it.';
   }
   if (tx.status === 'confirmed' && tx.viewerSide === 'seller') {
-    return 'Accepted. The buyer confirms delivery once the material arrives.';
+    return 'The buyer confirms delivery once the material arrives.';
   }
   if (tx.status === 'disputed') {
     return 'A problem was reported. The platform team reviews it; there is nothing more to do for now.';

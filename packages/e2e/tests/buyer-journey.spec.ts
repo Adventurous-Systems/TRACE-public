@@ -62,11 +62,11 @@ test.describe('Buyer journey', () => {
     await sellerPage.goto('/transactions');
     const incoming = sellerPage.getByRole('listitem').filter({ hasText: productName });
     await incoming.getByRole('button', { name: /accept order/i }).click();
-    await expect(incoming.getByText('Accepted')).toBeVisible();
+    await expect(incoming.getByText('Accepted', { exact: true })).toBeVisible();
     await seller.close();
 
     await page.reload();
     await mine.getByRole('button', { name: /confirm delivery/i }).click();
-    await expect(mine.getByText('Completed')).toBeVisible();
+    await expect(mine.getByText('Completed', { exact: true })).toBeVisible();
   });
 });

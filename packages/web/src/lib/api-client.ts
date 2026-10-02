@@ -651,8 +651,9 @@ export const passports = {
   uploadPhoto: async (id: string, file: File, token: string): Promise<PassportDetail> => {
     const formData = new FormData();
     formData.append('file', file);
-    const apiBase = process.env['NEXT_PUBLIC_API_URL'] ?? '';
-    const response = await fetch(`${apiBase}/api/v1/passports/${id}/photos`, {
+    // The same base as every other call. This used to fall back to '' (the web
+    // server's own origin), which only works behind a reverse proxy.
+    const response = await fetch(`${getApiUrl()}/api/v1/passports/${id}/photos`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
