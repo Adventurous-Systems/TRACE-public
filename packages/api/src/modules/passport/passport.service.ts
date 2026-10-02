@@ -17,6 +17,7 @@ import {
 } from '@trace/core';
 import sharp from 'sharp';
 import { anchorQueue } from '../../lib/queue.js';
+import { hasIndependentInspection } from '../quality/quality.service.js';
 import { uploadBuffer } from '../../lib/storage.js';
 import { computePassportHash } from '../../lib/passport-hash.js';
 import { simulatePassportAnchor } from '../../lib/anchor.js';
@@ -236,6 +237,18 @@ export async function updatePassport(
   if (['listed', 'reserved', 'sold', 'decommissioned'].includes(existing.status)) {
     throw new ConflictError(
       `This material can no longer be edited because it is ${existing.status}. Editing is locked once a material is listed or sold.`,
+    );
+  }
+
+  // An inspector's grade is not the seller's to change (owner decision,
+  // 2026-10-02). Everything else on the passport stays editable.
+  if (
+    input.conditionGrade !== undefined &&
+    input.conditionGrade !== existing.conditionGrade &&
+    (await hasIndependentInspection(passportId))
+  ) {
+    throw new ConflictError(
+      'An independent inspection set the grade of this material, so only another inspection can change it.',
     );
   }
 

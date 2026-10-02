@@ -5,7 +5,9 @@ export const CreateQualityReportSchema = z.object({
   structuralScore: z.number().int().min(1).max(10).optional(),
   aestheticScore: z.number().int().min(1).max(10).optional(),
   environmentalScore: z.number().int().min(1).max(10).optional(),
-  overallGrade: z.enum(['A', 'B', 'C', 'D']).optional(),
+  // A report is a verdict: one without a grade would stand on the passport
+  // as "the latest inspection" and say nothing (owner decision, 2026-10-02).
+  overallGrade: z.enum(['A', 'B', 'C', 'D']),
   reportNotes: z.string().max(4000).optional(),
   photoUrls: z.array(z.string().url()).default([]),
 });

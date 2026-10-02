@@ -1,9 +1,10 @@
-import { and, asc, eq, desc, ilike, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, desc, ilike, isNotNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   qualityReports,
   materialPassports,
   organisations,
+  users,
   type QualityReport,
 } from '@trace/db';
 import {
@@ -80,6 +81,28 @@ function reportsOnEveryOrganisation(reporter: Pick<Reporter, 'role'>): boolean {
   return reporter.role === 'inspector' || reporter.role === 'platform_admin';
 }
 
+/**
+ * Has an inspector graded this material? From then on its grade can only be
+ * changed by another inspection or by the platform, not by its seller.
+ */
+export async function hasIndependentInspection(passportId: string): Promise<boolean> {
+  const [found] = await db
+    .select({ id: qualityReports.id })
+    .from(qualityReports)
+    .leftJoin(users, eq(users.id, qualityReports.inspectorId))
+    .where(
+      and(
+        eq(qualityReports.passportId, passportId),
+        isNotNull(qualityReports.overallGrade),
+        // The role recorded on the report; for an older report, the
+        // reporter's role now.
+        sql`coalesce(${qualityReports.inspectorRole}, ${users.role}) = 'inspector'`,
+      ),
+    )
+    .limit(1);
+  return !!found;
+}
+
 // ─── Submit quality report ────────────────────────────────────────────────────
 
 export async function createQualityReport(
@@ -116,7 +139,7 @@ export async function createQualityReport(
       structuralScore: input.structuralScore ?? null,
       aestheticScore: input.aestheticScore ?? null,
       environmentalScore: input.environmentalScore ?? null,
-      overallGrade: input.overallGrade ?? null,
+      overallGrade: input.overallGrade,
       reportNotes: input.reportNotes ?? null,
       photoUrls: input.photoUrls,
     })
@@ -132,7 +155,13 @@ export async function createQualityReport(
   // tampered with — filing an inspection during a demo used to break that
   // product's trust moment permanently. Re-anchor, exactly as updatePassport
   // does, so the fingerprint reflects the newly graded material.
-  if (input.overallGrade && input.overallGrade !== passport.conditionGrade) {
+  //
+  // Once an inspector has graded a material, the grade is the inspection's:
+  // the seller's own check is still recorded, but no longer changes it
+  // (owner decision, 2026-10-02). A later inspection, or the platform, can.
+  const gradeStands =
+    inspectionSource(inspector.role) === 'seller' && (await hasIndependentInspection(passport.id));
+  if (!gradeStands && input.overallGrade !== passport.conditionGrade) {
     const [updated] = await db
       .update(materialPassports)
       .set({ conditionGrade: input.overallGrade, updatedAt: new Date() })
@@ -358,13 +387,25 @@ export async function getInspectionSummary(reporter: Reporter): Promise<{
 
 // ─── Flag a report as disputed ────────────────────────────────────────────────
 
-export async function disputeReport(reportId: string): Promise<QualityReport> {
+export async function disputeReport(
+  reportId: string,
+  viewer: Pick<Reporter, 'role' | 'organisationId'>,
+): Promise<QualityReport> {
   const report = await db.query.qualityReports.findFirst({
     where: eq(qualityReports.id, reportId),
+    with: { passport: { columns: { organisationId: true } } },
   });
 
   if (!report) throw new NotFoundError('Quality report', reportId);
-  if (report.disputed) throw new ForbiddenError('Report is already disputed');
+  // A flag is the holder contesting what was found about its material. Any
+  // signed-in account used to be able to flag any report.
+  const holds = !!viewer.organisationId && viewer.organisationId === report.passport.organisationId;
+  if (!holds && viewer.role !== 'platform_admin') {
+    throw new ForbiddenError(
+      'Only the organisation that holds the material, or the platform, can flag a report on it.',
+    );
+  }
+  if (report.disputed) throw new ConflictError('This report is already flagged.');
 
   const [updated] = await db
     .update(qualityReports)

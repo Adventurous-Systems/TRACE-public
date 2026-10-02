@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { marketplace, passports, type PassportSummary } from '@/lib/api-client';
-import { getToken } from '@/lib/auth';
+import { canCreateListing, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { NoAccess } from '@/components/ui/load-state';
 import { track } from '@/lib/analytics';
 import { toast } from '@/components/ui/use-toast';
 import { celebrate } from '@/lib/confetti';
@@ -33,9 +34,13 @@ export default function NewListingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [user, setUser] = useState<StoredUser | null>(null);
+
   useEffect(() => {
     const token = getToken();
-    if (!token) return;
+    const currentUser = getUser();
+    setUser(currentUser);
+    if (!token || !canCreateListing(currentUser)) return;
     const params = new URLSearchParams({ status: 'active', limit: '100' });
     // Only materials with at least one photo can be listed (enforced server-side too).
     passports
@@ -104,6 +109,17 @@ export default function NewListingPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (user && !canCreateListing(user)) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-xl space-y-6">
+          <h1 className="text-2xl font-bold">New Listing</h1>
+          <NoAccess message="Listing a material is for suppliers and hub staff with an organisation." />
+        </div>
+      </DashboardLayout>
+    );
   }
 
   return (

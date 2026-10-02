@@ -43,6 +43,16 @@ describe('gradeBasis', () => {
     expect(gradeBasis('B', reports, 'Hub')).toBe('Declared by Hub');
   });
 
+  it("keeps crediting the inspection when the seller's later check agrees with it", () => {
+    const reports = [
+      report({ overallGrade: 'B', createdAt: '2026-10-01T10:00:00Z' }),
+      report({ overallGrade: 'B', createdAt: '2026-10-02T10:00:00Z', source: 'seller' }),
+      // A later inspection that gave no grade does not unseat the graded one.
+      report({ overallGrade: null, createdAt: '2026-10-03T10:00:00Z' }),
+    ];
+    expect(gradeBasis('B', reports, 'Hub')).toBe('Set by independent inspection on 1 Oct 2026');
+  });
+
   it('has nothing to say without a grade', () => {
     expect(gradeBasis(null, [], 'Hub')).toBeNull();
   });

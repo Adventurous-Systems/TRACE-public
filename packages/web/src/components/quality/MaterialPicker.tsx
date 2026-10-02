@@ -27,9 +27,12 @@ export function inspectionStatus(material: InspectionMaterial): string {
 export function MaterialPicker({
   token,
   onSelect,
+  actionLabel = 'Inspect',
 }: {
   token: string;
   onSelect: (material: InspectionMaterial) => void;
+  /** What choosing a material is called: a hub "checks" its own. */
+  actionLabel?: string;
 }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -138,7 +141,7 @@ export function MaterialPicker({
                 </p>
               </div>
               <Button type="button" size="sm" variant="outline" onClick={() => onSelect(m)}>
-                Inspect
+                {actionLabel}
               </Button>
             </li>
           ))}

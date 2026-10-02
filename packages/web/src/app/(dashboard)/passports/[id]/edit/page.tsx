@@ -16,7 +16,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { passports } from '@/lib/api-client';
+import { passports, quality } from '@/lib/api-client';
+import { latestIndependent } from '@/lib/inspection';
+import { formatDate } from '@/lib/format';
 import { getToken, isHubStaff, isSupplier, getUser } from '@/lib/auth';
 import { toast } from '@/components/ui/use-toast';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -61,6 +63,9 @@ export default function EditPassportPage() {
   const { id } = useParams<{ id: string }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Once an inspector has graded the material, the grade is not the seller's
+  // to change; the API refuses it, so the field says why.
+  const [inspectedOn, setInspectedOn] = useState<string | null>(null);
 
   const {
     register,
@@ -83,6 +88,14 @@ export default function EditPassportPage() {
       router.push(`/passports/${id}`);
       return;
     }
+
+    quality
+      .getForPassport(id)
+      .then((reports) => {
+        const inspection = latestIndependent(reports.filter((r) => r.overallGrade));
+        setInspectedOn(inspection?.createdAt ?? null);
+      })
+      .catch(() => undefined);
 
     passports
       .get(id, token)
@@ -292,6 +305,8 @@ export default function EditPassportPage() {
                   <select
                     id="conditionGrade"
                     className={selectClass}
+                    disabled={!!inspectedOn}
+                    aria-describedby={inspectedOn ? 'conditionGradeHint' : undefined}
                     {...register('conditionGrade')}
                   >
                     <option value="">—</option>
@@ -301,6 +316,12 @@ export default function EditPassportPage() {
                       </option>
                     ))}
                   </select>
+                  {inspectedOn && (
+                    <p id="conditionGradeHint" className="text-xs text-gray-500">
+                      Set by independent inspection on {formatDate(inspectedOn)}. Only another
+                      inspection can change it.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="deconstructionMethod">Deconstruction method</Label>

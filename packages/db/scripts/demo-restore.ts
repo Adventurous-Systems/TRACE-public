@@ -664,6 +664,7 @@ async function main() {
             await db.insert(schema.qualityReports).values({
               passportId: target.id,
               inspectorId,
+              inspectorRole: 'inspector',
               structuralScore: DEMO_QUALITY_REPORT.structuralScore,
               aestheticScore: DEMO_QUALITY_REPORT.aestheticScore,
               environmentalScore: DEMO_QUALITY_REPORT.environmentalScore,
