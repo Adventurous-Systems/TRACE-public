@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import type { StoredUser } from '@/lib/auth';
+import { useOrdersSummary } from '@/lib/use-orders-summary';
 
 /**
  * The account links in the header of the public marketplace pages: where a
@@ -23,6 +24,7 @@ export function AccountNav({
   /** Where to return to after signing in from this page. */
   loginNext?: string;
 }) {
+  const orders = useOrdersSummary(user?.role === 'buyer' ? user : null);
   return (
     <div className="trace-self-hosted-only flex items-center gap-2 sm:gap-3">
       {user?.role === 'buyer' && (
@@ -30,6 +32,16 @@ export function AccountNav({
           <Link href="/transactions">
             <Button variant="outline" size="sm">
               Orders
+              {orders?.needsAction ? (
+                <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-600 px-1.5 text-xs font-semibold text-white">
+                  {orders.needsAction}
+                  <span className="sr-only"> waiting for you</span>
+                </span>
+              ) : orders?.changed ? (
+                <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-brand-600">
+                  <span className="sr-only">changed since you last looked</span>
+                </span>
+              ) : null}
             </Button>
           </Link>
           <Link href="/access-request">

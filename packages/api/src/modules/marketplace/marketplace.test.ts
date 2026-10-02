@@ -1223,6 +1223,8 @@ describe('order lifecycle', () => {
       method: 'POST',
       url: '/api/v1/marketplace/transactions/seen',
       headers: fresh,
+      // As the browser sends it: a JSON request needs a body.
+      payload: {},
     });
     expect(seen.statusCode).toBe(200);
     expect(await summaryOf(fresh)).toMatchObject({ needsAction: 1, changed: 0 });

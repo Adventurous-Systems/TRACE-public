@@ -13,6 +13,7 @@ import { getToken, getUser, canCreateListing, hasOrganisation, type StoredUser }
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
 import { formatDate, formatPrice } from '@/lib/format';
+import { listingStatus } from '@/lib/orders';
 import { formatQuantity, perUnit } from '@trace/core';
 
 const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
@@ -174,15 +175,15 @@ export default function ListingsPage() {
                           </span>
                         )}
                       </span>
-                      <Badge variant={STATUS_COLORS[l.status] ?? 'outline'}>
-                        {STATUS_LABELS[l.status] ?? l.status}
+                      <Badge variant={STATUS_COLORS[listingStatus(l)] ?? 'outline'}>
+                        {STATUS_LABELS[listingStatus(l)] ?? l.status}
                       </Badge>
                       <Link href={`/marketplace/${l.id}`}>
                         <Button variant="ghost" size="sm">
                           View
                         </Button>
                       </Link>
-                      {l.status === 'active' && (
+                      {listingStatus(l) === 'active' && (
                         <Button
                           variant="outline"
                           size="sm"
