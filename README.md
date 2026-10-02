@@ -191,7 +191,7 @@ evidence in `.local-stack/rehearsal/<commit>-<time>/`:
 - **API probes** (`rehearsal/probes.ts`): inputs, sequences and races a browser
   will not produce, each with the outcome it should have. The time-limit
   probes move an order's deadline into the past through the stack's database
-  (`REHEARSAL_PSQL`, set by `pnpm stack rehearse`) and then watch the worker
+  (`REHEARSAL_PSQL`, set by `pnpm stack rehearse`) and then watch the sweep
   close it;
 - the read-only crawler (`pnpm --filter @trace/e2e explore`): accessibility
   and mobile overflow;

@@ -10,6 +10,9 @@ import { sweepOrderLifecycle } from '../modules/marketplace/marketplace.service.
  * The sweep is not what makes the limits true: a person's own action, and the
  * orders list, apply them first for the orders they touch. The sweep is for
  * the orders nobody is looking at.
+ *
+ * Started by the API process (index.ts), so it runs in every deployment,
+ * whether or not the anchor worker does.
  */
 const SWEEP_EVERY_MS = 60 * 1000;
 const logger = createLogger('order-lifecycle-worker');

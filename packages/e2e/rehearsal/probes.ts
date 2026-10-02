@@ -499,7 +499,7 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       },
     );
 
-    // Nobody opens these two: only the worker's sweep can close them.
+    // Nobody opens these two: only the sweep can close them.
     const quietLot = await newLot({ quantity: 3 });
     const quiet = await placed(buyer, quietLot, 3);
     const soldLot = await newLot({ quantity: 1 });
@@ -508,7 +508,7 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     overdue(quiet, 'response_deadline');
     overdue(sold, 'dispute_deadline');
     await probe(
-      'the worker lapses an unanswered order nobody is looking at',
+      'the sweep lapses an unanswered order nobody is looking at',
       'within 90 s the lot is back on sale with 3',
       async () => {
         const waited = await until(async () => (await lot(quietLot)).quantityAvailable === 3, 90);
@@ -521,7 +521,7 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       { severity: 'blocker', type: 'ops' },
     );
     await probe(
-      'the worker completes an accepted order past its problem window',
+      'the sweep completes an accepted order past its problem window',
       'within 90 s the lot is sold',
       async () => {
         const waited = await until(async () => (await lot(soldLot)).status === 'sold', 90);
