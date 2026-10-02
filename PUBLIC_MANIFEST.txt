@@ -191,6 +191,7 @@ packages/db/migrations/0007_chain_id.sql
 packages/db/migrations/0008_listing_quantity.sql
 packages/db/migrations/0009_legacy_orders.sql
 packages/db/migrations/0010_release_safety.sql
+packages/db/migrations/0011_inspection_role.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
@@ -248,6 +249,7 @@ packages/e2e/rehearsal/run.ts
 packages/e2e/scripts/assert-smoke-isolation.ts
 packages/e2e/tests/auth-redirect.spec.ts
 packages/e2e/tests/buyer-journey.spec.ts
+packages/e2e/tests/inspector-journey.spec.ts
 packages/e2e/tests/mobile/mobile-nav.spec.ts
 packages/e2e/tests/mobile/overflow.spec.ts
 packages/e2e/tests/photo-guard.spec.ts
@@ -306,9 +308,13 @@ packages/web/src/components/FeedbackWidget.tsx
 packages/web/src/components/marketplace/AccountNav.tsx
 packages/web/src/components/marketplace/ListingPhoto.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
+packages/web/src/components/passport/InspectionCard.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx
 packages/web/src/components/passport/QrScanner.tsx
 packages/web/src/components/passport/RegisterWizard.tsx
+packages/web/src/components/quality/InspectorDashboard.tsx
+packages/web/src/components/quality/MaterialPicker.tsx
+packages/web/src/components/quality/MaterialUnderInspection.tsx
 packages/web/src/components/ui/Logo.tsx
 packages/web/src/components/ui/badge.tsx
 packages/web/src/components/ui/button.tsx
@@ -334,6 +340,8 @@ packages/web/src/lib/categories.ts
 packages/web/src/lib/confetti.ts
 packages/web/src/lib/format.test.ts
 packages/web/src/lib/format.ts
+packages/web/src/lib/inspection.test.ts
+packages/web/src/lib/inspection.ts
 packages/web/src/lib/order-quantity.test.ts
 packages/web/src/lib/order-quantity.ts
 packages/web/src/lib/passport-link.test.ts

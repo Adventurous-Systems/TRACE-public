@@ -54,6 +54,10 @@ export {
   formatQuantity,
   MAX_AMOUNT_PENCE,
   MAX_LOT_QUANTITY,
+  inspectionSource,
+  INSPECTION_SOURCE_LABELS,
+  INSPECTOR_ROLE_LABELS,
+  type InspectionSource,
   USER_ROLES,
   ORGANISATION_TYPES,
   LISTING_STATUSES,
@@ -106,8 +110,16 @@ export type {
   UpdateTransactionInput,
 } from './validators/listing.schema.js';
 
-export { CreateQualityReportSchema, QualityQuerySchema } from './validators/quality.schema.js';
-export type { CreateQualityReportInput, QualityQueryInput } from './validators/quality.schema.js';
+export {
+  CreateQualityReportSchema,
+  QualityQuerySchema,
+  InspectionMaterialsQuerySchema,
+} from './validators/quality.schema.js';
+export type {
+  CreateQualityReportInput,
+  QualityQueryInput,
+  InspectionMaterialsQuery,
+} from './validators/quality.schema.js';
 
 export {
   AccessRequestRoleSchema,

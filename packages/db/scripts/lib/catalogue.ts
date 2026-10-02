@@ -149,7 +149,9 @@ export const CATALOG: Product[] = [
       technicalSpecs: { type: 'AAC / aircrete block', grade: 'B' },
       carbonSavingsVsNew: '2.5',
       conditionGrade: 'B',
-      conditionNotes: 'Reclaimed aircrete blocks in good reusable condition. B grade.',
+      // No grade in the words: an inspector may re-grade the lot, and the notes
+      // would then contradict the passport.
+      conditionNotes: 'Reclaimed aircrete blocks in good reusable condition.',
       remainingLifeEstimate: 50,
       circularityScore: 85,
       reuseSuitability: ['Internal partitions', 'Infill walls'],
@@ -193,7 +195,7 @@ export const CATALOG: Product[] = [
       technicalSpecs: { type: 'Perforated facing brick', grade: 'B' },
       carbonSavingsVsNew: '0.5',
       conditionGrade: 'B',
-      conditionNotes: 'Reclaimed perforated facing bricks, cleaned and palletised. B grade.',
+      conditionNotes: 'Reclaimed perforated facing bricks, cleaned and palletised.',
       remainingLifeEstimate: 80,
       circularityScore: 90,
       reuseSuitability: ['Facing brickwork', 'Feature walls'],

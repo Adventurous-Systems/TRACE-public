@@ -282,6 +282,8 @@ export default function RegisterWizard() {
         categoryL2: data.categoryL2 || undefined,
         unitOfMeasure: data.unitOfMeasure || undefined,
         manufacturerName: data.manufacturerName || undefined,
+        // Collected by the wizard since it was written, and never sent.
+        serialNumber: data.serialNumber?.trim() || undefined,
         countryOfOrigin: data.countryOfOrigin || undefined,
         conditionGrade: data.conditionGrade || undefined,
         conditionNotes: data.conditionNotes || undefined,

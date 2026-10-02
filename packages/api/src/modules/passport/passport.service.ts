@@ -138,6 +138,34 @@ export async function getPassportById(
   return passport;
 }
 
+/**
+ * The counts on an organisation's dashboard, over all of its passports. (The
+ * dashboard used to count these from the five most recent ones it had loaded.)
+ */
+export async function getPassportStats(organisationId: string): Promise<{
+  total: number;
+  byStatus: Record<string, number>;
+  anchored: number;
+  awaitingAnchor: number;
+}> {
+  const rows = await db
+    .select({
+      status: materialPassports.status,
+      count: sql<number>`cast(count(*) as int)`,
+      anchored: sql<number>`cast(count(${materialPassports.blockchainTxHash}) as int)`,
+      awaiting: sql<number>`cast(count(*) filter (where ${materialPassports.blockchainPassportHash} is null and ${materialPassports.status} <> 'draft') as int)`,
+    })
+    .from(materialPassports)
+    .where(eq(materialPassports.organisationId, organisationId))
+    .groupBy(materialPassports.status);
+  return {
+    total: rows.reduce((sum, row) => sum + row.count, 0),
+    byStatus: Object.fromEntries(rows.map((row) => [row.status, row.count])),
+    anchored: rows.reduce((sum, row) => sum + row.anchored, 0),
+    awaitingAnchor: rows.reduce((sum, row) => sum + row.awaiting, 0),
+  };
+}
+
 export async function listPassports(
   query: PassportQueryInput,
   organisationId: string,
@@ -450,6 +478,7 @@ function buildInsertValues(input: CreatePassportInput): InsertRow {
     categoryL1: input.categoryL1,
     categoryL2: input.categoryL2 ?? null,
     unitOfMeasure: input.unitOfMeasure ?? null,
+    serialNumber: input.serialNumber ?? null,
     // Cast JSONB arrays/objects to bypass exactOptionalPropertyTypes friction
     materialComposition: (input.materialComposition ?? []) as unknown,
     dimensions: (input.dimensions ?? null) as unknown,
@@ -500,6 +529,7 @@ function buildUpdateValues(input: UpdatePassportInput): InsertRow {
   if (input.categoryL1 !== undefined) set['categoryL1'] = input.categoryL1;
   if (input.categoryL2 !== undefined) set['categoryL2'] = input.categoryL2;
   if (input.unitOfMeasure !== undefined) set['unitOfMeasure'] = input.unitOfMeasure;
+  if (input.serialNumber !== undefined) set['serialNumber'] = input.serialNumber;
   if (input.materialComposition !== undefined)
     set['materialComposition'] = input.materialComposition as unknown;
   if (input.dimensions !== undefined) set['dimensions'] = input.dimensions as unknown;
