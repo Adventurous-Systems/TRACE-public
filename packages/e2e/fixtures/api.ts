@@ -1,15 +1,20 @@
+import { readFileSync } from 'node:fs';
 import { expect, type APIRequestContext } from '@playwright/test';
-import { API_URL } from './accounts';
+import { API_URL, statePath, type Role } from './accounts';
 import { PNG_1x1 } from './test-helpers';
 
-export async function apiLogin(
-  ctx: APIRequestContext,
-  email: string,
-  password: string,
-): Promise<string> {
-  const res = await ctx.post(`${API_URL}/api/v1/auth/login`, { data: { email, password } });
-  expect(res.ok(), `API login ${email} (HTTP ${res.status()})`).toBeTruthy();
-  return (await res.json()).data.token;
+/**
+ * The API token of a persona, from the session global-setup minted for it.
+ * Tests use this instead of signing in again: sign-ins are limited to 10 a
+ * minute per address, and the suite passed that once it had six personas.
+ */
+export function sessionToken(role: Role): string {
+  const state = JSON.parse(readFileSync(statePath(role), 'utf8')) as {
+    cookies: Array<{ name: string; value: string }>;
+  };
+  const token = state.cookies.find((cookie) => cookie.name === 'trace_auth')?.value;
+  if (!token) throw new Error(`no saved session for "${role}"; did global-setup run?`);
+  return token;
 }
 
 export interface ListedPassport {

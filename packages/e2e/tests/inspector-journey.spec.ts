@@ -1,6 +1,6 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { ACCOUNTS, statePath } from '../fixtures/accounts';
-import { apiLogin, createListedPassport } from '../fixtures/api';
+import { sessionToken, createListedPassport } from '../fixtures/api';
 import { uniqueName } from '../fixtures/test-helpers';
 
 /**
@@ -15,7 +15,7 @@ test.describe('Inspector journey', () => {
 
   test.beforeAll(async () => {
     const ctx = await pwRequest.newContext();
-    const token = await apiLogin(ctx, ACCOUNTS.supplier.email, ACCOUNTS.supplier.password);
+    const token = sessionToken('supplier');
     productName = uniqueName('E2E Inspectable Joist');
     ({ passportId } = await createListedPassport(ctx, token, { productName }));
     await ctx.dispose();
