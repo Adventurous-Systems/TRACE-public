@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { marketplace, type ListingSummary } from '@/lib/api-client';
-import { unitLabel } from '@trace/core';
-import { getToken, getUser, type StoredUser } from '@/lib/auth';
+import { ApiError, marketplace, type ListingSummary } from '@/lib/api-client';
+import { formatQuantity, perUnit, unitLabel } from '@trace/core';
+import { defaultOrderQuantity, orderQuantityProblem } from '@/lib/order-quantity';
+import { clearSession, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { AccountNav } from '@/components/marketplace/AccountNav';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
 import { track, priceBand } from '@/lib/analytics';
@@ -14,9 +16,29 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Logo } from '@/components/ui/Logo';
+import { shippingMethodLabel, formatPrice } from '@/lib/format';
+import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
+function PriceUnit({ unit }: { unit: string | null | undefined }) {
+  const per = perUnit(unit);
+  return per ? (
+    <>
+      {' '}
+      <span className="ml-1 text-base font-medium text-gray-500">{per}</span>
+    </>
+  ) : null;
+}
+
+const LISTING_STATUS_LABELS: Record<string, string> = {
+  active: 'Available',
+  reserved: 'Reserved',
+  sold: 'Sold',
+  cancelled: 'No longer available',
+  expired: 'Expired',
+};
+
+function listingStatusLabel(status: string): string {
+  return LISTING_STATUS_LABELS[status] ?? status;
 }
 
 export default function ListingDetailPage() {
@@ -26,6 +48,7 @@ export default function ListingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [offerLoading, setOfferLoading] = useState(false);
   const [notes, setNotes] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [user, setUser] = useState<StoredUser | null>(null);
@@ -35,7 +58,10 @@ export default function ListingDetailPage() {
     setUser(getUser());
     marketplace
       .getListing(params.id)
-      .then(setListing)
+      .then((found) => {
+        setListing(found);
+        setQuantity(defaultOrderQuantity(found));
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [params.id]);
@@ -52,7 +78,10 @@ export default function ListingDetailPage() {
     setOfferLoading(true);
     setError('');
     try {
-      const offerPayload: { listingId: string; notes?: string } = { listingId: params.id };
+      const offerPayload: { listingId: string; quantity: number; notes?: string } = {
+        listingId: params.id,
+        quantity,
+      };
       if (notes) offerPayload.notes = notes;
       await marketplace.makeOffer(offerPayload, token);
       track('make-offer', {
@@ -60,10 +89,29 @@ export default function ListingDetailPage() {
         hasCustomNote: notes.trim().length > 0,
         priceBand: priceBand(listing?.pricePence ?? 0),
       });
-      setSuccess('Offer placed. Track it in your Orders — the seller will see it there too.');
-      toast({ title: 'Offer placed', description: 'Track it in your Orders.', variant: 'success' });
+      setSuccess(
+        'Order placed. The seller accepts or rejects it; follow it under Orders, where they see it too.',
+      );
+      toast({ title: 'Order placed', description: 'Track it in your Orders.', variant: 'success' });
     } catch (e) {
-      setError(getErrorMessage(e, 'place this offer'));
+      // A refusal (400/409) nearly always means the lot changed after this
+      // page loaded. Show what is true now instead of a bare failure; the
+      // server's own wording is never shown (J-10).
+      const changed =
+        e instanceof ApiError && (e.status === 409 || e.status === 400)
+          ? await marketplace.getListing(params.id).catch(() => null)
+          : null;
+      if (changed) {
+        setListing(changed);
+        setQuantity(defaultOrderQuantity(changed));
+        setError(
+          changed.status !== 'active'
+            ? 'Someone else has just ordered the rest of this lot.'
+            : `This lot changed while you were looking at it: ${formatQuantity(changed.quantityAvailable, changed.passport.unitOfMeasure)} left now. Check the quantity and order again.`,
+        );
+      } else {
+        setError(getErrorMessage(e, 'place this order'));
+      }
     } finally {
       setOfferLoading(false);
     }
@@ -85,6 +133,8 @@ export default function ListingDetailPage() {
     );
   }
 
+  const quantityProblem = orderQuantityProblem(quantity, listing);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b sticky top-0 z-50">
@@ -95,9 +145,19 @@ export default function ListingDetailPage() {
           >
             ← Marketplace
           </Link>
-          <Link href="/" className="flex items-center" aria-label="TRACE home">
-            <Logo className="h-6" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <AccountNav
+              user={user}
+              onSignOut={() => {
+                clearSession();
+                setUser(null);
+              }}
+              loginNext={`/marketplace/${params.id}`}
+            />
+            <Link href="/" className="flex items-center" aria-label="TRACE home">
+              <Logo className="h-6" />
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -105,6 +165,9 @@ export default function ListingDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Main info */}
           <div className="md:col-span-2 space-y-4">
+            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border bg-gray-100">
+              <ListingPhoto src={listing.passport.photo} alt={listing.passport.productName} />
+            </div>
             <div>
               <h1 className="text-2xl font-bold">{listing.passport.productName}</h1>
               <p className="text-gray-500">
@@ -118,7 +181,9 @@ export default function ListingDetailPage() {
                   Grade {listing.passport.conditionGrade}
                 </Badge>
               )}
-              <Badge variant="outline">{listing.status}</Badge>
+              {listing.status !== 'active' && (
+                <Badge variant="outline">{listingStatusLabel(listing.status)}</Badge>
+              )}
             </div>
 
             {listing.passport.conditionNotes && (
@@ -150,18 +215,39 @@ export default function ListingDetailPage() {
                       <dd className="text-green-600">
                         {listing.passport.carbonSavingsVsNew} kgCO₂e
                         {listing.passport.unitOfMeasure
-                          ? ` per ${unitLabel(listing.passport.unitOfMeasure)}`
+                          ? ` ${perUnit(listing.passport.unitOfMeasure)}`
                           : ''}
+                        {listing.quantityAvailable > 1 && (
+                          <span className="block text-xs text-gray-500">
+                            {Math.round(
+                              Number(listing.passport.carbonSavingsVsNew) *
+                                listing.quantityAvailable,
+                            ).toLocaleString('en-GB')}{' '}
+                            kgCO₂e for the{' '}
+                            {formatQuantity(
+                              listing.quantityAvailable,
+                              listing.passport.unitOfMeasure,
+                            )}{' '}
+                            available
+                          </span>
+                        )}
                       </dd>
                     </>
                   )}
-                  <dt className="text-gray-500">Quantity</dt>
+                  <dt className="text-gray-500">Available</dt>
                   <dd>
-                    {listing.quantity}
-                    {listing.passport.unitOfMeasure
-                      ? ` ${unitLabel(listing.passport.unitOfMeasure)}`
-                      : ''}
+                    {formatQuantity(listing.quantityAvailable, listing.passport.unitOfMeasure)}
+                    {listing.quantityAvailable !== listing.quantity &&
+                      ` of ${formatQuantity(listing.quantity, listing.passport.unitOfMeasure)}`}
                   </dd>
+                  {listing.minOrderQuantity > 1 && (
+                    <>
+                      <dt className="text-gray-500">Minimum order</dt>
+                      <dd>
+                        {formatQuantity(listing.minOrderQuantity, listing.passport.unitOfMeasure)}
+                      </dd>
+                    </>
+                  )}
                   <dt className="text-gray-500">Currency</dt>
                   <dd>{listing.currency}</dd>
                   <dt className="text-gray-500">Supplier hub</dt>
@@ -185,6 +271,7 @@ export default function ListingDetailPage() {
               <CardContent className="p-5 space-y-3">
                 <p className="text-3xl font-bold text-brand-700">
                   {formatPrice(listing.pricePence)}
+                  <PriceUnit unit={listing.passport.unitOfMeasure} />
                 </p>
                 <p className="text-sm text-gray-600">
                   This public research showcase is read-only. Transactions and offers are disabled.
@@ -196,13 +283,25 @@ export default function ListingDetailPage() {
                 <div>
                   <p className="text-3xl font-bold text-brand-700">
                     {formatPrice(listing.pricePence)}
+                    <PriceUnit unit={listing.passport.unitOfMeasure} />
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
                     GBP · price includes VAT if applicable
                   </p>
                 </div>
 
-                {listing.status === 'active' ? (
+                {/* Above the form, so it still shows when the lot has just been
+                    fully ordered and the form is gone. */}
+                {error && <p className="text-xs text-red-600">{error}</p>}
+                {user?.organisationId && user.organisationId === listing.organisationId ? (
+                  /* A seller can't order from their own organisation's lot. */
+                  <div className="text-sm text-gray-600 bg-gray-50 border rounded-md p-3 space-y-2">
+                    <p>This is your organisation&apos;s listing.</p>
+                    <Link href="/listings" className="font-medium text-brand-600 hover:underline">
+                      Manage listings
+                    </Link>
+                  </div>
+                ) : listing.status === 'active' ? (
                   !user ? (
                     /* Logged-out visitors get a sign-up CTA, never a buy button. */
                     <div className="space-y-3">
@@ -232,7 +331,47 @@ export default function ListingDetailPage() {
                       </Link>
                     </div>
                   ) : (
-                    <>
+                    <form
+                      className="space-y-4"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!offerLoading && quantityProblem === null) void handleMakeOffer();
+                      }}
+                    >
+                      <div className="space-y-1">
+                        <label htmlFor="order-quantity" className="text-sm font-medium">
+                          Quantity
+                          {listing.passport.unitOfMeasure &&
+                            listing.passport.unitOfMeasure !== 'each' &&
+                            ` (${unitLabel(listing.passport.unitOfMeasure)})`}
+                        </label>
+                        <input
+                          id="order-quantity"
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={listing.quantityAvailable}
+                          step={1}
+                          value={Number.isNaN(quantity) ? '' : quantity}
+                          onChange={(e) => setQuantity(e.target.valueAsNumber)}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                        {quantityProblem ? (
+                          <p className="text-xs text-red-600">{quantityProblem}</p>
+                        ) : (
+                          <p className="text-sm text-gray-700">
+                            Total{' '}
+                            <span className="font-semibold">
+                              {formatPrice(listing.pricePence * quantity)}
+                            </span>
+                          </p>
+                        )}
+                        {listing.quantityAvailable < listing.minOrderQuantity && (
+                          <p className="text-xs text-gray-500">
+                            Less than the minimum order is left, so you can order what remains.
+                          </p>
+                        )}
+                      </div>
                       <textarea
                         placeholder="Add a note to the seller (optional)"
                         value={notes}
@@ -240,22 +379,21 @@ export default function ListingDetailPage() {
                         rows={3}
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
                       />
-                      {error && <p className="text-xs text-red-600">{error}</p>}
                       <Button
+                        type="submit"
                         className="w-full bg-brand-600 hover:bg-brand-700"
-                        onClick={handleMakeOffer}
-                        disabled={offerLoading}
+                        disabled={offerLoading || quantityProblem !== null}
                       >
-                        {offerLoading ? 'Placing offer…' : 'Make offer at asking price'}
+                        {offerLoading ? 'Placing order…' : 'Order at asking price'}
                       </Button>
                       <p className="text-xs text-gray-400 text-center">
-                        You will receive confirmation from the seller.
+                        The seller accepts or rejects your order.
                       </p>
-                    </>
+                    </form>
                   )
                 ) : (
                   <p className="text-sm text-gray-500 text-center">
-                    This listing is {listing.status}.
+                    This listing is {listingStatusLabel(listing.status).toLowerCase()}.
                   </p>
                 )}
               </CardContent>
@@ -268,7 +406,7 @@ export default function ListingDetailPage() {
                   <p className="text-sm font-medium">Shipping / collection</p>
                   {listing.shippingOptions.map((opt, i) => (
                     <div key={i} className="text-sm text-gray-600">
-                      <span className="capitalize font-medium">{opt.method}</span>
+                      <span className="font-medium">{shippingMethodLabel(opt.method)}</span>
                       {opt.deliveryCostPence !== undefined && (
                         <span>
                           {' '}
@@ -281,7 +419,7 @@ export default function ListingDetailPage() {
                       {opt.deliveryRadiusMiles && (
                         <span> within {opt.deliveryRadiusMiles} miles</span>
                       )}
-                      {opt.notes && <span> — {opt.notes}</span>}
+                      {opt.notes && <p className="mt-0.5">{opt.notes}</p>}
                     </div>
                   ))}
                 </CardContent>

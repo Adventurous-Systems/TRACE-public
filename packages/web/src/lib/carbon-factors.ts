@@ -17,6 +17,8 @@ export const CARBON_FACTOR_PER_KG: Record<string, number> = {
   'cladding-facades': 0.6,
   insulation: 1.2,
   'doors-windows': 0.8,
+  // Indicative blend: metal stud framing is well above this, plasterboard below.
+  'partitions-linings': 1.0,
   flooring: 0.5,
   'mep-components': 1.5,
   'fixings-fittings': 1.0,

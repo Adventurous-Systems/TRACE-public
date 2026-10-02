@@ -32,5 +32,5 @@ export function CountUp({
     return () => cancelAnimationFrame(raf);
   }, [value, durationMs]);
 
-  return <span className={className}>{display.toLocaleString()}</span>;
+  return <span className={className}>{display.toLocaleString('en-GB')}</span>;
 }

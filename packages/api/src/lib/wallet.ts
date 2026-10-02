@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { Wallet } from 'ethers';
 import { db, organisations, users } from '@trace/db';
 import { env } from '../env.js';
@@ -86,24 +86,48 @@ export async function ensureOrganisationWallet(organisationId: string): Promise<
     return { address, privateKey };
   }
 
+  // Concurrent anchor jobs for the same organisation (the worker runs three at
+  // once, and the first sweep queues a whole catalogue) used to each generate
+  // a wallet here. The last write won and the other private keys were lost,
+  // while passports registered with them stayed owned by those lost
+  // addresses. Seen on the live demo: 3 wallets for 1 organisation. A job
+  // that loses the claim uses the winner's wallet instead.
   const wallet = generateCustodialWallet();
-  await db.transaction(async (tx) => {
-    await tx
+  return (await claimOrganisationWallet(organisationId, wallet))
+    ? wallet
+    : ensureOrganisationWallet(organisationId);
+}
+
+/**
+ * Store `wallet` as the organisation's custodial wallet only if it has none
+ * yet. Returns false when another caller already claimed one: the
+ * conditional UPDATE matches no row once a key is stored, including when two
+ * claims race (Postgres re-checks the condition after the first commits).
+ */
+export async function claimOrganisationWallet(
+  organisationId: string,
+  wallet: CustodialWallet,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [claimed] = await tx
       .update(organisations)
       .set({
         blockchainAddress: wallet.address,
         blockchainPrivateKeyEnc: encryptPrivateKey(wallet.privateKey),
         updatedAt: new Date(),
       })
-      .where(eq(organisations.id, organisationId));
+      .where(
+        and(eq(organisations.id, organisationId), isNull(organisations.blockchainPrivateKeyEnc)),
+      )
+      .returning({ id: organisations.id });
+    if (!claimed) return false;
 
     await tx
       .update(users)
       .set({ blockchainAddress: wallet.address })
       .where(eq(users.organisationId, organisationId));
+    return true;
   });
-
-  return wallet;
 }
 
 export async function maybeEnsureOrganisationWallet(

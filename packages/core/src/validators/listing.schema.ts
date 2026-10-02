@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_AMOUNT_PENCE, MAX_LOT_QUANTITY } from '../constants/config.js';
 
 const ShippingOptionSchema = z.object({
   method: z.enum(['collection', 'delivery', 'both']),
@@ -7,20 +8,27 @@ const ShippingOptionSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
-export const CreateListingSchema = z.object({
-  passportId: z.string().uuid(),
-  pricePence: z.number().int().positive(),
-  currency: z.string().length(3).default('GBP'),
-  quantity: z.number().int().positive().default(1),
-  shippingOptions: z.array(ShippingOptionSchema).min(1),
-  expiresAt: z.coerce.date().optional(),
-});
+export const CreateListingSchema = z
+  .object({
+    passportId: z.string().uuid(),
+    pricePence: z.number().int().positive().max(MAX_AMOUNT_PENCE),
+    currency: z.string().length(3).default('GBP'),
+    quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).default(1),
+    minOrderQuantity: z.number().int().positive().max(MAX_LOT_QUANTITY).default(1),
+    shippingOptions: z.array(ShippingOptionSchema).min(1),
+    expiresAt: z.coerce.date().optional(),
+  })
+  .refine((l) => l.minOrderQuantity <= l.quantity, {
+    message: 'The minimum order cannot be more than the quantity listed',
+    path: ['minOrderQuantity'],
+  });
 
 export type CreateListingInput = z.infer<typeof CreateListingSchema>;
 
 export const UpdateListingSchema = z.object({
-  pricePence: z.number().int().positive().optional(),
-  quantity: z.number().int().positive().optional(),
+  pricePence: z.number().int().positive().max(MAX_AMOUNT_PENCE).optional(),
+  quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
+  minOrderQuantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   shippingOptions: z.array(ShippingOptionSchema).min(1).optional(),
   expiresAt: z.coerce.date().optional(),
 });
@@ -29,7 +37,10 @@ export type UpdateListingInput = z.infer<typeof UpdateListingSchema>;
 
 export const MakeOfferSchema = z.object({
   listingId: z.string().uuid(),
-  offerPence: z.number().int().positive().optional(), // if absent, accepts asking price
+  // How much of the lot to buy; defaults to the listing's minimum order. The
+  // price is the listing's asking price: buyers cannot name their own until
+  // offers are a designed feature (owner decision, 2026-10-02).
+  quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -52,7 +63,16 @@ export const MarketplaceQuerySchema = z.object({
 export type MarketplaceQueryInput = z.infer<typeof MarketplaceQuerySchema>;
 
 export const UpdateTransactionSchema = z.object({
-  action: z.enum(['confirm_delivery', 'flag_dispute', 'resolve_dispute', 'cancel']),
+  // Seller: accept | reject. Buyer: confirm_delivery | flag_dispute.
+  // Either: cancel. Platform admin: resolve_dispute.
+  action: z.enum([
+    'accept',
+    'reject',
+    'confirm_delivery',
+    'flag_dispute',
+    'resolve_dispute',
+    'cancel',
+  ]),
   notes: z.string().max(1000).optional(),
   evidenceUrls: z.array(z.string().url()).optional(),
 });

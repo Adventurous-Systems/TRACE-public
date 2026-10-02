@@ -108,7 +108,17 @@ export interface ChainAdapter {
   getPassportAnchor(
     registryAddress: string,
     passportId: string,
-  ): Promise<{ registered: boolean; dataHash: string | null }>;
+  ): Promise<{ registered: boolean; dataHash: string | null; owner: string | null }>;
+
+  /**
+   * MaterialRegistry.transferPassport — hand a passport's on-chain ownership
+   * to another address. Signed by the current owner or an ADMIN (the
+   * deployer); used to repair passports registered by a lost wallet.
+   */
+  transferPassport(
+    signer: ChainSigner,
+    input: { registryAddress: string; passportId: string; newOwner: string },
+  ): Promise<SubmittedChainTransaction>;
 
   /**
    * MaterialRegistry.verifyPassport — does the chain hold this hash for this

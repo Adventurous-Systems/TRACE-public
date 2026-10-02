@@ -154,6 +154,55 @@ For application development, leave only the four data services running and use
 `pnpm --filter @trace/api dev` plus `pnpm --filter @trace/web dev`. The API and
 web development servers use ports 3001 and 3000 respectively.
 
+### Testing the demo end to end, with real anchoring
+
+`pnpm stack up` builds everything and runs the public buyer demo on this
+machine, anchoring passports on a local Thor Solo chain. It is the environment
+to test a milestone in by hand before it is released:
+
+```bash
+pnpm stack up        # build, containers, chain identity, registry, seed, start
+pnpm stack status    # API, worker and web processes; the registry address
+pnpm stack rebuild   # after a code change: build and restart
+pnpm stack restore   # put the curated demo data back
+pnpm stack test      # unit and integration tests, against trace_test and Redis db 1
+pnpm stack stop
+pnpm stack reset --yes   # delete the local database, chain and .local-stack/
+```
+
+The web runs on http://localhost:3000 and the API on http://localhost:3001; sign
+in with the personas below. The stack gets its own chain identity (a deployer
+key and genesis, never reused elsewhere), kept in the gitignored `.local-stack/`
+with the generated API environment and the logs. It shares the Compose project
+in `.env`, so `reset` also removes that project's volumes. If this machine can't
+pull the MinIO mirror, set `TRACE_LOCAL_MINIO_IMAGE` to a local MinIO image.
+
+### Rehearsing a milestone
+
+Before a milestone is tested by hand, `pnpm stack rehearse` runs everything
+that can be checked automatically against the running stack and keeps the
+evidence in `.local-stack/rehearsal/<commit>-<time>/`:
+
+- the unit, integration and browser test suites;
+- **stakeholder journeys** (`packages/e2e/rehearsal/journeys.ts`): a visitor, a
+  new buyer, the demo buyer, the hub as seller, the platform admin, the
+  inspector, hub staff, a supplier and a buyer on a phone, with a screenshot
+  per step and every console error, failed request and broken image recorded;
+- **API probes** (`rehearsal/probes.ts`): inputs, sequences and races a browser
+  will not produce, each with the outcome it should have;
+- the read-only crawler (`pnpm --filter @trace/e2e explore`): accessibility
+  and mobile overflow;
+- **data invariants** (`pnpm stack check`): stock adds up with orders, statuses
+  agree, no stranded orders, no stale fingerprints. The same check runs
+  read-only on a deployment as `run-ops.sh <env> demo-check-invariants`;
+- **an upgrade rehearsal** (`pnpm stack upgrade [ref]`): the given release
+  (default `origin/main`) is built in a scratch database, given old-model
+  orders in every state (`packages/db/scripts/upgrade-fixtures/`), then
+  migrated to this checkout and checked.
+
+A failing part never stops the rest. The journeys and probes gather evidence
+for a reviewer; they are not pass/fail tests, and their findings need triage.
+
 `TRACE_DEPLOYMENT_PROFILE=self_hosted` retains registration and all mutation
 flows. `public_showcase` is API-enforced read-only mode. `public_buyer_demo`
 is the hosted evergreen demo profile: anonymous visitors can browse, newly

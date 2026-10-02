@@ -303,7 +303,11 @@ export const listings = pgTable(
       .references(() => users.id),
     pricePence: integer('price_pence').notNull(),
     currency: text('currency').default('GBP').notNull(),
+    // The lot size. quantityAvailable is what open and completed orders have
+    // not taken; it is kept in step with them in the same DB transaction.
     quantity: integer('quantity').default(1).notNull(),
+    quantityAvailable: integer('quantity_available').notNull(),
+    minOrderQuantity: integer('min_order_quantity').default(1).notNull(),
     shippingOptions: jsonb('shipping_options')
       .$type<
         Array<{
@@ -345,6 +349,11 @@ export const transactions = pgTable(
     sellerId: uuid('seller_id')
       .notNull()
       .references(() => users.id),
+    // How much of the lot this order takes; amountPence is its total.
+    quantity: integer('quantity').default(1).notNull(),
+    // Placed before part-of-a-lot ordering (migration 0008): it took the whole
+    // lot, and amountPence is one unit's price, not a total.
+    legacyWholeLot: boolean('legacy_whole_lot').default(false).notNull(),
     amountPence: integer('amount_pence').notNull(),
     status: text('status').default('pending').notNull(),
     // pending | confirmed | disputed | resolved | completed | cancelled

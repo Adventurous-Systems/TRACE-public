@@ -1,13 +1,13 @@
 import { request, type FullConfig } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import type { Account } from './fixtures/accounts';
+import { buildStorageState, isLocalTarget } from './fixtures/session';
 
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
 
 /**
  * Logs an account in via the API and writes a Playwright storageState file.
- * The web app authenticates from `localStorage` (trace_token / trace_user) plus
- * a `trace_auth` cookie used by the Next.js middleware — we set both.
+ * (What a session consists of: fixtures/session.ts.)
  */
 async function mintState(account: Account, apiUrl: string, storagePath: string): Promise<void> {
   const ctx = await request.newContext({ baseURL: apiUrl });
@@ -41,31 +41,7 @@ async function mintState(account: Account, apiUrl: string, storagePath: string):
     );
   }
   const { data } = (await res.json()) as { data: { token: string; user: unknown } };
-  const url = new URL(BASE_URL);
-
-  const state = {
-    cookies: [
-      {
-        name: 'trace_auth',
-        value: data.token,
-        domain: url.hostname,
-        path: '/',
-        expires: -1,
-        httpOnly: false,
-        secure: url.protocol === 'https:',
-        sameSite: 'Strict' as const,
-      },
-    ],
-    origins: [
-      {
-        origin: url.origin,
-        localStorage: [
-          { name: 'trace_token', value: data.token },
-          { name: 'trace_user', value: JSON.stringify(data.user) },
-        ],
-      },
-    ],
-  };
+  const state = buildStorageState(data.token, data.user, BASE_URL);
 
   await writeFile(storagePath, JSON.stringify(state, null, 2));
   await ctx.dispose();
@@ -86,9 +62,7 @@ async function mintState(account: Account, apiUrl: string, storagePath: string):
  * convention.
  */
 function assertSafeTarget(config: FullConfig): void {
-  const target = new URL(BASE_URL);
-  const isLocal = ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(target.hostname);
-  if (isLocal) return;
+  if (isLocalTarget(BASE_URL)) return;
 
   // Is this the read-only @smoke selection?
   //

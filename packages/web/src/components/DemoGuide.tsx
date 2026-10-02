@@ -2,8 +2,11 @@ import { Compass } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
 const STEPS = [
-  'Browse the marketplace below — every listing is synthetic reclaimed material.',
+  // The panel also appears on the landing page, where there is no
+  // marketplace "below".
+  'Browse the marketplace — every listing is synthetic reclaimed material.',
   "Open a listing, then its passport, and click “Verify integrity” — it recomputes the material's fingerprint live and shows whether it matches.",
+  'Where the passport shows “Check on chain now”, click it — it asks the blockchain registry directly whether it holds that same fingerprint.',
   'Create a free account with a fictitious email — no verification, no real password needed.',
   'Make an offer at asking price and track it under Orders.',
 ];

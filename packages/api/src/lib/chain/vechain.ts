@@ -26,6 +26,7 @@ const REGISTRY_INTERFACE = new Interface([
   'function registerPassport(bytes32 passportId, bytes32 dataHash, string calldata metadataUri) external',
   'function updatePassportHash(bytes32 passportId, bytes32 newDataHash) external',
   'function grantHubRole(address hub) external',
+  'function transferPassport(bytes32 passportId, address newOwner) external',
 ]);
 
 const HUB_ROLE = keccak256(toUtf8Bytes('HUB_ROLE'));
@@ -152,6 +153,17 @@ export class VeChainAdapter implements ChainAdapter {
     return this.submit(signer, input.registryAddress, data, UPDATE_FALLBACK_GAS);
   }
 
+  transferPassport(
+    signer: ChainSigner,
+    input: { registryAddress: string; passportId: string; newOwner: string },
+  ): Promise<SubmittedChainTransaction> {
+    const data = REGISTRY_INTERFACE.encodeFunctionData('transferPassport', [
+      uuidToBytes32(input.passportId),
+      input.newOwner,
+    ]);
+    return this.submit(signer, input.registryAddress, data, UPDATE_FALLBACK_GAS);
+  }
+
   async hasHubRole(registryAddress: string, address: string): Promise<boolean> {
     const result = await this.thorClient.contracts.executeCall(registryAddress, HAS_ROLE_FUNCTION, [
       HUB_ROLE,
@@ -198,7 +210,7 @@ export class VeChainAdapter implements ChainAdapter {
   async getPassportAnchor(
     registryAddress: string,
     passportId: string,
-  ): Promise<{ registered: boolean; dataHash: string | null }> {
+  ): Promise<{ registered: boolean; dataHash: string | null; owner: string | null }> {
     // verifyPassport returns the stored record even when the hash does not
     // match, so one call with a zero hash reads the record without reverting
     // for unregistered passports (unlike getPassport).
@@ -211,11 +223,15 @@ export class VeChainAdapter implements ChainAdapter {
     }
     // `plain` carries the tuple with its field names; `array` is positional.
     const record = (result.result?.plain as unknown[] | undefined)?.[1] as
-      | { dataHash?: string; registeredAt?: bigint | number | string }
+      | { dataHash?: string; owner?: string; registeredAt?: bigint | number | string }
       | undefined;
     const registeredAt = BigInt(record?.registeredAt ?? 0);
-    if (registeredAt === 0n) return { registered: false, dataHash: null };
-    return { registered: true, dataHash: String(record?.dataHash).toLowerCase() };
+    if (registeredAt === 0n) return { registered: false, dataHash: null, owner: null };
+    return {
+      registered: true,
+      dataHash: String(record?.dataHash).toLowerCase(),
+      owner: record?.owner ? String(record.owner) : null,
+    };
   }
 
   async verifyPassport(

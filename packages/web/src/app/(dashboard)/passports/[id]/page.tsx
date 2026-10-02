@@ -13,12 +13,13 @@ import {
   type PassportDetail,
   type QualityReportSummary,
 } from '@/lib/api-client';
-import { unitLabel } from '@trace/core';
+import { unitLabel, perUnit } from '@trace/core';
 import { getToken, isHubStaff, isSupplier, getUser } from '@/lib/auth';
 import { categoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
 import { toast } from '@/components/ui/use-toast';
 import CertificatePanel from '@/components/passport/CertificatePanel';
+import { formatDate } from '@/lib/format';
 
 const GRADE_COLORS: Record<string, string> = {
   A: 'bg-green-100 text-green-800',
@@ -238,19 +239,19 @@ export default function PassportDetailPage() {
                 [
                   'Embodied carbon',
                   passport.embodiedCarbon
-                    ? `${passport.embodiedCarbon} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                    ? `${passport.embodiedCarbon} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                     : '—',
                 ],
                 [
                   'Carbon savings vs new',
                   passport.carbonSavingsVsNew
-                    ? `${passport.carbonSavingsVsNew} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                    ? `${passport.carbonSavingsVsNew} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                     : '—',
                 ],
                 [
                   'GWP total',
                   passport.gwpTotal
-                    ? `${passport.gwpTotal} kgCO₂e${passport.unitOfMeasure ? ` per ${unitLabel(passport.unitOfMeasure)}` : ''}`
+                    ? `${passport.gwpTotal} kgCO₂e${passport.unitOfMeasure ? ` ${perUnit(passport.unitOfMeasure)}` : ''}`
                     : '—',
                 ],
                 [
@@ -302,7 +303,7 @@ export default function PassportDetailPage() {
                         <span className="text-xs text-green-600 font-medium">✓ Anchored</span>
                       )}
                       <span className="text-xs text-gray-400 ml-auto">
-                        {new Date(r.createdAt).toLocaleDateString()}
+                        {formatDate(r.createdAt)}
                       </span>
                     </div>
 

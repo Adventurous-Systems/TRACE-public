@@ -380,7 +380,12 @@ export interface ListingSummary {
   sellerId: string;
   pricePence: number;
   currency: string;
+  /** The lot size, in the passport's unit of measure. */
   quantity: number;
+  /** What open and completed orders have not taken. */
+  quantityAvailable: number;
+  /** The smallest order a buyer may place, unless less than that is left. */
+  minOrderQuantity: number;
   shippingOptions: ListingShippingOption[];
   status: string;
   expiresAt: string | null;
@@ -401,11 +406,24 @@ export interface MarketplaceTransaction {
   listingId: string;
   buyerId: string;
   sellerId: string;
+  /** How much of the lot the order takes. */
+  quantity: number;
+  /** The order total. */
   amountPence: number;
   status: string;
   disputeDeadline: string | null;
   notes: string | null;
   createdAt: string;
+  /** The material the order is for (present on the user's order list). */
+  productName?: string | null;
+  passportId?: string | null;
+  unitOfMeasure?: string | null;
+  /** Placed before quantity ordering: it took the whole lot at one unit's price. */
+  legacyWholeLot?: boolean;
+  /** Which side of the order the signed-in user is on (order list only). */
+  viewerSide?: 'buyer' | 'seller';
+  /** The order steps the signed-in user may take now (order list only). */
+  allowedActions?: string[];
 }
 
 export interface AuditEvent {
@@ -491,7 +509,7 @@ export const marketplace = {
       token,
     }),
 
-  makeOffer: (data: { listingId: string; offerPence?: number; notes?: string }, token: string) =>
+  makeOffer: (data: { listingId: string; quantity?: number; notes?: string }, token: string) =>
     request<MarketplaceTransaction>('/api/v1/marketplace/offers', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -607,9 +625,12 @@ export const passports = {
   certificate: (id: string) => request<PassportCertificate>(`/api/v1/passports/${id}/certificate`),
 
   verifyIntegrity: (id: string) =>
-    request<{ match: boolean; recomputedHash: string; storedHash: string | null }>(
-      `/api/v1/passports/${id}/verify-integrity`,
-    ),
+    request<{
+      match: boolean;
+      pending: boolean;
+      recomputedHash: string;
+      storedHash: string | null;
+    }>(`/api/v1/passports/${id}/verify-integrity`),
 
   create: (data: unknown, token: string) =>
     request<PassportDetail>('/api/v1/passports', {
@@ -630,8 +651,9 @@ export const passports = {
   uploadPhoto: async (id: string, file: File, token: string): Promise<PassportDetail> => {
     const formData = new FormData();
     formData.append('file', file);
-    const apiBase = process.env['NEXT_PUBLIC_API_URL'] ?? '';
-    const response = await fetch(`${apiBase}/api/v1/passports/${id}/photos`, {
+    // The same base as every other call. This used to fall back to '' (the web
+    // server's own origin), which only works behind a reverse proxy.
+    const response = await fetch(`${getApiUrl()}/api/v1/passports/${id}/photos`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,

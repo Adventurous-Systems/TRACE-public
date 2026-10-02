@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { clearSession, getUser, type StoredUser } from '@/lib/auth';
 import { track } from '@/lib/analytics';
 import { marketplace, type ListingSummary } from '@/lib/api-client';
-import { unitLabel, MATERIAL_CATEGORIES, getCategoryBySlug } from '@trace/core';
+import { formatPrice } from '@/lib/format';
+import { perUnit, MATERIAL_CATEGORIES, getCategoryBySlug } from '@trace/core';
 import { subcategoryLabel } from '@/lib/categories';
+import { AccountNav } from '@/components/marketplace/AccountNav';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CountUp } from '@/components/ui/count-up';
 import { Logo } from '@/components/ui/Logo';
 import { DemoGuide } from '@/components/DemoGuide';
+import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 import { Recycle, Leaf } from 'lucide-react';
 
 const CONDITION_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
@@ -22,10 +25,6 @@ const CONDITION_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outl
   C: 'warning',
   D: 'outline',
 };
-
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
-}
 
 export default function MarketplacePage() {
   const [items, setItems] = useState<ListingSummary[]>([]);
@@ -113,52 +112,7 @@ export default function MarketplacePage() {
               Marketplace
             </span>
           </Link>
-          <div className="trace-self-hosted-only flex items-center gap-2 sm:gap-3">
-            {user?.role === 'buyer' && (
-              <>
-                {/* A buyer who has just purchased needs to reach their order.
-                    Without this the public marketplace shell was a dead end:
-                    "Orders" only exists inside DashboardLayout, so after making
-                    an offer and navigating back here there was no way to find
-                    the purchase. */}
-                <Link href="/transactions">
-                  <Button variant="outline" size="sm">
-                    Orders
-                  </Button>
-                </Link>
-                <Link href="/access-request">
-                  <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
-                    Request seller access
-                  </Button>
-                </Link>
-              </>
-            )}
-            {user && user.role === 'supplier' && (
-              <Link href="/passports">
-                <Button variant="outline" size="sm">
-                  My materials
-                </Button>
-              </Link>
-            )}
-            {user && user.role !== 'buyer' && user.role !== 'supplier' && (
-              <Link href="/dashboard">
-                <Button variant="outline" size="sm">
-                  Dashboard
-                </Button>
-              </Link>
-            )}
-            {user ? (
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
-                Sign out
-              </Button>
-            ) : (
-              <Link href="/login">
-                <Button variant="outline" size="sm">
-                  Sign in
-                </Button>
-              </Link>
-            )}
-          </div>
+          <AccountNav user={user} onSignOut={handleSignOut} />
         </div>
       </header>
 
@@ -176,8 +130,10 @@ export default function MarketplacePage() {
           <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-800 motion-safe:animate-fade-in-up">
             <Recycle className="h-4 w-4 shrink-0" />
             <span>
-              <CountUp value={stats.totalCarbonSavedKg} className="font-bold" /> kg CO₂e saved
-              across {stats.activeCount} material{stats.activeCount !== 1 ? 's' : ''}
+              Reusing everything listed here saves{' '}
+              <CountUp value={stats.totalCarbonSavedKg} className="font-bold" /> kg CO₂e compared
+              with new materials, across {stats.activeCount} material
+              {stats.activeCount !== 1 ? 's' : ''}
             </span>
           </div>
         )}
@@ -289,28 +245,15 @@ export default function MarketplacePage() {
                 >
                   <Card className="h-full overflow-hidden cursor-pointer transition-all group-hover:shadow-lg motion-safe:group-hover:-translate-y-0.5">
                     <div className="relative aspect-square overflow-hidden bg-gray-100">
-                      {listing.passport.photo ? (
-                        <img
-                          src={listing.passport.photo}
-                          alt={listing.passport.productName}
-                          className="h-full w-full object-cover transition-transform duration-300 motion-safe:group-hover:scale-105"
-                        />
-                      ) : listing.passport.qrCodeUrl ? (
-                        <img
-                          src={listing.passport.qrCodeUrl}
-                          alt=""
-                          className="h-full w-full object-contain p-6 opacity-30"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-gray-300">
-                          <Leaf className="h-10 w-10" />
-                        </div>
-                      )}
+                      <ListingPhoto
+                        src={listing.passport.photo}
+                        alt={listing.passport.productName}
+                      />
                       {listing.passport.carbonSavingsVsNew && (
                         <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-green-600/90 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
                           <Leaf className="h-3 w-3" /> {listing.passport.carbonSavingsVsNew} kgCO₂e
                           {listing.passport.unitOfMeasure
-                            ? `/${unitLabel(listing.passport.unitOfMeasure)}`
+                            ? ` ${perUnit(listing.passport.unitOfMeasure)}`
                             : ''}
                         </span>
                       )}
@@ -324,7 +267,10 @@ export default function MarketplacePage() {
                       )}
                     </div>
                     <CardContent className="p-4 space-y-1">
-                      <p className="font-semibold text-sm leading-tight line-clamp-1">
+                      <p
+                        className="font-semibold text-sm leading-tight line-clamp-2"
+                        title={listing.passport.productName}
+                      >
                         {listing.passport.productName}
                       </p>
                       <p className="text-xs text-gray-500">
@@ -337,6 +283,12 @@ export default function MarketplacePage() {
                       <div className="flex items-center justify-between pt-1">
                         <span className="text-lg font-bold text-brand-700">
                           {formatPrice(listing.pricePence)}
+                          {listing.passport.unitOfMeasure && (
+                            <span className="ml-0.5 text-xs font-medium text-gray-500">
+                              {' '}
+                              {perUnit(listing.passport.unitOfMeasure)}
+                            </span>
+                          )}
                         </span>
                         <span className="text-xs text-gray-400 truncate max-w-[55%]">
                           {listing.organisation.name}

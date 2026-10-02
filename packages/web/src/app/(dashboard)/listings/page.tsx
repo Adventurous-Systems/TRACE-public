@@ -12,6 +12,8 @@ import { marketplace, type ListingSummary } from '@/lib/api-client';
 import { getToken, getUser, canCreateListing, hasOrganisation, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
+import { formatDate, formatPrice } from '@/lib/format';
+import { formatQuantity, perUnit } from '@trace/core';
 
 const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   active: 'success',
@@ -21,8 +23,25 @@ const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline
   cancelled: 'outline',
 };
 
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
+// A lot's status in a seller's words.
+const STATUS_LABELS: Record<string, string> = {
+  active: 'On sale',
+  reserved: 'Fully ordered',
+  sold: 'Sold',
+  expired: 'Expired',
+  cancelled: 'Cancelled',
+};
+
+/** How much of a lot is left, and how much orders have taken. */
+function stockLine(l: ListingSummary): string {
+  const unit = l.passport.unitOfMeasure;
+  const taken = l.quantity - l.quantityAvailable;
+  const left = `${formatQuantity(l.quantityAvailable, unit)} of ${formatQuantity(l.quantity, unit)} left`;
+  const minimum =
+    l.minOrderQuantity > 1 ? ` · minimum order ${formatQuantity(l.minOrderQuantity, unit)}` : '';
+  return taken > 0
+    ? `${left} · ${formatQuantity(taken, unit)} ordered or sold${minimum}`
+    : `${left}${minimum}`;
 }
 
 export default function ListingsPage() {
@@ -140,15 +159,24 @@ export default function ListingsPage() {
                         {categoryLabel(l.passport.categoryL1, l.passport.categoryL2)}
                         {l.passport.conditionGrade ? ` · Grade ${l.passport.conditionGrade}` : ''}
                         {' · Listed '}
-                        {new Date(l.createdAt).toLocaleDateString()}
-                        {l.expiresAt
-                          ? ` · Expires ${new Date(l.expiresAt).toLocaleDateString()}`
-                          : ''}
+                        {formatDate(l.createdAt)}
+                        {l.expiresAt ? ` · Expires ${formatDate(l.expiresAt)}` : ''}
                       </p>
+                      <p className="text-xs text-gray-700 mt-0.5">{stockLine(l)}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 shrink-0">
-                      <span className="font-semibold text-sm">{formatPrice(l.pricePence)}</span>
-                      <Badge variant={STATUS_COLORS[l.status] ?? 'outline'}>{l.status}</Badge>
+                      <span className="font-semibold text-sm">
+                        {formatPrice(l.pricePence)}
+                        {l.passport.unitOfMeasure && (
+                          <span className="font-normal text-gray-500">
+                            {' '}
+                            {perUnit(l.passport.unitOfMeasure)}
+                          </span>
+                        )}
+                      </span>
+                      <Badge variant={STATUS_COLORS[l.status] ?? 'outline'}>
+                        {STATUS_LABELS[l.status] ?? l.status}
+                      </Badge>
                       <Link href={`/marketplace/${l.id}`}>
                         <Button variant="ghost" size="sm">
                           View

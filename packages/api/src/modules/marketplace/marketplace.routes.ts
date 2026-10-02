@@ -20,10 +20,16 @@ import {
   updateListing,
   cancelListing,
   makeOffer,
+  type Viewer,
   updateTransaction,
   getTransactionById,
   listUserTransactions,
 } from './marketplace.service.js';
+
+/** The signed-in user as the order functions see them. */
+function viewerOf(user: { sub: string; role: string; organisationId?: string | null }): Viewer {
+  return { userId: user.sub, role: user.role, organisationId: user.organisationId ?? null };
+}
 
 export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /api/v1/marketplace/listings ─────────────────────────────────────
@@ -190,9 +196,7 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const input = MakeOfferSchema.parse(request.body);
-      const { sub: buyerId } = request.user;
-
-      const tx = await makeOffer(input, buyerId);
+      const tx = await makeOffer(input, viewerOf(request.user));
       await recordAuditEvent({
         actor: request.user,
         action: 'marketplace.offer',
@@ -201,6 +205,7 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
         status: 'succeeded',
         metadata: {
           listingId: tx.listingId,
+          quantity: tx.quantity,
           amountPence: tx.amountPence,
           buyerModel: request.user.organisationId ? 'organisation_user' : 'walletless_buyer',
         },
@@ -210,36 +215,32 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ── GET /api/v1/marketplace/transactions ──────────────────────────────────
-  // Authenticated: list own transactions (as buyer or seller)
+  // Authenticated: the orders the user placed, and those their organisation sells
   app.get('/transactions', { preHandler: [authenticate] }, async (request, reply) => {
-    const { sub: userId } = request.user;
-    const data = await listUserTransactions(userId);
+    const data = await listUserTransactions(viewerOf(request.user));
     return reply.send({ success: true, data });
   });
 
   // ── GET /api/v1/marketplace/transactions/:id ──────────────────────────────
-  // Scoped to the buyer, the seller, or a platform admin — see D-03.
+  // Scoped to the buyer, the selling organisation's staff, or a platform admin — see D-03.
   app.get<{ Params: { id: string } }>(
     '/transactions/:id',
     { preHandler: [authenticate] },
     async (request, reply) => {
-      const { sub: userId, role } = request.user;
-      const tx = await getTransactionById(request.params.id, userId, role);
+      const tx = await getTransactionById(request.params.id, viewerOf(request.user));
       return reply.send({ success: true, data: tx });
     },
   );
 
   // ── PATCH /api/v1/marketplace/transactions/:id ────────────────────────────
-  // Buyer/seller: confirm_delivery | flag_dispute | cancel
+  // Seller side: accept | reject. Buyer: confirm_delivery | flag_dispute. Either: cancel.
   // Platform admin only: resolve_dispute — see D-03
   app.patch<{ Params: { id: string } }>(
     '/transactions/:id',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const input = UpdateTransactionSchema.parse(request.body);
-      const { sub: userId, role } = request.user;
-
-      const tx = await updateTransaction(request.params.id, input, userId, role);
+      const tx = await updateTransaction(request.params.id, input, viewerOf(request.user));
       await recordAuditEvent({
         actor: request.user,
         action: `marketplace.transaction.${input.action}`,

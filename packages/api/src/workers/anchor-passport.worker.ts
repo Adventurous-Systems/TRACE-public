@@ -17,7 +17,7 @@
  */
 
 import { Worker, type Job } from 'bullmq';
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { blockchainTransactions, db, materialPassports, type MaterialPassport } from '@trace/db';
 import { createLogger } from '@trace/core';
 import { Wallet } from 'ethers';
@@ -46,6 +46,7 @@ const logger = createLogger('anchor-worker');
 
 const SWEEP_EVERY_MS = 5 * 60 * 1000;
 const SWEEP_BATCH_SIZE = 50;
+const RECONCILE_BATCH_SIZE = 200;
 
 async function ensureHubRole(
   registryAddress: string,
@@ -186,6 +187,73 @@ async function syncAlreadyAnchored(
     .where(eq(materialPassports.id, passport.id));
 }
 
+/**
+ * Transfer a passport's on-chain ownership from a lost wallet to the
+ * organisation's current wallet, signed by the deployer (MaterialRegistry
+ * ADMIN). Logged like any other chain transaction.
+ */
+async function repairPassportOwnership(
+  registryAddress: string,
+  passportId: string,
+  organisationId: string,
+  fromOwner: string,
+  toOwner: string,
+  chainId: string,
+): Promise<void> {
+  if (!env.DEPLOYER_PRIVATE_KEY) {
+    throw new Error(
+      `Passport ${passportId} is owned on chain by ${fromOwner}, not the organisation's wallet ${toOwner}; DEPLOYER_PRIVATE_KEY is required to transfer it back`,
+    );
+  }
+  const chain = getChainAdapter();
+  const deployer = {
+    address: new Wallet(env.DEPLOYER_PRIVATE_KEY).address,
+    privateKey: env.DEPLOYER_PRIVATE_KEY,
+  };
+  const log = await createBlockchainTransaction({
+    action: 'passport.transferOwner',
+    resourceType: 'passport',
+    resourceId: passportId,
+    organisationId,
+    chainId,
+    originAddress: deployer.address,
+    contractAddress: registryAddress,
+    metadata: { fromOwner, toOwner },
+  });
+  try {
+    const submitted = await chain.transferPassport(deployer, {
+      registryAddress,
+      passportId,
+      newOwner: toOwner,
+    });
+    const receipt = await chain.waitForReceipt(submitted.txId);
+    if (!receipt || receipt.reverted) {
+      throw new Error(`Ownership transfer ${submitted.txId} failed or was not confirmed in time`);
+    }
+    if (log) {
+      await updateBlockchainTransaction(log.id, {
+        txHash: submitted.txId,
+        status: 'succeeded',
+        gasUsed: receipt.gasUsed,
+        vthoPaidWei: receipt.paid,
+        blockNumber: receipt.blockNumber,
+        blockId: receipt.blockId,
+        submittedAt: new Date(),
+        confirmedAt: new Date(),
+      });
+    }
+    logger.warn({ passportId, fromOwner, toOwner }, 'Repaired on-chain passport ownership');
+  } catch (err) {
+    if (log) {
+      await updateBlockchainTransaction(log.id, {
+        status: 'failed',
+        failureReason: err instanceof Error ? err.message : String(err),
+      });
+    }
+    throw err;
+  }
+}
+
 // ─── Main job processor ───────────────────────────────────────────────────
 
 async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
@@ -209,9 +277,27 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
   const chain = getChainAdapter();
   const dataHash = computePassportHash(passport);
   // Decide from the registry, not the database (see lib/anchor-decision.ts).
-  const onchain = await chain.getPassportAnchor(registryAddress, passportId);
+  let onchain: Awaited<ReturnType<typeof chain.getPassportAnchor>>;
+  let chainId: string;
+  try {
+    onchain = await chain.getPassportAnchor(registryAddress, passportId);
+    chainId = await chain.chainId();
+  } catch (err) {
+    // The chain could not be read, so nothing was submitted and no
+    // blockchain_transactions row exists yet. Record the failed attempt so it
+    // is visible to operators (it was silent before), then let BullMQ retry.
+    await recordAuditEvent({
+      actor: { id: passport.registeredBy ?? null, organisationId: passport.organisationId },
+      action: 'passport.anchor',
+      resourceType: 'passport',
+      resourceId: passportId,
+      status: 'failed',
+      failureReason: `Chain unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      metadata: { certificateHash: dataHash, attempt: job.attemptsMade + 1 },
+    });
+    throw err;
+  }
   const action = decideAnchorAction(onchain, dataHash);
-  const chainId = await chain.chainId();
 
   if (action === 'skip') {
     await syncAlreadyAnchored(passport, dataHash, chainId);
@@ -252,7 +338,21 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
         metadataUri,
       });
     } else {
-      // Only the registering wallet (the organisation's) may update its hash.
+      // Only the passport's on-chain owner (or an ADMIN) may update its hash.
+      // A passport registered by a since-lost organisation wallet (see the
+      // race in ensureOrganisationWallet) is first handed back to the
+      // organisation's current wallet by the deployer, which repairs it for
+      // good.
+      if (onchain.owner && onchain.owner.toLowerCase() !== orgWallet.address.toLowerCase()) {
+        await repairPassportOwnership(
+          registryAddress,
+          passportId,
+          passport.organisationId,
+          onchain.owner,
+          orgWallet.address,
+          chainId,
+        );
+      }
       submitted = await chain.updatePassportHash(orgWallet, {
         registryAddress,
         passportId,
@@ -383,7 +483,12 @@ async function processAnchorJob(job: Job<AnchorPassportJob>): Promise<void> {
 
 // ─── Sweep: anchor passports that were never submitted ──────────────────────
 
-/** Passports with a fingerprint but no chain transaction, oldest first. */
+/**
+ * Non-draft passports with no chain transaction, oldest first: never
+ * anchored (seeded rows, including ones with no fingerprint yet), created
+ * while simulating, or marked pending by an edit or re-anchor whose job
+ * didn't succeed. The worker computes each fingerprint itself.
+ */
 export async function findUnanchoredPassports(limit: number) {
   return db
     .select({
@@ -391,12 +496,7 @@ export async function findUnanchoredPassports(limit: number) {
       organisationId: materialPassports.organisationId,
     })
     .from(materialPassports)
-    .where(
-      and(
-        isNotNull(materialPassports.blockchainPassportHash),
-        isNull(materialPassports.blockchainTxHash),
-      ),
-    )
+    .where(and(isNull(materialPassports.blockchainTxHash), ne(materialPassports.status, 'draft')))
     .orderBy(materialPassports.createdAt)
     .limit(limit);
 }
@@ -421,29 +521,72 @@ export async function backfillPassportIdentifiers(limit: number): Promise<number
   return issued;
 }
 
+/**
+ * Anchored passports whose data no longer matches their anchored fingerprint
+ * are marked pending (anchor columns cleared), so the unanchored sweep below
+ * re-anchors them. Stale anchors can predate the fix that makes
+ * reanchorPassport mark passports pending, or come from any writer that
+ * changes a hashed field without re-anchoring. Checks the most recently
+ * updated anchored passports, since a change bumps updatedAt.
+ */
+export async function reconcileStaleAnchors(limit: number): Promise<number> {
+  const recent = await db.query.materialPassports.findMany({
+    where: isNotNull(materialPassports.blockchainTxHash),
+    orderBy: [desc(materialPassports.updatedAt)],
+    limit,
+  });
+  let marked = 0;
+  for (const passport of recent) {
+    if (computePassportHash(passport) === passport.blockchainPassportHash) continue;
+    await db
+      .update(materialPassports)
+      .set({ blockchainPassportHash: null, blockchainTxHash: null, blockchainAnchoredAt: null })
+      .where(eq(materialPassports.id, passport.id));
+    marked += 1;
+    logger.warn({ passportId: passport.id }, 'Anchored fingerprint is stale; marked for re-anchor');
+  }
+  return marked;
+}
+
 async function processSweepJob(): Promise<void> {
   await backfillPassportIdentifiers(SWEEP_BATCH_SIZE);
   if (env.DEMO_SIMULATE_ANCHOR) return;
+  await reconcileStaleAnchors(RECONCILE_BATCH_SIZE);
 
   const pending = await findUnanchoredPassports(SWEEP_BATCH_SIZE);
+  let queued = 0;
   for (const passport of pending) {
-    // Same jobId as createPassport uses, so a passport already queued (or
-    // retrying) is not queued twice. A job that exhausted its retries stays
-    // in the failed set under that id and would block the add, so retry it.
-    const existing = await anchorQueue.getJob(`anchor-${passport.id}`);
-    if (existing && (await existing.isFailed())) {
-      await existing.retry();
-      continue;
-    }
-    await anchorQueue.add(
-      'default',
-      { passportId: passport.id, organisationId: passport.organisationId },
-      { jobId: `anchor-${passport.id}` },
-    );
+    if (await enqueueSweepAnchor(passport.id, passport.organisationId)) queued += 1;
   }
-  if (pending.length > 0) {
-    logger.info({ queued: pending.length }, 'Anchor sweep queued unanchored passports');
+  if (queued > 0) {
+    logger.info({ queued }, 'Anchor sweep queued unanchored passports');
   }
+}
+
+/**
+ * Queue an anchor job for a passport under the stable id `anchor-<id>` (the
+ * one createPassport uses), unless one is already waiting, delayed or running.
+ *
+ * BullMQ silently ignores an add whose jobId already exists, and it keeps
+ * finished jobs (removeOnComplete/removeOnFail keep the latest 100/500). So a
+ * passport anchored once still had its completed `anchor-<id>` job, and every
+ * later sweep add was dropped: it could never be re-anchored by the sweep
+ * (found in the 2026-09-29 rehearsal). A finished job is removed first.
+ * Returns whether a job was queued.
+ */
+export async function enqueueSweepAnchor(
+  passportId: string,
+  organisationId: string,
+): Promise<boolean> {
+  const jobId = `anchor-${passportId}`;
+  const existing = await anchorQueue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state !== 'completed' && state !== 'failed') return false;
+    await existing.remove();
+  }
+  await anchorQueue.add('default', { passportId, organisationId }, { jobId });
+  return true;
 }
 
 // ─── Worker bootstrap ─────────────────────────────────────────────────────

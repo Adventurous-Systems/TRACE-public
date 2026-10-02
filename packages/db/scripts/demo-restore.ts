@@ -440,13 +440,28 @@ async function main() {
       const wantHash = computePassportHash(fresh as typeof existing);
       const hashDrifted = fresh.blockchainPassportHash !== wantHash;
 
-      if (hashDrifted && fresh.blockchainTxHash) {
+      if (hashDrifted && fresh.blockchainTxHash && dryRun) {
         problems.push({
           severity: 'warning',
           message:
             `"${product.passport.productName}" is anchored on chain (${fresh.blockchainTxHash}) ` +
-            'but its fingerprint no longer matches — needs a re-anchor, not a rehash. Skipped.',
+            'but its fingerprint no longer matches — needs a re-anchor, not a rehash.',
         });
+      } else if (hashDrifted && fresh.blockchainTxHash) {
+        // Anchored on chain: a rehash here would contradict the chain. Mark it
+        // pending instead (as demo-correct-catalogue does) and the anchor
+        // worker's sweep re-anchors it. Leaving the old anchor in place made
+        // "Verify integrity" fail for good (rehearsal finding F15).
+        await db
+          .update(schema.materialPassports)
+          .set({
+            blockchainPassportHash: null,
+            blockchainTxHash: null,
+            blockchainAnchoredAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.materialPassports.id, existing.id));
+        console.log(`  re-anchor ${product.passport.productName}  [queued for the worker's sweep]`);
       } else if (hashDrifted && !dryRun) {
         await db
           .update(schema.materialPassports)
@@ -512,7 +527,9 @@ async function main() {
           keep!.status !== 'active' ||
           keep!.expiresAt !== null ||
           keep!.pricePence !== product.listing.pricePence ||
-          keep!.quantity !== product.listing.quantity;
+          keep!.quantity !== product.listing.quantity ||
+          keep!.quantityAvailable !== product.listing.quantity ||
+          keep!.minOrderQuantity !== (product.listing.minOrderQuantity ?? 1);
 
         if (needsFix) {
           listingFixes += 1;
@@ -524,6 +541,9 @@ async function main() {
                 expiresAt: null,
                 pricePence: product.listing.pricePence,
                 quantity: product.listing.quantity,
+                // Step 3 removes the curated orders, so the whole lot is free.
+                quantityAvailable: product.listing.quantity,
+                minOrderQuantity: product.listing.minOrderQuantity ?? 1,
               })
               .where(eq(schema.listings.id, keep!.id));
           }
@@ -864,9 +884,24 @@ async function main() {
 
     const finalCurated = await db.select().from(schema.materialPassports).where(curatedFilter);
     const finalCuratedById = new Map(finalCurated.map((passport) => [passport.id, passport]));
+    // A restore on an on-chain deployment may just have queued passports for
+    // re-anchoring (no fingerprint until the worker anchors them). That is
+    // pending, not mismatched. demo:verify stays strict: it changes nothing,
+    // so a missing fingerprint there is a real gap.
+    const anchorsOnChain =
+      process.env['DEMO_SIMULATE_ANCHOR'] !== 'true' && !!process.env['MATERIAL_REGISTRY_ADDRESS'];
+    const awaitingAnchor = (p: (typeof finalCurated)[number]) =>
+      !dryRun && anchorsOnChain && p.blockchainPassportHash === null;
     const badHashes = finalCurated.filter(
-      (p) => p.blockchainPassportHash !== computePassportHash(p),
+      (p) => !awaitingAnchor(p) && p.blockchainPassportHash !== computePassportHash(p),
     );
+    const queued = finalCurated.filter(awaitingAnchor);
+    if (queued.length > 0) {
+      problems.push({
+        severity: 'warning',
+        message: `${queued.length} curated passport(s) queued for re-anchoring by the worker's sweep (up to 5 minutes)`,
+      });
+    }
 
     // Replenished lots use catalogueKey, not their display name. The legacy
     // catalogue verifies one active listing per product; the public demo

@@ -9,7 +9,7 @@ export default function NewPassportPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Register material</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Create a EU DPP-compliant material passport. It will be anchored on VeChainThor.
+          Create an EU DPP-compliant material passport with a tamper-evident fingerprint.
         </p>
       </div>
       <RegisterWizard />

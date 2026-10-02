@@ -121,6 +121,20 @@ export const MATERIAL_CATEGORIES: Category[] = [
     ],
   },
   {
+    // Non-structural internal framing and linings. Added 2026-09-29 so metal
+    // stud partition framing is no longer filed under structural steel
+    // channels (the demo's aluminium stud walling was).
+    slug: 'partitions-linings',
+    label: 'Internal Partitions & Linings',
+    subcategories: [
+      { slug: 'metal-stud-framing', label: 'Metal Stud & Track Framing' },
+      { slug: 'timber-stud-framing', label: 'Timber Stud Framing' },
+      { slug: 'plasterboard', label: 'Plasterboard & Drylining Boards' },
+      { slug: 'demountable-partitions', label: 'Demountable & Glazed Partitions' },
+      { slug: 'suspended-ceilings', label: 'Suspended Ceiling Grids & Tiles' },
+    ],
+  },
+  {
     slug: 'flooring',
     label: 'Flooring',
     subcategories: [

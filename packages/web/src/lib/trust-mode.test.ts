@@ -33,7 +33,11 @@ describe('trustCopy', () => {
       networkLabel: 'TRACE demo chain (VeChain Thor Solo)',
     });
     expect(copy.cardTitle).toBe('Blockchain Anchored');
-    expect(copy.headline).toContain('TRACE demo chain (VeChain Thor Solo)');
+    expect(copy.headline).toMatch(/blockchain-anchored/);
+    // The network's name goes in the card, not mid-headline.
+    expect(copy.cardDescription).toContain('recorded on TRACE demo chain (VeChain Thor Solo). ');
+    expect(copy.cardDescription).not.toContain('((');
+    expect(copy.headline).not.toContain('TRACE demo chain');
   });
 
   // The landing page used to claim "blockchain-anchored … on VeChainThor"

@@ -10,29 +10,55 @@ import { getToken, getUser } from '@/lib/auth';
 import { track } from '@/lib/analytics';
 import { toast } from '@/components/ui/use-toast';
 import { getErrorMessage } from '@/lib/api-errors';
+import { formatDate, formatPrice } from '@/lib/format';
+import Link from 'next/link';
+import { formatQuantity } from '@trace/core';
 
 const TX_STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline'> = {
   pending: 'warning',
   confirmed: 'success',
-  disputed: 'default',
+  disputed: 'warning',
   resolved: 'success',
   completed: 'success',
   cancelled: 'outline',
 };
 
-function formatPrice(pence: number) {
-  return `£${(pence / 100).toFixed(2)}`;
+// What each order step means to the people involved.
+const TX_STATUS_LABELS: Record<string, string> = {
+  pending: 'Awaiting seller',
+  confirmed: 'Accepted',
+  disputed: 'Problem flagged',
+  resolved: 'Resolved',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+// The order steps a person can take, in the order they are offered. Which of
+// them apply to an order comes from the API (allowedActions), so the rules
+// live in one place. resolve_dispute has no screen yet.
+const ACTIONS: Array<{ action: string; label: string; busy: string; primary?: boolean }> = [
+  { action: 'accept', label: 'Accept order', busy: 'Accepting…', primary: true },
+  { action: 'reject', label: 'Reject', busy: 'Rejecting…' },
+  { action: 'confirm_delivery', label: 'Confirm delivery', busy: 'Confirming…', primary: true },
+  { action: 'flag_dispute', label: 'Report a problem', busy: 'Reporting…' },
+  { action: 'cancel', label: 'Cancel order', busy: 'Cancelling…' },
+];
+
+/** What happens next, for the side that is waiting. */
+function nextStep(tx: MarketplaceTransaction): string | null {
+  if (tx.status === 'pending' && tx.viewerSide === 'buyer') {
+    return 'Waiting for the seller to accept or reject it.';
+  }
+  if (tx.status === 'confirmed' && tx.viewerSide === 'seller') {
+    return 'The buyer confirms delivery once the material arrives.';
+  }
+  if (tx.status === 'disputed') {
+    return 'A problem was reported. The platform team reviews it; there is nothing more to do for now.';
+  }
+  return null;
 }
 
-function ActionButtons({
-  tx,
-  userId,
-  onUpdate,
-}: {
-  tx: MarketplaceTransaction;
-  userId: string;
-  onUpdate: () => void;
-}) {
+function ActionButtons({ tx, onUpdate }: { tx: MarketplaceTransaction; onUpdate: () => void }) {
   const token = getToken()!;
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -40,7 +66,10 @@ function ActionButtons({
     setLoading(action);
     try {
       await marketplace.updateTransaction(tx.id, action, token);
-      track('transaction-update', { transactionAction: action, isBuyer: tx.buyerId === userId });
+      track('transaction-update', {
+        transactionAction: action,
+        isBuyer: tx.viewerSide === 'buyer',
+      });
       onUpdate();
     } catch (e) {
       // J-10: was a native alert() carrying the raw ApiError message.
@@ -49,47 +78,36 @@ function ActionButtons({
         description: getErrorMessage(e, 'complete this action'),
         variant: 'destructive',
       });
+      // Someone else may have acted on the order first; show where it stands.
+      onUpdate();
     } finally {
       setLoading(null);
     }
   }
 
-  const isBuyer = tx.buyerId === userId;
-  const isSeller = tx.sellerId === userId;
-
-  if (tx.status === 'cancelled' || tx.status === 'completed') return null;
+  const allowed = tx.allowedActions ?? [];
+  const buttons = ACTIONS.filter(({ action }) => allowed.includes(action));
+  const next = nextStep(tx);
+  if (buttons.length === 0 && !next) return null;
 
   return (
-    <div className="flex gap-2 flex-wrap">
-      {isBuyer && (tx.status === 'pending' || tx.status === 'confirmed') && (
-        <Button
-          size="sm"
-          className="bg-green-600 hover:bg-green-700 text-white"
-          onClick={() => act('confirm_delivery')}
-          disabled={loading !== null}
-        >
-          {loading === 'confirm_delivery' ? 'Confirming…' : 'Confirm delivery'}
-        </Button>
-      )}
-      {isBuyer && (tx.status === 'pending' || tx.status === 'confirmed') && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => act('flag_dispute')}
-          disabled={loading !== null}
-        >
-          {loading === 'flag_dispute' ? 'Flagging…' : 'Flag dispute'}
-        </Button>
-      )}
-      {(isBuyer || isSeller) && (tx.status === 'pending' || tx.status === 'confirmed') && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => act('cancel')}
-          disabled={loading !== null}
-        >
-          {loading === 'cancel' ? 'Cancelling…' : 'Cancel'}
-        </Button>
+    <div className="space-y-2">
+      {next && <p className="text-xs text-gray-500">{next}</p>}
+      {buttons.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {buttons.map(({ action, label, busy, primary }) => (
+            <Button
+              key={action}
+              size="sm"
+              variant={primary ? 'default' : 'outline'}
+              className={primary ? 'bg-green-600 hover:bg-green-700 text-white' : undefined}
+              onClick={() => act(action)}
+              disabled={loading !== null}
+            >
+              {loading === action ? busy : label}
+            </Button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -137,26 +155,44 @@ export default function TransactionsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant={TX_STATUS_COLORS[tx.status] ?? 'outline'}>
-                            {tx.status}
+                            {TX_STATUS_LABELS[tx.status] ?? tx.status}
                           </Badge>
                           <span className="font-semibold text-sm">
                             {formatPrice(tx.amountPence)}
                           </span>
-                          {user && tx.buyerId === user.id && (
+                          {tx.viewerSide === 'buyer' && (
                             <span className="text-xs bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">
-                              You are buyer
+                              You are buying
                             </span>
                           )}
-                          {user && tx.sellerId === user.id && (
+                          {tx.viewerSide === 'seller' && (
                             <span className="text-xs bg-purple-50 text-purple-700 rounded px-1.5 py-0.5">
-                              You are seller
+                              {user && tx.sellerId === user.id
+                                ? 'You are selling'
+                                : 'Your organisation is selling'}
                             </span>
                           )}
                         </div>
+                        {tx.productName && (
+                          <p className="mt-1 text-sm font-medium text-gray-900">
+                            {tx.passportId ? (
+                              <Link href={`/passport/${tx.passportId}`} className="hover:underline">
+                                {tx.productName}
+                              </Link>
+                            ) : (
+                              tx.productName
+                            )}
+                          </p>
+                        )}
+                        <p className="text-sm text-gray-700">
+                          {tx.legacyWholeLot
+                            ? 'The whole lot, at the price shown. Placed before orders had a quantity.'
+                            : `Quantity ${formatQuantity(tx.quantity, tx.unitOfMeasure)}`}
+                        </p>
                         <p className="text-xs text-gray-500 mt-1">
-                          Order placed {new Date(tx.createdAt).toLocaleDateString()}
-                          {tx.disputeDeadline && tx.status === 'pending'
-                            ? ` · Dispute deadline ${new Date(tx.disputeDeadline).toLocaleDateString()}`
+                          Order placed {formatDate(tx.createdAt)}
+                          {tx.disputeDeadline && tx.status === 'confirmed'
+                            ? ` · Report a problem by ${formatDate(tx.disputeDeadline)}`
                             : ''}
                         </p>
                         {tx.notes && (
@@ -165,7 +201,7 @@ export default function TransactionsPage() {
                       </div>
                     </div>
 
-                    {user && <ActionButtons tx={tx} userId={user.id} onUpdate={load} />}
+                    <ActionButtons tx={tx} onUpdate={load} />
                   </li>
                 ))}
               </ul>

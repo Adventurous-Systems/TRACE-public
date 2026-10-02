@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NoAccess } from '@/components/ui/load-state';
 import { audit, type AuditEvent, type BlockchainTransactionsResponse } from '@/lib/api-client';
 import { getToken, getUser, canViewAdmin, type StoredUser } from '@/lib/auth';
+import { formatDateTime } from '@/lib/format';
 
 function formatVtho(value: string | null | undefined) {
   if (!value) return '—';
@@ -141,7 +142,7 @@ export default function AdminActivityPage() {
                     </p>
                     <p className="text-xs text-gray-500">
                       Gas {tx.gasUsed ?? '—'} · {formatVtho(tx.vthoPaidWei)} ·{' '}
-                      {new Date(tx.createdAt).toLocaleString()}
+                      {formatDateTime(tx.createdAt)}
                     </p>
                     {tx.failureReason && <p className="text-xs text-red-600">{tx.failureReason}</p>}
                   </li>
@@ -172,7 +173,7 @@ export default function AdminActivityPage() {
                     <p className="text-xs text-gray-500">
                       {event.resourceType}
                       {event.resourceId ? `:${event.resourceId}` : ''} ·{' '}
-                      {new Date(event.createdAt).toLocaleString()}
+                      {formatDateTime(event.createdAt)}
                     </p>
                     {event.origin && <p className="text-xs text-gray-500">Origin {event.origin}</p>}
                     {event.failureReason && (

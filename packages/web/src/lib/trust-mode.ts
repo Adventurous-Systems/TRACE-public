@@ -58,9 +58,13 @@ export interface TrustCopy {
 
 export function trustCopy(mode: TrustMode): TrustCopy {
   if (mode.anchorMode === 'onchain') {
-    const where = mode.networkLabel ?? 'a VeChainThor chain';
+    // The network label is a name ("TRACE demo chain (VeChain Thor Solo)"), so
+    // it goes where a name reads naturally, not mid-headline, where it read
+    // "anchored on Local rehearsal chain (…) for reclaimed …".
+    const where = mode.networkLabel ?? 'a VeChainThor blockchain';
     return {
-      headline: `TRACE issues material passports anchored on ${where} for reclaimed construction materials, enabling circular economy hubs to buy and sell with trust and compliance.`,
+      headline:
+        'TRACE issues blockchain-anchored material passports for reclaimed construction materials, enabling circular economy hubs to buy and sell with trust and compliance.',
       cardTitle: 'Blockchain Anchored',
       cardDescription: `Each passport's fingerprint is recorded on ${where}. Anyone can re-check a passport against the chain from its passport page.`,
     };

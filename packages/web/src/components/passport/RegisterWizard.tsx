@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { ShieldCheck, Fingerprint, AlertTriangle, Leaf, Camera, X } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import {
   MATERIAL_CATEGORIES,
   CONDITION_GRADES,
@@ -27,6 +26,14 @@ import { getErrorMessage } from '@/lib/api-errors';
 import { track } from '@/lib/analytics';
 import { celebrate } from '@/lib/confetti';
 import { toast } from '@/components/ui/use-toast';
+import {
+  firstStepWithError,
+  STEP_FIELDS,
+  WizardSchema,
+  type InputStep,
+  type WizardField,
+  type WizardForm,
+} from '@/lib/register-wizard';
 
 // ─── Wizard steps ────────────────────────────────────────────────────────────
 
@@ -41,46 +48,10 @@ const STEPS = [
 
 type StepId = (typeof STEPS)[number]['id'];
 
-// ─── Form schema ─────────────────────────────────────────────────────────────
-
-const WizardSchema = z.object({
-  // Step 1 — Basic
-  productName: z.string().min(1, 'Product name is required').max(255),
-  categoryL1: z.string().min(1, 'Category is required'),
-  categoryL2: z.string().optional(),
-  manufacturerName: z.string().optional(),
-  countryOfOrigin: z.string().length(2).optional().or(z.literal('')),
-  serialNumber: z.string().optional(),
-
-  // Step 2 — Specs
-  unitOfMeasure: z.enum(UNITS_OF_MEASURE).optional().or(z.literal('')),
-  dimensionLength: z.coerce.number().positive().optional().or(z.literal('')),
-  dimensionWidth: z.coerce.number().positive().optional().or(z.literal('')),
-  dimensionHeight: z.coerce.number().positive().optional().or(z.literal('')),
-  dimensionWeight: z.coerce.number().positive().optional().or(z.literal('')),
-  dimensionUnit: z.enum(['mm', 'cm', 'm']).default('mm'),
-
-  // Step 3 — Circular
-  conditionGrade: z.enum(['A', 'B', 'C', 'D']).optional().or(z.literal('')),
-  conditionNotes: z.string().max(2000).optional(),
-  deconstructionMethod: z.string().optional(),
-  reclaimedBy: z.string().optional(),
-  previousBuildingId: z.string().optional(),
-  remainingLifeEstimate: z.coerce.number().int().nonnegative().optional().or(z.literal('')),
-  handlingRequirements: z.string().optional(),
-
-  // Step 4 — Environmental
-  gwpTotal: z.coerce.number().nonnegative().optional().or(z.literal('')),
-  embodiedCarbon: z.coerce.number().nonnegative().optional().or(z.literal('')),
-  recycledContent: z.coerce.number().min(0).max(100).optional().or(z.literal('')),
-  carbonSavingsVsNew: z.coerce.number().nonnegative().optional().or(z.literal('')),
-  epdReference: z.string().url().optional().or(z.literal('')),
-  ceMarking: z.boolean().default(false),
-});
-
-type WizardForm = z.infer<typeof WizardSchema>;
-
 const STORAGE_KEY = 'trace_register_wizard';
+// Which step the person was on, so a refresh returns them to it.
+const STEP_STORAGE_KEY = 'trace_register_wizard_step';
+const isInputStep = (id: string): id is InputStep => id in STEP_FIELDS;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -120,6 +91,8 @@ export default function RegisterWizard() {
     watch,
     getValues,
     setValue,
+    trigger,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<WizardForm>({
     // Resolver's inferred input type differs because the schema uses coercion.
@@ -132,6 +105,7 @@ export default function RegisterWizard() {
   });
 
   const selectedL1 = watch('categoryL1');
+  const dimensionUnit = watch('dimensionUnit') ?? 'mm';
 
   // Live values powering the preview + the carbon suggestion.
   const formValues = watch();
@@ -147,20 +121,41 @@ export default function RegisterWizard() {
       : null;
   const l2Options = MATERIAL_CATEGORIES.find((c) => c.slug === selectedL1)?.subcategories ?? [];
 
-  // Persist to localStorage on change
+  // Restore what was entered, and the step the person was on, after a
+  // refresh or a return to this page.
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as Partial<WizardForm>;
-        Object.entries(parsed).forEach(([k, v]) => {
-          setValue(k as keyof WizardForm, v as never);
-        });
-      } catch {
-        // ignore parse errors
-      }
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as Partial<WizardForm>;
+      Object.entries(parsed).forEach(([k, v]) => {
+        setValue(k as WizardField, v as never);
+      });
+    } catch {
+      return; // unreadable: start again from an empty form
     }
+    const savedStep = localStorage.getItem(STEP_STORAGE_KEY);
+    if (savedStep && (isInputStep(savedStep) || savedStep === 'review')) setStep(savedStep);
   }, [setValue]);
+
+  // A field's message goes as soon as the person starts correcting it.
+  // Fields are deliberately NOT re-checked when they lose focus: a message
+  // disappearing on blur moves the "Continue" button between mouse-down and
+  // mouse-up, and the click misses it.
+  useEffect(() => {
+    const subscription = watch((_values, { name }) => {
+      if (name) clearErrors(name);
+    });
+    return () => subscription.unsubscribe();
+  }, [watch, clearErrors]);
+
+  // Keep what is entered saved as the person types, not only on "Continue".
+  // (getValues, not the render's values: on the first render they are still
+  // the defaults, before the restore above has applied.)
+  useEffect(() => {
+    if (step === 'verification') return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getValues()));
+  }, [formValues, step, getValues]);
 
   useEffect(() => {
     if (!createdPassportId || step !== 'verification') return;
@@ -227,19 +222,49 @@ export default function RegisterWizard() {
 
   const currentIndex = STEPS.findIndex((s) => s.id === step);
 
-  function saveProgress() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(getValues()));
+  /** The problem with a field, shown under it. */
+  const fieldError = (name: WizardField) =>
+    errors[name]?.message ? (
+      <p id={`${name}-error`} className="text-sm text-red-500">
+        {String(errors[name]?.message)}
+      </p>
+    ) : null;
+
+  // The step is saved where it changes, not in an effect: an effect would
+  // also run on the first render and overwrite the saved step with step 1.
+  function moveTo(id: StepId) {
+    setStep(id);
+    if (id !== 'verification') localStorage.setItem(STEP_STORAGE_KEY, id);
   }
 
-  function goNext() {
-    saveProgress();
+  // A step's fields are checked before leaving it, so a problem is shown
+  // where it can be fixed and never first discovered at "Register material".
+  async function goNext() {
+    if (isInputStep(step)) {
+      const fields: WizardField[] = [...STEP_FIELDS[step]];
+      // trigger() shows the messages; whether the step may be left is decided
+      // from the rules themselves.
+      await trigger(fields);
+      const checked = WizardSchema.safeParse(getValues());
+      const invalid = checked.success ? [] : checked.error.issues.map((issue) => issue.path[0]);
+      if (fields.some((field) => invalid.includes(field))) return;
+      clearErrors(fields);
+    }
+    setError(null);
     const next = STEPS[currentIndex + 1];
-    if (next) setStep(next.id);
+    if (next) moveTo(next.id);
   }
 
   function goPrev() {
     const prev = STEPS[currentIndex - 1];
-    if (prev) setStep(prev.id);
+    if (prev) moveTo(prev.id);
+  }
+
+  // "Register material" was refused by a rule: go to the step it is on.
+  function onInvalid(invalid: Partial<Record<WizardField, unknown>>) {
+    const target = firstStepWithError(invalid);
+    if (target) moveTo(target);
+    setError('Some details need correcting before this material can be registered.');
   }
 
   async function onSubmit(data: WizardForm) {
@@ -302,6 +327,7 @@ export default function RegisterWizard() {
         }
       }
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STEP_STORAGE_KEY);
       setCreatedPassportId(passport.id);
       setCertificate(null);
       setStep('verification');
@@ -364,7 +390,7 @@ export default function RegisterWizard() {
 
   return (
     <div className="mx-auto max-w-5xl lg:flex lg:items-start lg:gap-8">
-      <form onSubmit={handleSubmit(onSubmit)} className="min-w-0 lg:flex-1">
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="min-w-0 lg:flex-1" noValidate>
         {/* Progress bar */}
         <div className="flex items-center gap-2 mb-8">
           {STEPS.map((s, i) => (
@@ -396,6 +422,12 @@ export default function RegisterWizard() {
           ))}
         </div>
 
+        {error && step !== 'verification' && (
+          <div role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
+            {error}
+          </div>
+        )}
+
         {/* Step 1: Basic info */}
         {step === 'basic' && (
           <Card>
@@ -411,9 +443,7 @@ export default function RegisterWizard() {
                   placeholder="e.g. 150mm RSJ Steel Beam"
                   {...register('productName')}
                 />
-                {errors.productName && (
-                  <p className="text-sm text-red-500">{errors.productName.message}</p>
-                )}
+                {fieldError('productName')}
               </div>
 
               <div className="space-y-1">
@@ -430,9 +460,7 @@ export default function RegisterWizard() {
                     </option>
                   ))}
                 </select>
-                {errors.categoryL1 && (
-                  <p className="text-sm text-red-500">{errors.categoryL1.message}</p>
-                )}
+                {fieldError('categoryL1')}
               </div>
 
               {l2Options.length > 0 && (
@@ -471,6 +499,7 @@ export default function RegisterWizard() {
                     className="uppercase"
                     {...register('countryOfOrigin')}
                   />
+                  {fieldError('countryOfOrigin')}
                 </div>
               </div>
 
@@ -495,11 +524,24 @@ export default function RegisterWizard() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1">
+                <Label htmlFor="dimensionUnit">Dimensions are in</Label>
+                <select
+                  id="dimensionUnit"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  {...register('dimensionUnit')}
+                >
+                  <option value="mm">mm</option>
+                  <option value="cm">cm</option>
+                  <option value="m">m</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
                 <Label>Dimensions</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label htmlFor="dimensionLength" className="text-xs text-gray-500">
-                      Length
+                      Length ({dimensionUnit})
                     </Label>
                     <Input
                       id="dimensionLength"
@@ -508,10 +550,11 @@ export default function RegisterWizard() {
                       step="any"
                       {...register('dimensionLength')}
                     />
+                    {fieldError('dimensionLength')}
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="dimensionWidth" className="text-xs text-gray-500">
-                      Width
+                      Width ({dimensionUnit})
                     </Label>
                     <Input
                       id="dimensionWidth"
@@ -520,10 +563,11 @@ export default function RegisterWizard() {
                       step="any"
                       {...register('dimensionWidth')}
                     />
+                    {fieldError('dimensionWidth')}
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="dimensionHeight" className="text-xs text-gray-500">
-                      Height / Depth
+                      Height / Depth ({dimensionUnit})
                     </Label>
                     <Input
                       id="dimensionHeight"
@@ -532,6 +576,7 @@ export default function RegisterWizard() {
                       step="any"
                       {...register('dimensionHeight')}
                     />
+                    {fieldError('dimensionHeight')}
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="dimensionWeight" className="text-xs text-gray-500">
@@ -544,21 +589,9 @@ export default function RegisterWizard() {
                       step="any"
                       {...register('dimensionWeight')}
                     />
+                    {fieldError('dimensionWeight')}
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="dimensionUnit">Dimension unit</Label>
-                <select
-                  id="dimensionUnit"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  {...register('dimensionUnit')}
-                >
-                  <option value="mm">mm</option>
-                  <option value="cm">cm</option>
-                  <option value="m">m</option>
-                </select>
               </div>
 
               <div className="space-y-1">
@@ -622,6 +655,7 @@ export default function RegisterWizard() {
                   placeholder="Describe the current condition in detail..."
                   {...register('conditionNotes')}
                 />
+                {fieldError('conditionNotes')}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -648,6 +682,7 @@ export default function RegisterWizard() {
                     placeholder="e.g. 25"
                     {...register('remainingLifeEstimate')}
                   />
+                  {fieldError('remainingLifeEstimate')}
                 </div>
               </div>
 
@@ -700,6 +735,7 @@ export default function RegisterWizard() {
                     placeholder="0.00"
                     {...register('gwpTotal')}
                   />
+                  {fieldError('gwpTotal')}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="embodiedCarbon">Embodied carbon (kgCO₂e)</Label>
@@ -710,6 +746,7 @@ export default function RegisterWizard() {
                     placeholder="0.00"
                     {...register('embodiedCarbon')}
                   />
+                  {fieldError('embodiedCarbon')}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="recycledContent">Recycled content (%)</Label>
@@ -722,6 +759,7 @@ export default function RegisterWizard() {
                     placeholder="0"
                     {...register('recycledContent')}
                   />
+                  {fieldError('recycledContent')}
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="carbonSavingsVsNew">
@@ -734,6 +772,7 @@ export default function RegisterWizard() {
                     placeholder="0.00"
                     {...register('carbonSavingsVsNew')}
                   />
+                  {fieldError('carbonSavingsVsNew')}
                   {suggestedCarbon != null && (
                     <button
                       type="button"
@@ -748,13 +787,14 @@ export default function RegisterWizard() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="epdReference">EPD reference URL</Label>
+                <Label htmlFor="epdReference">EPD web address (optional)</Label>
                 <Input
                   id="epdReference"
-                  type="url"
+                  inputMode="url"
                   placeholder="https://..."
                   {...register('epdReference')}
                 />
+                {fieldError('epdReference')}
               </div>
 
               <div className="flex items-center gap-2">
@@ -861,13 +901,10 @@ export default function RegisterWizard() {
                   </div>
                 )}
                 <p className="text-xs text-gray-400">
-                  A photo is required before listing — add one now or later.
+                  A photo is required before listing — add one now or later. Photos chosen here are
+                  uploaded when you register; if you refresh the page, choose them again.
                 </p>
               </div>
-
-              {error && (
-                <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
-              )}
             </CardContent>
           </Card>
         )}
@@ -879,7 +916,7 @@ export default function RegisterWizard() {
               <CardDescription>
                 {certificate?.status === 'simulated'
                   ? 'TRACE is preparing the passport’s tamper-evident trust record.'
-                  : 'TRACE is registering the passport fingerprint on VeChainThor.'}
+                  : 'TRACE is registering the passport fingerprint on the blockchain.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -967,12 +1004,22 @@ export default function RegisterWizard() {
               >
                 Back
               </Button>
+              {/* Separate keys: without them React turns the "Continue" button into
+                  the submit button in place, mid-click, and the browser submits the
+                  form. "Continue" on the last step then registered the material and
+                  skipped this review step. */}
               {step !== 'review' ? (
-                <Button type="button" onClick={goNext} className="bg-brand-600 hover:bg-brand-700">
+                <Button
+                  key="continue"
+                  type="button"
+                  onClick={goNext}
+                  className="bg-brand-600 hover:bg-brand-700"
+                >
                   Continue
                 </Button>
               ) : (
                 <Button
+                  key="register"
                   type="submit"
                   disabled={isSubmitting}
                   className="bg-brand-600 hover:bg-brand-700"

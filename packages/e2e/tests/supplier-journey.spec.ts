@@ -44,7 +44,11 @@ test('supplier creates a passport, adds a photo, and lists it', async ({ page })
   // Verification: simulated trust layer, no real tx required.
   await expect(openPassport).toBeVisible();
   await expect(
-    page.getByText(/Provenance record prepared|Trust layer prepared/i).first(),
+    // Simulated anchoring says the record is "prepared"; a real chain says the
+    // certificate is ready.
+    page
+      .getByText(/Provenance record prepared|Trust layer prepared|Blockchain certificate is ready/i)
+      .first(),
   ).toBeVisible();
   await openPassport.click({ force: true });
   await expect(page).toHaveURL(/\/passports\/[0-9a-f-]+$/i);

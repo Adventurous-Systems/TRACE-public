@@ -11,6 +11,7 @@
     "e2e:visual": "RUN_VISUAL=1 playwright test tests/visual",
     "e2e:update": "RUN_VISUAL=1 playwright test tests/visual --update-snapshots",
     "explore": "tsx explore/explore.ts",
+    "rehearse": "tsx rehearsal/run.ts",
     "check:smoke-isolation": "tsx scripts/assert-smoke-isolation.ts",
     "typecheck": "tsc --noEmit"
   },

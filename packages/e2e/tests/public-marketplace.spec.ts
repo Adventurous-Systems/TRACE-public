@@ -7,6 +7,11 @@ import { uniqueName } from '../fixtures/test-helpers';
  * Logged-out public journey: browse the marketplace, open a listing, see the
  * linked passport's trust panel, and get a sign-up CTA instead of a buy button.
  */
+// The public buyer demo profile lists only the curated catalogue, so a
+// listing this suite creates never appears in anonymous browse there (the
+// rehearsal stack sets E2E_CURATED_ONLY=1; CI runs the self-hosted profile).
+const CURATED_ONLY = process.env.E2E_CURATED_ONLY === '1';
+
 test.describe('Public marketplace (logged out)', () => {
   let listingId: string;
   let passportId: string;
@@ -21,6 +26,7 @@ test.describe('Public marketplace (logged out)', () => {
   });
 
   test('marketplace shows the published material', async ({ page }) => {
+    test.skip(CURATED_ONLY, 'anonymous browse is curated-only on this profile');
     await page.goto('/marketplace');
     await expect(page.getByText(productName).first()).toBeVisible();
   });
@@ -31,7 +37,9 @@ test.describe('Public marketplace (logged out)', () => {
 
     const cta = page.getByRole('link', { name: /sign up to buy this material/i });
     await expect(cta).toBeVisible();
-    await expect(page.getByRole('button', { name: /make offer/i })).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: /order at asking price|make offer/i }),
+    ).toHaveCount(0);
 
     await cta.click();
     await expect(page).toHaveURL(/\/register/);
@@ -54,8 +62,12 @@ test.describe('Public marketplace (logged out)', () => {
   test('category filter is narrowed to categories with stock', async ({ page }) => {
     await page.goto('/marketplace');
     const options = page.getByLabel('Filter by category').locator('option');
-    await expect(options).not.toHaveCount(11); // 10 categories + "All categories"
-    await expect(page.getByLabel('Filter by category')).toContainText('Structural Steel');
+    await expect(options).not.toHaveCount(12); // 11 categories + "All categories"
+    // Every curated catalogue product is in stock, so its categories are offered.
+    await expect(page.getByLabel('Filter by category')).toContainText('Masonry');
+    await expect(page.getByLabel('Filter by category')).toContainText(
+      'Internal Partitions & Linings',
+    );
   });
 
   // A search with no matches distinguishes "no results for these filters"
@@ -74,6 +86,6 @@ test.describe('Public marketplace (logged out)', () => {
     await clear.click();
 
     await expect(page.getByPlaceholder(/search materials/i)).toHaveValue('');
-    await expect(page.getByText(productName).first()).toBeVisible();
+    if (!CURATED_ONLY) await expect(page.getByText(productName).first()).toBeVisible();
   });
 });

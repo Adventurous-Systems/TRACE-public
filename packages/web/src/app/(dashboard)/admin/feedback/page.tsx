@@ -8,6 +8,7 @@ import { StarRating } from '@/components/ui/star-rating';
 import { feedback, type FeedbackEntry } from '@/lib/api-client';
 import { getToken, getUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
+import { formatDateTime } from '@/lib/format';
 
 const CATEGORY_LABELS: Record<string, string> = {
   bug: 'Bug',
@@ -114,7 +115,7 @@ export default function AdminFeedbackPage() {
                         </span>
                       )}
                       <span className="text-xs text-gray-400 ml-auto">
-                        {new Date(item.createdAt).toLocaleString()}
+                        {formatDateTime(item.createdAt)}
                       </span>
                     </div>
                     <p className="text-sm text-gray-700">{item.message}</p>

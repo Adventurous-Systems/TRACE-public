@@ -14,7 +14,7 @@ export async function createQualityReport(
     where: eq(materialPassports.id, input.passportId),
   });
 
-  if (!passport) throw new NotFoundError(`Passport ${input.passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', input.passportId);
 
   const [report] = await db
     .insert(qualityReports)
@@ -66,7 +66,7 @@ export async function getReportsByPassport(
     where: eq(materialPassports.id, passportId),
   });
 
-  if (!passport) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', passportId);
 
   const reports = await db.query.qualityReports.findMany({
     where: eq(qualityReports.passportId, passportId),
@@ -90,7 +90,7 @@ export async function getReportById(id: string): Promise<QualityReportWithInspec
     with: { inspector: true },
   });
 
-  if (!report) throw new NotFoundError(`Quality report ${id} not found`);
+  if (!report) throw new NotFoundError('Quality report', id);
 
   return {
     ...report,
@@ -116,7 +116,7 @@ export async function disputeReport(reportId: string): Promise<QualityReport> {
     where: eq(qualityReports.id, reportId),
   });
 
-  if (!report) throw new NotFoundError(`Quality report ${reportId} not found`);
+  if (!report) throw new NotFoundError('Quality report', reportId);
   if (report.disputed) throw new ForbiddenError('Report is already disputed');
 
   const [updated] = await db
