@@ -255,6 +255,7 @@ packages/e2e/tests/public-showcase.spec.ts
 packages/e2e/tests/roles.spec.ts
 packages/e2e/tests/smoke.spec.ts
 packages/e2e/tests/supplier-journey.spec.ts
+packages/e2e/tests/supplier-wizard.spec.ts
 packages/e2e/tests/visual/visual.spec.ts
 packages/e2e/tsconfig.json
 packages/sdk/package.json
@@ -301,6 +302,7 @@ packages/web/src/components/Analytics.tsx
 packages/web/src/components/DashboardLayout.tsx
 packages/web/src/components/DemoGuide.tsx
 packages/web/src/components/FeedbackWidget.tsx
+packages/web/src/components/marketplace/AccountNav.tsx
 packages/web/src/components/marketplace/ListingPhoto.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx
@@ -335,6 +337,8 @@ packages/web/src/lib/order-quantity.test.ts
 packages/web/src/lib/order-quantity.ts
 packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
+packages/web/src/lib/register-wizard.test.ts
+packages/web/src/lib/register-wizard.ts
 packages/web/src/lib/trust-mode.test.ts
 packages/web/src/lib/trust-mode.ts
 packages/web/src/lib/utils.ts

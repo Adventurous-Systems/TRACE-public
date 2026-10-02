@@ -208,6 +208,13 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       return `starts at ${start}; ${tries.join('; ')}`;
     });
     await j.step('order 250 bricks', () => placeOrder(j, kbriq.id, 250));
+    await j.step('from the listing, the way to Orders', async () => {
+      const link = j.page.getByRole('link', { name: 'Orders' });
+      const shown = await link.count();
+      if (shown) await link.first().click();
+      await j.page.waitForLoadState('networkidle');
+      return `"Orders" link on the listing page: ${shown}; landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
+    });
     await j.step('listing after the order', async () => {
       await j.page.reload({ waitUntil: 'networkidle' });
       return (await j.page.locator('dl').innerText()).replace(/\s+/g, ' ').slice(0, 260);
@@ -347,6 +354,15 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       await j.goto('/quality');
       return (await j.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 200);
     });
+    await j.step('start a new report from the reports page', async () => {
+      await j.page
+        .getByRole('link', { name: /new report/i })
+        .first()
+        .click();
+      await j.page.waitForLoadState('networkidle');
+      const asks = await j.page.locator('main label').allInnerTexts();
+      return `the form asks for: ${asks.join(' | ').replace(/\s+/g, ' ').slice(0, 220)}`;
+    });
     await j.step('file a report that changes the grade to C', async () => {
       await j.goto(`/quality/new?passportId=${bricks.passportId}`);
       await j.page.getByRole('button', { name: /^C\s*Fair$/ }).click();
@@ -385,6 +401,71 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
     }
   });
   await rehearsal.journey('9 supplier', 'supplier', async (j) => {
+    const cont = () => j.page.getByRole('button', { name: 'Continue' }).click();
+    const heading = () => j.page.locator('form h3').first().innerText();
+    const problems = async () =>
+      (await j.page.locator('form .text-red-500, form [role=alert]').allInnerTexts()).join(' | ');
+    await j.step('register: an empty first step', async () => {
+      await j.goto('/passports/new');
+      await j.page.evaluate(() => {
+        localStorage.removeItem('trace_register_wizard');
+        localStorage.removeItem('trace_register_wizard_step');
+      });
+      await j.page.reload({ waitUntil: 'networkidle' });
+      await cont();
+      return `stays on "${await heading()}": ${await problems()}`;
+    });
+    await j.step('register: basic information', async () => {
+      await j.page.locator('#productName').fill(`Rehearsal Wizard Beam ${Date.now()}`);
+      await j.page.locator('#categoryL1').selectOption({ index: 1 });
+      await j.page.locator('#countryOfOrigin').fill('GB');
+      await cont();
+      return `now on "${await heading()}"`;
+    });
+    await j.step('register: specifications, with units on the labels', async () => {
+      await j.page.locator('#dimensionUnit').selectOption('cm');
+      await j.page.locator('#dimensionLength').fill('240');
+      await j.page.locator('#dimensionWidth').fill('-5');
+      await j.page.locator('#dimensionWeight').fill('85');
+      const labels = (await j.page.locator('form label').allInnerTexts()).join(' | ');
+      await cont();
+      const refused = `${await heading()}: ${await problems()}`;
+      await j.page.locator('#dimensionWidth').fill('12');
+      await cont();
+      return `labels: ${labels}; a negative width → ${refused}; corrected → "${await heading()}"`;
+    });
+    await j.step('register: circular data, with a decimal number of years', async () => {
+      await j.page.locator('#conditionGrade').selectOption('B');
+      await j.page.locator('#remainingLifeEstimate').fill('12.5');
+      await cont();
+      const refused = `${await heading()}: ${await problems()}`;
+      await j.page.locator('#remainingLifeEstimate').fill('12');
+      await cont();
+      return `12.5 years → ${refused}; corrected → "${await heading()}"`;
+    });
+    await j.step('register: environmental data, with an EPD that is not a link', async () => {
+      await j.page.locator('#embodiedCarbon').fill('42.5');
+      await j.page.locator('#recycledContent').fill('140');
+      await j.page.locator('#epdReference').fill('EPD-12345');
+      await cont();
+      return `${await heading()}: ${await problems()}`;
+    });
+    await j.step('register: a refresh keeps the step and the values', async () => {
+      await j.page.reload({ waitUntil: 'networkidle' });
+      return `after the refresh: "${await heading()}", EPD field "${await j.page.locator('#epdReference').inputValue()}"`;
+    });
+    await j.step('register: review, without registering yet', async () => {
+      await j.page.locator('#recycledContent').fill('40');
+      await j.page.locator('#epdReference').fill('https://epd.example/rehearsal-beam');
+      await cont();
+      await j.page.waitForTimeout(1500);
+      return `after "Continue": "${await heading()}"; ${(await j.page.locator('form dl').innerText()).replace(/\s+/g, ' ').slice(0, 200)}`;
+    });
+    await j.step('register: submit', async () => {
+      await j.page.getByRole('button', { name: /^register material$/i }).click();
+      await j.page.getByRole('button', { name: /open passport/i }).waitFor({ timeout: 15_000 });
+      return (await j.text(/certificate is ready|record prepared|registering/i)) ?? '';
+    });
     for (const route of ['/dashboard', '/passports', '/listings', '/transactions']) {
       await j.step(route, async () => {
         await j.goto(route);
