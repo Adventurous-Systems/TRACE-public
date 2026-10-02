@@ -11,7 +11,7 @@
 #   pnpm stack check       check the data invariants of the stack's database (read-only)
 #   pnpm stack upgrade [ref]  rehearse the upgrade from a release (default origin/main)
 #   pnpm stack rehearse    the whole rehearsal: tests, journeys, probes, checks, upgrade
-#   pnpm stack reset --yes stop everything and delete all local stack data
+#   pnpm stack reset --yes stop everything and delete all local stack data (rehearsal evidence is kept)
 #
 # Web on http://localhost:3000, API on http://localhost:3001. The persona
 # passwords are the DEMO_*_PASSWORD values in .env (see `pnpm env:init`).
@@ -388,6 +388,17 @@ case "$command" in
     [[ "${1:-}" == --yes ]] || die 'reset deletes the local database, chain and files; pass --yes'
     stop
     [[ -f "$STATE/compose.override.yml" ]] && compose down -v >/dev/null 2>&1 || true
-    rm -rf -- "${STATE:?}" ;;
+    # Rehearsal evidence outlives the stack it was gathered on: a round starts
+    # from a reset, and its findings refer back to earlier rounds.
+    kept=''
+    if [[ -d "$STATE/rehearsal" ]]; then
+      kept=$(mktemp -d "${STATE%/*}/.local-stack-rehearsal.XXXXXX")
+      mv "$STATE/rehearsal" "$kept/rehearsal"
+    fi
+    rm -rf -- "${STATE:?}"
+    if [[ -n "$kept" ]]; then
+      mkdir -p "$STATE" && chmod 700 "$STATE"
+      mv "$kept/rehearsal" "$STATE/rehearsal" && rmdir "$kept"
+    fi ;;
   *) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; [[ -z "$command" ]] || exit 2 ;;
 esac

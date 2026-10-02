@@ -175,6 +175,8 @@ stack stop
 : > "$log"
 stack reset --yes || fail 'reset --yes failed'
 grep -q 'compose .* down -v' "$log" || fail 'reset must remove the volumes'
-[[ ! -e "$tmp/state" ]] || fail 'reset must delete the state directory'
+[[ ! -e "$tmp/state/api.env" && ! -e "$tmp/state/chain" ]] || fail 'reset must delete the stack state'
+[[ -s "$evidence/summary.md" ]] || fail 'reset must keep rehearsal evidence'
+[[ "$(ls -A "$tmp/state")" == rehearsal ]] || fail 'reset must leave nothing but the evidence'
 
 echo "local-stack tests passed"
