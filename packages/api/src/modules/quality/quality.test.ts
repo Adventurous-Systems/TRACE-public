@@ -219,6 +219,35 @@ describe('inspector journey: finding materials, and who stands behind a report',
     ]);
   });
 
+  it("a hub admin sees, and may check, only the hub's own materials", async () => {
+    expect(names(await materials(`q=${marker}`, hubAdminAuth))).toEqual([`${marker} Hub Beam`]);
+
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/api/v1/quality/reports',
+      headers: hubAdminAuth,
+      payload: { passportId: supplierMaterial, overallGrade: 'D' },
+    });
+    expect(refused.statusCode).toBe(403);
+    const passport = await db.query.materialPassports.findFirst({
+      where: eq(materialPassports.id, supplierMaterial),
+    });
+    expect(passport?.conditionGrade).toBe('B');
+  });
+
+  it('a material that is still a draft cannot be inspected', async () => {
+    const draft = await db.query.materialPassports.findFirst({
+      where: eq(materialPassports.productName, `${marker} Draft Slab`),
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/quality/reports',
+      headers: inspectorAuth,
+      payload: { passportId: draft!.id, overallGrade: 'A' },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
   it('is closed to buyers and to hub staff', async () => {
     const buyerAuth = await getAuthHeader(app, BUYER.email, BUYER.password);
     const staffAuth = await getAuthHeader(app, HUB_STAFF.email, HUB_STAFF.password);

@@ -13,6 +13,7 @@ import {
   inspectionSource,
   NotFoundError,
   ForbiddenError,
+  ConflictError,
 } from '@trace/core';
 import { reanchorPassport } from '../../lib/anchor.js';
 
@@ -63,11 +64,27 @@ function toPublic(report: ReportWithInspector): PublicQualityReport {
   };
 }
 
+// ─── Who is reporting ────────────────────────────────────────────────────────
+
+export interface Reporter {
+  id: string;
+  role: string;
+  organisationId: string | null;
+}
+
+/**
+ * An inspector audits the whole marketplace, and so does the platform. A hub
+ * admin checks only what the hub itself holds.
+ */
+function reportsOnEveryOrganisation(reporter: Pick<Reporter, 'role'>): boolean {
+  return reporter.role === 'inspector' || reporter.role === 'platform_admin';
+}
+
 // ─── Submit quality report ────────────────────────────────────────────────────
 
 export async function createQualityReport(
   input: CreateQualityReportInput,
-  inspector: { id: string; role: string },
+  inspector: Reporter,
 ): Promise<QualityReport> {
   // Verify passport exists
   const passport = await db.query.materialPassports.findFirst({
@@ -75,6 +92,20 @@ export async function createQualityReport(
   });
 
   if (!passport) throw new NotFoundError('Passport', input.passportId);
+  if (passport.status === 'draft') {
+    throw new ConflictError('This material is not registered yet, so it cannot be inspected.');
+  }
+  // A hub's report is shown as the seller's own check, so it may only be
+  // about the hub's own material. It could otherwise re-grade a material it
+  // does not hold, under a label that says the seller did.
+  if (
+    !reportsOnEveryOrganisation(inspector) &&
+    passport.organisationId !== inspector.organisationId
+  ) {
+    throw new ForbiddenError(
+      "A hub can check only its own materials. Another organisation's are for an independent inspector.",
+    );
+  }
 
   const [report] = await db
     .insert(qualityReports)
@@ -209,10 +240,18 @@ const independentReportsOf = (passportId: SQL | typeof materialPassports.id) => 
 
 function inspectionConditions(
   query: Pick<InspectionMaterialsQuery, 'q' | 'categoryL1' | 'uninspected'>,
+  reporter: Pick<Reporter, 'role' | 'organisationId'>,
 ): SQL[] {
   // An inspector audits the whole marketplace: every registered material,
   // whoever holds it (owner decision, 2026-10-02). Drafts are not registered.
   const conditions: SQL[] = [ne(materialPassports.status, 'draft')];
+  if (!reportsOnEveryOrganisation(reporter)) {
+    conditions.push(
+      reporter.organisationId
+        ? eq(materialPassports.organisationId, reporter.organisationId)
+        : sql`false`,
+    );
+  }
   if (query.categoryL1) conditions.push(eq(materialPassports.categoryL1, query.categoryL1));
   if (query.uninspected) {
     conditions.push(sql`not exists (select 1 ${independentReportsOf(materialPassports.id)})`);
@@ -235,13 +274,16 @@ function inspectionConditions(
  * The materials an inspector can choose from, least recently inspected first
  * (never inspected at the top), so the list doubles as a work queue.
  */
-export async function listMaterialsForInspection(query: InspectionMaterialsQuery): Promise<{
+export async function listMaterialsForInspection(
+  query: InspectionMaterialsQuery,
+  reporter: Reporter,
+): Promise<{
   data: MaterialForInspection[];
   total: number;
   page: number;
   limit: number;
 }> {
-  const where = and(...inspectionConditions(query));
+  const where = and(...inspectionConditions(query, reporter));
   const lastIndependent = sql<
     string | null
   >`(select max(q.created_at) ${independentReportsOf(materialPassports.id)})`;
@@ -288,7 +330,7 @@ export async function listMaterialsForInspection(query: InspectionMaterialsQuery
 }
 
 /** The numbers on an inspector's dashboard. */
-export async function getInspectionSummary(inspectorId: string): Promise<{
+export async function getInspectionSummary(reporter: Reporter): Promise<{
   materials: number;
   notIndependentlyInspected: number;
   myReports: number;
@@ -297,15 +339,15 @@ export async function getInspectionSummary(inspectorId: string): Promise<{
     db
       .select({ count: sql<number>`cast(count(*) as int)` })
       .from(materialPassports)
-      .where(and(...inspectionConditions({ uninspected: false }))),
+      .where(and(...inspectionConditions({ uninspected: false }, reporter))),
     db
       .select({ count: sql<number>`cast(count(*) as int)` })
       .from(materialPassports)
-      .where(and(...inspectionConditions({ uninspected: true }))),
+      .where(and(...inspectionConditions({ uninspected: true }, reporter))),
     db
       .select({ count: sql<number>`cast(count(*) as int)` })
       .from(qualityReports)
-      .where(eq(qualityReports.inspectorId, inspectorId)),
+      .where(eq(qualityReports.inspectorId, reporter.id)),
   ]);
   return {
     materials: all?.count ?? 0,

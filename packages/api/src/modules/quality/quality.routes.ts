@@ -10,7 +10,12 @@ import {
   listMaterialsForInspection,
   getInspectionSummary,
   disputeReport,
+  type Reporter,
 } from './quality.service.js';
+
+function reporterOf(user: { sub: string; role: string; organisationId?: string | null }): Reporter {
+  return { id: user.sub, role: user.role, organisationId: user.organisationId ?? null };
+}
 
 export async function qualityRoutes(app: FastifyInstance): Promise<void> {
   // ── POST /api/v1/quality/reports ──────────────────────────────────────────
@@ -20,10 +25,7 @@ export async function qualityRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [authenticate, authorize('inspector', 'hub_admin', 'platform_admin')] },
     async (request, reply) => {
       const input = CreateQualityReportSchema.parse(request.body);
-      const report = await createQualityReport(input, {
-        id: request.user.sub,
-        role: request.user.role,
-      });
+      const report = await createQualityReport(input, reporterOf(request.user));
       await recordAuditEvent({
         actor: request.user,
         action: 'quality_report.create',
@@ -40,14 +42,19 @@ export async function qualityRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ── GET /api/v1/quality/materials ─────────────────────────────────────────
-  // Inspector: the registered materials to choose from when starting a report,
-  // least recently inspected first. Search by name, serial number or ID.
+  // The registered materials to choose from when starting a report, least
+  // recently inspected first. Search by name, serial number or ID. An
+  // inspector and the platform see every organisation's; a hub admin, the
+  // hub's own.
   app.get(
     '/materials',
     { preHandler: [authenticate, authorize('inspector', 'hub_admin', 'platform_admin')] },
     async (request, reply) => {
       const query = InspectionMaterialsQuerySchema.parse(request.query);
-      return reply.send({ success: true, data: await listMaterialsForInspection(query) });
+      return reply.send({
+        success: true,
+        data: await listMaterialsForInspection(query, reporterOf(request.user)),
+      });
     },
   );
 
@@ -57,7 +64,10 @@ export async function qualityRoutes(app: FastifyInstance): Promise<void> {
     '/summary',
     { preHandler: [authenticate, authorize('inspector', 'hub_admin', 'platform_admin')] },
     async (request, reply) => {
-      return reply.send({ success: true, data: await getInspectionSummary(request.user.sub) });
+      return reply.send({
+        success: true,
+        data: await getInspectionSummary(reporterOf(request.user)),
+      });
     },
   );
 
