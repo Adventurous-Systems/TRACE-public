@@ -196,9 +196,11 @@ evidence in `.local-stack/rehearsal/<commit>-<time>/`:
   agree, no stranded orders, no stale fingerprints. The same check runs
   read-only on a deployment as `run-ops.sh <env> demo-check-invariants`;
 - **an upgrade rehearsal** (`pnpm stack upgrade [ref]`): the given release
-  (default `origin/main`) is built in a scratch database, given old-model
-  orders in every state (`packages/db/scripts/upgrade-fixtures/`), then
-  migrated to this checkout and checked.
+  (default `origin/main`) is built in a scratch database and given data as
+  it can leave it (`packages/db/scripts/upgrade-fixtures/before.sql`), then
+  migrated to this checkout and checked (`after.sql`, the invariants, and
+  that release still writing to the new schema). Rewrite the two fixtures
+  for each milestone that adds a migration.
 
 A failing part never stops the rest. The journeys and probes gather evidence
 for a reviewer; they are not pass/fail tests, and their findings need triage.

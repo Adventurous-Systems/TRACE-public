@@ -392,7 +392,8 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       const found = j.page.getByRole('list', { name: 'Materials' }).getByRole('listitem');
       await found.filter({ hasText: BRICKS }).getByRole('button', { name: 'Inspect' }).click();
       await j.page.getByText('Material being inspected').waitFor();
-      return main(420);
+      const waits = await j.page.getByRole('button', { name: /submit report/i }).isDisabled();
+      return `submit ${waits ? 'waits for a grade' : 'IS ENABLED WITHOUT A GRADE'}: ${await main(420)}`;
     });
     await j.step('file a report that changes the grade to C', async () => {
       await j.page.locator('#structuralScore').fill('7');

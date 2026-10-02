@@ -511,6 +511,7 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     id: string;
     productName: string;
     organisationName: string;
+    conditionGrade: string | null;
   }
   interface PublicReport {
     source: string;
@@ -579,6 +580,7 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
   for (const [name, body] of [
     ['a score of 11', { structuralScore: 11 }],
     ['a grade of E', { overallGrade: 'E' }],
+    ['no grade', { overallGrade: undefined, structuralScore: 6 }],
   ] as const) {
     await probe(`a report with ${name}`, 'HTTP 400', async () =>
       expectStatus(await report(inspector, inspectable.passportId, body), 400),
@@ -607,6 +609,76 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       };
     },
   );
+  // Once an inspector has graded a material, its seller cannot change the grade.
+  const hubMaterial = await createListedPassport(ctx, hubAdmin.token, {
+    productName: uniqueName('Rehearsal Probe Hub Material'),
+  });
+  const gradeOf = async (passportId: string) =>
+    (await materials(inspector, `?q=${passportId}`)).body.data?.data[0]?.conditionGrade ?? null;
+  await probe(
+    "a hub's own check sets the grade of a material nobody has inspected",
+    'A',
+    async () => {
+      const res = await report(hubAdmin, hubMaterial.passportId, { overallGrade: 'A' });
+      const grade = await gradeOf(hubMaterial.passportId);
+      return { pass: res.status === 201 && grade === 'A', actual: `${says(res)}, grade ${grade}` };
+    },
+  );
+  await probe('an inspector grades it C', 'C', async () => {
+    const res = await report(inspector, hubMaterial.passportId, { overallGrade: 'C' });
+    const grade = await gradeOf(hubMaterial.passportId);
+    return { pass: res.status === 201 && grade === 'C', actual: `${says(res)}, grade ${grade}` };
+  });
+  await probe(
+    "the hub's own check, grade A, after the inspection",
+    'recorded (HTTP 201); the grade stays C',
+    async () => {
+      const res = await report(hubAdmin, hubMaterial.passportId, { overallGrade: 'A' });
+      const grade = await gradeOf(hubMaterial.passportId);
+      return { pass: res.status === 201 && grade === 'C', actual: `${says(res)}, grade ${grade}` };
+    },
+  );
+  await probe('the hub edits the grade on the passport', 'HTTP 409', async () =>
+    expectStatus(
+      await rehearsal.api('PATCH', `/api/v1/passports/${hubMaterial.passportId}`, {
+        token: hubAdmin.token,
+        body: { conditionGrade: 'A' },
+      }),
+      409,
+    ),
+  );
+  await probe('the platform admin re-grades it B', 'B', async () => {
+    const res = await report(admin, hubMaterial.passportId, { overallGrade: 'B' });
+    const grade = await gradeOf(hubMaterial.passportId);
+    return { pass: res.status === 201 && grade === 'B', actual: `${says(res)}, grade ${grade}` };
+  });
+
+  // Flagging a report is for whoever holds the material.
+  const reportsOn = async (passportId: string) =>
+    (
+      await rehearsal.api<Array<{ id: string }>>(
+        'GET',
+        `/api/v1/quality/reports/passport/${passportId}`,
+      )
+    ).body.data ?? [];
+  const flag = (who: Session, reportId: string) =>
+    rehearsal.api('POST', `/api/v1/quality/reports/${reportId}/dispute`, { token: who.token });
+  const hubReport = (await reportsOn(hubMaterial.passportId))[0]?.id ?? '';
+  for (const [name, who] of [
+    ['a buyer with no part in it', buyer],
+    ['a seller of another organisation', seller],
+  ] as const) {
+    await probe(`${name} flags a report`, 'HTTP 403', async () =>
+      expectStatus(await flag(who, hubReport), 403),
+    );
+  }
+  await probe('the hub that holds the material flags a report on it', 'HTTP 200', async () =>
+    expectStatus(await flag(hubAdmin, hubReport), 200),
+  );
+  await probe('it flags the same report again', 'HTTP 409', async () =>
+    expectStatus(await flag(hubAdmin, hubReport), 409),
+  );
+
   await probe('once inspected, it leaves the not-yet-inspected queue', '0 found', async () => {
     const res = await materials(inspector, `?uninspected=true&q=${inspectable.passportId}`);
     return { pass: res.body.data?.total === 0, actual: `${says(res)}, ${res.body.data?.total}` };

@@ -33,6 +33,7 @@ interface Finding {
 }
 
 const PUBLIC_ROUTES = ['/', '/marketplace', '/login', '/register', '/scan'];
+const INSPECTOR_ROUTES = ['/dashboard', '/quality', '/quality/new'];
 const AUTHED_ROUTES = [
   '/dashboard',
   '/passports',
@@ -168,13 +169,14 @@ async function visit(ctx: BrowserContext, route: string, viewport: 'desktop' | '
   await page.close();
 }
 
-async function supplierSession() {
+async function sessionOf(role: 'supplier' | 'inspector') {
+  const { email, password } = ACCOUNTS[role];
   const res = await fetch(`${API_URL}/api/v1/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: ACCOUNTS.supplier.email, password: ACCOUNTS.supplier.password }),
+    body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) throw new Error(`supplier login failed (HTTP ${res.status})`);
+  if (!res.ok) throw new Error(`${role} login failed (HTTP ${res.status})`);
   const { data } = (await res.json()) as { data: { token: string; user: unknown } };
   return data;
 }
@@ -265,7 +267,7 @@ async function main() {
   await pub.close();
 
   // Authed — desktop
-  const { token, user } = await supplierSession();
+  const { token, user } = await sessionOf('supplier');
   const authed = await browser.newContext({
     baseURL: BASE_URL,
     viewport: { width: 1280, height: 800 },
@@ -284,6 +286,22 @@ async function main() {
   await applyAuth(mob, token, user);
   for (const r of [...publicRoutes, ...authedRoutes]) await visit(mob, r, 'mobile');
   await mob.close();
+
+  // The inspector's own pages — desktop, then mobile overflow
+  const inspector = await sessionOf('inspector');
+  for (const [viewport, mode] of [
+    [{ width: 1280, height: 800 }, 'desktop'],
+    [{ width: 375, height: 812 }, 'mobile'],
+  ] as const) {
+    const ctx = await browser.newContext({
+      baseURL: BASE_URL,
+      viewport,
+      ...(mode === 'mobile' ? { isMobile: true, hasTouch: true } : {}),
+    });
+    await applyAuth(ctx, inspector.token, inspector.user);
+    for (const r of INSPECTOR_ROUTES) await visit(ctx, r, mode);
+    await ctx.close();
+  }
 
   await browser.close();
   writeReport(dedupe(findings));

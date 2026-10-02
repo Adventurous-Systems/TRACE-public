@@ -217,7 +217,8 @@ packages/db/scripts/reset-marketplace.ts
 packages/db/scripts/rotate-published-credentials.ts
 packages/db/scripts/seed-products.ts
 packages/db/scripts/seed.ts
-packages/db/scripts/upgrade-fixtures/legacy-orders.sql
+packages/db/scripts/upgrade-fixtures/after.sql
+packages/db/scripts/upgrade-fixtures/before.sql
 packages/db/src/client.ts
 packages/db/src/index.ts
 packages/db/src/passport-hash.ts
