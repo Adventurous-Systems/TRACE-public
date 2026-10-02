@@ -33,7 +33,32 @@ interface Finding {
 }
 
 const PUBLIC_ROUTES = ['/', '/marketplace', '/login', '/register', '/scan'];
-const AUTHED_ROUTES = ['/passports', '/listings', '/transactions', '/passports/new'];
+const AUTHED_ROUTES = [
+  '/dashboard',
+  '/passports',
+  '/listings',
+  '/listings/new',
+  '/transactions',
+  '/passports/new',
+];
+
+/**
+ * The pages of one listed material (its listing, with the order form when
+ * logged in, and its public passport). Discovered from the marketplace, since
+ * their ids differ per environment; none if nothing is listed.
+ */
+async function materialRoutes(): Promise<string[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/marketplace/listings?limit=1`);
+    const body = (await res.json()) as {
+      data?: { data?: Array<{ id: string; passportId: string }> };
+    };
+    const listing = body.data?.data?.[0];
+    return listing ? [`/marketplace/${listing.id}`, `/passport/${listing.passportId}`] : [];
+  } catch {
+    return [];
+  }
+}
 
 const findings: Finding[] = [];
 const push = (f: Finding) => findings.push(f);
@@ -226,13 +251,17 @@ function writeReport(items: Array<Finding & { count: number }>) {
 async function main() {
   console.log(`Exploring ${BASE_URL} …`);
   const browser = await chromium.launch();
+  const material = await materialRoutes();
+  const publicRoutes = [...PUBLIC_ROUTES, ...material];
+  // The listing shows its order form only to a logged-in user.
+  const authedRoutes = [...AUTHED_ROUTES, ...material.slice(0, 1)];
 
   // Public — desktop (a11y + console/network)
   const pub = await browser.newContext({
     baseURL: BASE_URL,
     viewport: { width: 1280, height: 800 },
   });
-  for (const r of PUBLIC_ROUTES) await visit(pub, r, 'desktop');
+  for (const r of publicRoutes) await visit(pub, r, 'desktop');
   await pub.close();
 
   // Authed — desktop
@@ -242,7 +271,7 @@ async function main() {
     viewport: { width: 1280, height: 800 },
   });
   await applyAuth(authed, token, user);
-  for (const r of AUTHED_ROUTES) await visit(authed, r, 'desktop');
+  for (const r of authedRoutes) await visit(authed, r, 'desktop');
   await authed.close();
 
   // Mobile overflow pass — public + authed
@@ -253,7 +282,7 @@ async function main() {
     hasTouch: true,
   });
   await applyAuth(mob, token, user);
-  for (const r of [...PUBLIC_ROUTES, ...AUTHED_ROUTES]) await visit(mob, r, 'mobile');
+  for (const r of [...publicRoutes, ...authedRoutes]) await visit(mob, r, 'mobile');
   await mob.close();
 
   await browser.close();

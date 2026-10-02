@@ -23,7 +23,7 @@ echo "docker $*" >> "$TEST_LOG"
 FAKE
 cat > "$bin/pnpm" <<'FAKE'
 #!/usr/bin/env bash
-echo "pnpm $* | NODE_ENV=${NODE_ENV-unset} TRACE_ENV=${TRACE_ENV-} SIM=${DEMO_SIMULATE_ANCHOR-} REG=${MATERIAL_REGISTRY_ADDRESS-} KEY_OK=$([[ "${DEPLOYER_PRIVATE_KEY-}" == "$TEST_KEY" ]] && echo yes || echo no)" >> "$TEST_LOG"
+echo "pnpm $* | NODE_ENV=${NODE_ENV-unset} TRACE_ENV=${TRACE_ENV-} SIM=${DEMO_SIMULATE_ANCHOR-} REG=${MATERIAL_REGISTRY_ADDRESS-} DB=${DATABASE_URL##*/} CURATED=${E2E_CURATED_ONLY-} KEY_OK=$([[ "${DEPLOYER_PRIVATE_KEY-}" == "$TEST_KEY" ]] && echo yes || echo no)" >> "$TEST_LOG"
 FAKE
 cat > "$bin/node" <<'FAKE'
 #!/usr/bin/env bash
@@ -34,6 +34,15 @@ case "$1" in
   dist/scripts/chain-deploy-registry.js)
     echo "Chain: vechain:0x00"; echo "MATERIAL_REGISTRY_ADDRESS=$TEST_REGISTRY" ;;
   *) exec -a "fake-long-running-$TEST_PID" sleep 30 ;;
+esac
+FAKE
+# git: a fixed commit, a clean tree, and a worktree that is just a directory.
+cat > "$bin/git" <<'FAKE'
+#!/usr/bin/env bash
+echo "git $*" >> "$TEST_LOG"
+case "$*" in
+  *rev-parse*) echo abc123def456 ;;
+  *'worktree add'*) mkdir -p "$6" ;;
 esac
 FAKE
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$bin/curl"
@@ -83,7 +92,7 @@ s=$(line_of 'demo:restore -- --env local --yes'); a=$(line_of 'node dist/index.j
 [[ -n "$b" && -n "$g" && -n "$c" && -n "$r" && -n "$m" && -n "$s" && -n "$a" ]] || fail 'up skipped a step'
 (( b < g && g < c && c < r && r < m && m < s && s < a )) || fail 'up ran its steps out of order'
 grep -q 'pnpm build | NODE_ENV=unset' "$log" || fail 'the build must run without NODE_ENV'
-grep -q "demo:restore -- --env local --yes | NODE_ENV=production TRACE_ENV=local SIM=false REG=$registry KEY_OK=yes" "$log" \
+grep -q "demo:restore -- --env local --yes | NODE_ENV=production TRACE_ENV=local SIM=false REG=$registry .* KEY_OK=yes" "$log" \
   || fail 'seeding must see the on-chain API environment, registry included'
 grep -q 'node node_modules/next/dist/bin/next start -p 3000' "$log" || fail 'web must start on 3000'
 
@@ -116,6 +125,39 @@ stack stop
 timeout 20 bash -c 'env "$@" | cat >/dev/null' _ PATH="$bin:$PATH" TEST_LOG="$log" TEST_KEY="$key" \
   TEST_REGISTRY="$registry" TEST_PID=$$ TRACE_LOCAL_STACK_DIR="$tmp/state" TRACE_LOCAL_ENV_FILE="$envfile" \
   "$STACK" start || fail 'start must not hold its output pipe open'
+
+# status names the commit the stack was built from.
+[[ "$(stack status)" == *'built from: abc123def456'* ]] || fail 'status must name the built commit'
+
+# check runs the read-only invariant check against the stack's database.
+: > "$log"
+stack check >/dev/null || fail 'check failed'
+grep -q 'check:invariants -- --env local | NODE_ENV=production' "$log" || fail 'check must use the stack environment'
+
+# rehearse runs every part, keeps each log, and never stops at a failing one.
+: > "$log"
+summary=$(stack rehearse) || fail 'rehearse failed'
+for part in restore-before invariants-before tests e2e-suite journeys-and-probes explore invariants-after upgrade; do
+  [[ "$summary" == *"- $part: passed"* ]] || fail "rehearse must run and report $part"
+done
+grep -q 'pnpm -s rehearse | .* CURATED=1 ' "$log" || fail 'journeys must run against the stack as the curated-only demo'
+grep -q 'pnpm test | .* DB=trace_test ' "$log" || fail 'tests must use trace_test'
+grep -q 'migrate | .* DB=trace_upgrade ' "$log" || fail 'the upgrade must run in its scratch database'
+! grep -q 'demo:restore .* DB=trace_upgrade' "$log" || fail 'the upgrade rehearsal must not restore'
+grep -q 'docker compose .* psql .* drop database if exists trace_upgrade' "$log" || fail 'the scratch database must be dropped'
+evidence=$(ls -d "$tmp/state/rehearsal"/abc123def456-*)
+[[ -s "$evidence/summary.md" && -f "$evidence/upgrade.log" ]] || fail 'rehearse must keep its evidence'
+# A failing part is reported and the rest still run.
+cat > "$bin/pnpm.fail" <<'FAKE'
+#!/usr/bin/env bash
+[[ "$*" == *check:invariants* ]] && exit 1
+exec "$(dirname "$0")/pnpm.real" "$@"
+FAKE
+chmod 755 "$bin/pnpm.fail"; mv "$bin/pnpm" "$bin/pnpm.real"; mv "$bin/pnpm.fail" "$bin/pnpm"
+summary=$(stack rehearse) || fail 'rehearse must not fail when a part does'
+[[ "$summary" == *'invariants-before: FAILED'* && "$summary" == *'- explore: passed'* ]] \
+  || fail 'a failing part must be reported without stopping the rest'
+mv "$bin/pnpm.real" "$bin/pnpm"
 
 # A second up keeps the chain identity, the registry and the data.
 : > "$log"

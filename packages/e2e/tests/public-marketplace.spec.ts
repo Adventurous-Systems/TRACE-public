@@ -7,6 +7,11 @@ import { uniqueName } from '../fixtures/test-helpers';
  * Logged-out public journey: browse the marketplace, open a listing, see the
  * linked passport's trust panel, and get a sign-up CTA instead of a buy button.
  */
+// The public buyer demo profile lists only the curated catalogue, so a
+// listing this suite creates never appears in anonymous browse there (the
+// rehearsal stack sets E2E_CURATED_ONLY=1; CI runs the self-hosted profile).
+const CURATED_ONLY = process.env.E2E_CURATED_ONLY === '1';
+
 test.describe('Public marketplace (logged out)', () => {
   let listingId: string;
   let passportId: string;
@@ -21,6 +26,7 @@ test.describe('Public marketplace (logged out)', () => {
   });
 
   test('marketplace shows the published material', async ({ page }) => {
+    test.skip(CURATED_ONLY, 'anonymous browse is curated-only on this profile');
     await page.goto('/marketplace');
     await expect(page.getByText(productName).first()).toBeVisible();
   });
@@ -80,6 +86,6 @@ test.describe('Public marketplace (logged out)', () => {
     await clear.click();
 
     await expect(page.getByPlaceholder(/search materials/i)).toHaveValue('');
-    await expect(page.getByText(productName).first()).toBeVisible();
+    if (!CURATED_ONLY) await expect(page.getByText(productName).first()).toBeVisible();
   });
 });

@@ -8,6 +8,9 @@
 #   pnpm stack logs <api|worker|web>
 #   pnpm stack restore     put the curated demo data back (demo:restore, local only)
 #   pnpm stack test        run the unit and integration tests against trace_test
+#   pnpm stack check       check the data invariants of the stack's database (read-only)
+#   pnpm stack upgrade [ref]  rehearse the upgrade from a release (default origin/main)
+#   pnpm stack rehearse    the whole rehearsal: tests, journeys, probes, checks, upgrade
 #   pnpm stack reset --yes stop everything and delete all local stack data
 #
 # Web on http://localhost:3000, API on http://localhost:3001. The persona
@@ -85,6 +88,8 @@ write_api_env() {
     "DEPLOYER_PRIVATE_KEY=$key"
     "FEE_DELEGATOR_PRIVATE_KEY=$key"
     "MINIO_PUBLIC_READ=true"
+    # One rehearsal makes more requests in a minute than a visitor's limit.
+    "RATE_LIMIT_MAX=5000"
     "API_PORT=$API_PORT"
     "WEB_URL=http://localhost:$WEB_PORT"
     "API_URL=http://localhost:$API_PORT"
@@ -104,11 +109,21 @@ write_api_env() {
 load_api_env() { set -a; # shellcheck disable=SC1090
   source "$API_ENV"; set +a; }
 
+# The commit of the working tree, marked when it has uncommitted changes.
+current_sha() {
+  local sha
+  sha=$(git -C "$repo_root" rev-parse --short=12 HEAD 2>/dev/null) || { echo unknown; return 0; }
+  [[ -z "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]] || sha+="-dirty"
+  echo "$sha"
+}
+
 build() {
   say 'building (pnpm build)'
   # .env sets NODE_ENV=development, which breaks Next's production build.
   (cd "$repo_root" && env -u NODE_ENV pnpm build >"$STATE/build.log" 2>&1) \
     || die "build failed; see $STATE/build.log (did you run 'pnpm install'?)"
+  # What the running stack was built from; every rehearsal report names it.
+  current_sha > "$STATE/built-sha"
 }
 
 deploy_registry() {
@@ -198,6 +213,7 @@ status() {
     fi
   done
   [[ -s "$STATE/registry.env" ]] && echo "registry: $(<"$STATE/registry.env")"
+  [[ -s "$STATE/built-sha" ]] && echo "built from: $(<"$STATE/built-sha")"
   return 0
 }
 
@@ -220,6 +236,118 @@ run_tests() {
    pnpm --filter @trace/db migrate >/dev/null
    pnpm --filter @trace/db seed >/dev/null
    pnpm test)
+}
+
+check_invariants() {
+  (load_api_env; cd "$repo_root" && pnpm -s --filter @trace/db check:invariants -- --env local "$@")
+}
+
+# Build the given release in a scratch worktree and database, give it orders
+# in every state the old model could leave, then apply this checkout's
+# migrations to it and check the result. Nothing here touches the stack's own
+# database.
+upgrade_rehearsal() {
+  need_env_file
+  local base="${1:-origin/main}" db='trace_upgrade' user='trace' port work="$STATE/upgrade-base"
+  port=$(env_value POSTGRES_HOST_PORT)
+  local url="postgresql://$user:$user@localhost:${port:-5432}/$db"
+  local fixture="$repo_root/packages/db/scripts/upgrade-fixtures/legacy-orders.sql"
+  local -a psql=(compose exec -T postgres psql -U "$user" -v ON_ERROR_STOP=1 -q)
+  local failed=0
+
+  say "upgrade rehearsal: $base → $(current_sha)"
+  "${psql[@]}" -d trace -c "drop database if exists $db" >/dev/null
+  "${psql[@]}" -d trace -c "create database $db" >/dev/null
+  git -C "$repo_root" worktree remove --force "$work" >/dev/null 2>&1 || true
+  rm -rf -- "${work:?}"
+  git -C "$repo_root" worktree add --detach "$work" "$base" >/dev/null 2>&1 \
+    || die "cannot check out $base"
+
+  say "building and seeding $base"
+  (set -a; # shellcheck disable=SC1090
+   source "$ENV_FILE"; set +a
+   export DATABASE_URL="$url" TRACE_ENV=local
+   cd "$work"
+   pnpm install --frozen-lockfile --prefer-offline \
+     && pnpm --filter @trace/core --filter @trace/db build \
+     && pnpm --filter @trace/db migrate \
+     && pnpm --filter @trace/db seed \
+     && pnpm --filter @trace/db seed:products) >"$STATE/upgrade-base.log" 2>&1 \
+    || die "building or seeding $base failed; see $STATE/upgrade-base.log"
+
+  say 'adding old-model orders in every state'
+  "${psql[@]}" -d "$db" -tA < "$fixture" | sed 's/^/    legacy orders: /'
+
+  local round
+  for round in 1 2; do
+    say "applying this checkout's migrations (run $round of 2)"
+    (set -a; # shellcheck disable=SC1090
+     source "$ENV_FILE"; set +a
+     export DATABASE_URL="$url" TRACE_ENV=local
+     cd "$repo_root"
+     pnpm --filter @trace/db migrate >/dev/null \
+       && pnpm -s --filter @trace/db check:invariants -- --env local) || failed=1
+  done
+
+  say 'orders and lots after the upgrade'
+  "${psql[@]}" -d "$db" -c "select left(p.product_name, 30) as lot, l.status as listing, l.quantity as qty, l.quantity_available as avail, t.status as \"order\", t.quantity as order_qty, t.amount_pence as pence, p.status as passport from transactions t join listings l on l.id = t.listing_id join material_passports p on p.id = l.passport_id where t.notes like 'legacy fixture:%' order by 1"
+
+  git -C "$repo_root" worktree remove --force "$work" >/dev/null 2>&1 || true
+  "${psql[@]}" -d trace -c "drop database if exists $db" >/dev/null
+  return "$failed"
+}
+
+# Every part of a milestone rehearsal, in one run. Each part's output is kept
+# and a failing part never stops the rest: the point is the full picture.
+rehearse() {
+  need_env_file
+  [[ -s "$STATE/built-sha" ]] || die 'the stack has not been built; run: pnpm stack up'
+  local sha out
+  sha=$(<"$STATE/built-sha")
+  out="$STATE/rehearsal/$sha-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$out"
+  : > "$out/summary.md"
+  [[ "$sha" == "$(current_sha)" ]] \
+    || echo "- **Warning:** the stack was built from $sha, but the checkout is now $(current_sha)." >> "$out/summary.md"
+
+  part() {
+    local name=$1; shift
+    say "$name"
+    # A subshell, so a part that gives up (die) ends only itself.
+    if ("$@") >"$out/$name.log" 2>&1; then
+      echo "- $name: passed" >> "$out/summary.md"
+    else
+      echo "- **$name: FAILED** (see $name.log)" >> "$out/summary.md"
+      echo "    $name FAILED; see $out/$name.log"
+    fi
+  }
+  e2e() {
+    (load_api_env
+     export E2E_BASE_URL="http://localhost:$WEB_PORT" E2E_API_URL="http://localhost:$API_PORT"
+     export E2E_CURATED_ONLY=1 REHEARSAL_OUT="$out/evidence" REHEARSAL_COMMIT="$sha"
+     cd "$repo_root/packages/e2e" && "$@")
+  }
+  restore_data() {
+    (load_api_env; cd "$repo_root" && pnpm --filter @trace/db demo:restore -- --env local --yes)
+  }
+
+  part restore-before restore_data
+  part invariants-before check_invariants
+  part tests run_tests
+  part e2e-suite e2e pnpm exec playwright test --reporter=list
+  # The suite leaves its own orders on curated lots; the journeys start clean.
+  part restore-before-journeys restore_data
+  part journeys-and-probes e2e pnpm -s rehearse
+  part explore e2e pnpm -s explore
+  cp "$repo_root"/packages/e2e/qa-report.* "$out/" 2>/dev/null || true
+  part invariants-after check_invariants
+  part upgrade upgrade_rehearsal
+
+  echo
+  echo "Rehearsal of $sha:"
+  cat "$out/summary.md"
+  echo
+  echo "Evidence: $out (journeys and probes: evidence/report.md)"
 }
 
 command="${1:-}"
@@ -253,10 +381,13 @@ case "$command" in
     write_api_env
     (load_api_env; cd "$repo_root" && pnpm --filter @trace/db demo:restore -- --env local --yes) ;;
   test) run_tests ;;
+  check) check_invariants "$@" ;;
+  upgrade) upgrade_rehearsal "$@" ;;
+  rehearse) rehearse ;;
   reset)
     [[ "${1:-}" == --yes ]] || die 'reset deletes the local database, chain and files; pass --yes'
     stop
     [[ -f "$STATE/compose.override.yml" ]] && compose down -v >/dev/null 2>&1 || true
     rm -rf -- "${STATE:?}" ;;
-  *) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; [[ -z "$command" ]] || exit 2 ;;
+  *) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; [[ -z "$command" ]] || exit 2 ;;
 esac
