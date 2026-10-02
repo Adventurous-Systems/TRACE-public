@@ -128,11 +128,11 @@ export async function getPassportById(
     where: eq(materialPassports.id, passportId),
   });
 
-  if (!passport) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', passportId);
 
   // Drafts are org-private
   if (passport.status === 'draft' && requestingOrgId !== passport.organisationId) {
-    throw new NotFoundError(`Passport ${passportId} not found`);
+    throw new NotFoundError('Passport', passportId);
   }
 
   return passport;
@@ -196,7 +196,7 @@ export async function updatePassport(
     where: eq(materialPassports.id, passportId),
   });
 
-  if (!existing) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!existing) throw new NotFoundError('Passport', passportId);
   if (existing.organisationId !== organisationId) {
     throw new ForbiddenError('You do not have permission to update this passport');
   }
@@ -292,7 +292,7 @@ export async function verifyPassportIntegrity(
   const passport = await db.query.materialPassports.findFirst({
     where: eq(materialPassports.id, passportId),
   });
-  if (!passport) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', passportId);
   const recomputedHash = computePassportHash(passport);
   const storedHash = passport.blockchainPassportHash;
   return {
@@ -313,7 +313,7 @@ export async function verifyPassport(passportId: string): Promise<PassportWithVe
     where: eq(materialPassports.id, passportId),
   });
 
-  if (!passport) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', passportId);
 
   const verified = passport.blockchainTxHash !== null && passport.blockchainAnchoredAt !== null;
 
@@ -353,7 +353,7 @@ export async function getPassportCertificate(passportId: string): Promise<Passpo
     },
   });
 
-  if (!passport) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', passportId);
 
   const latestChainTx = await db.query.blockchainTransactions.findFirst({
     where: and(
@@ -427,7 +427,7 @@ export async function getPassportHistory(passportId: string): Promise<unknown[]>
   const passport = await db.query.materialPassports.findFirst({
     where: eq(materialPassports.id, passportId),
   });
-  if (!passport) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', passportId);
 
   return db.query.passportEvents.findMany({
     where: eq(passportEvents.passportId, passportId),
@@ -551,7 +551,7 @@ export async function uploadPassportPhoto(
     where: eq(materialPassports.id, passportId),
   });
 
-  if (!passport) throw new NotFoundError(`Passport ${passportId} not found`);
+  if (!passport) throw new NotFoundError('Passport', passportId);
   if (passport.organisationId !== organisationId) throw new ForbiddenError('Access denied');
 
   // Normalise to JPEG: sharp decodes HEIC/HEIF + other formats, applies EXIF
