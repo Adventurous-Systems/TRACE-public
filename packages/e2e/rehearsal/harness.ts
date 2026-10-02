@@ -14,6 +14,7 @@
  * that is not local.
  */
 import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -87,6 +88,25 @@ export class Rehearsal {
   finding(finding: Finding): void {
     this.findings.push(finding);
     console.log(`  ! [${finding.severity}] ${finding.source}: ${finding.what}`);
+  }
+
+  // ── Database (local stacks only) ─────────────────────────────────────────
+
+  /** Whether sql() can run: `pnpm stack rehearse` says how to reach the database. */
+  get canSql(): boolean {
+    return !!process.env.REHEARSAL_PSQL;
+  }
+
+  /**
+   * Run one SQL statement on the stack's database. For what no API can do and
+   * a rehearsal still has to see: moving a deadline into the past so a time
+   * limit applies now. REHEARSAL_PSQL is the psql command up to the statement.
+   */
+  sql(statement: string): string {
+    const command = process.env.REHEARSAL_PSQL;
+    if (!command) throw new Error('REHEARSAL_PSQL is not set; this needs the stack database');
+    const [file, ...args] = command.split(' ').filter(Boolean);
+    return execFileSync(file!, [...args, statement], { encoding: 'utf8' }).trim();
   }
 
   // ── API ──────────────────────────────────────────────────────────────────

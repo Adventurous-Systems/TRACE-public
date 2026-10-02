@@ -6,36 +6,39 @@
 -- has, and hold whatever the new migrations will touch. `after.sql` then
 -- checks what they did with it.
 --
--- Written for: live release with migrations 0000-0010; new migration 0011
--- (quality_reports.inspector_role). The fixture for 0008-0010 (orders from
--- before quantities) is in this file's history.
+-- Written for: new migration 0012 (order lifecycle: order_events,
+-- transactions.response_deadline, users.orders_seen_at). The live release has
+-- orders with quantities (0008-0010); whether it also has 0011 makes no
+-- difference here. Earlier fixtures are in this file's history.
 
--- Quality reports as the live release files them: no role recorded. One by
--- each role that may file one.
-INSERT INTO quality_reports (passport_id, inspector_id, overall_grade, structural_score, report_notes)
-  SELECT p.id, u.id, 'B', 7, 'upgrade fixture: filed by ' || u.role
-  FROM material_passports p, users u
-  WHERE p.product_name LIKE 'Reclaimed Facing Bricks%'
+-- Open orders in every state, as the live release leaves them: no deadline to
+-- answer by, no record of steps, and a problem flagged without a reason. Each
+-- is days old, so every time limit of the new release has already passed.
+CREATE TEMP TABLE fixture_plan (product text, quantity int, order_status text, deadline interval);
+INSERT INTO fixture_plan VALUES
+  ('K-BRIQ%',                            250, 'pending',   NULL),
+  ('Sisalwool 100%',                     3,   'confirmed', '-3 days'),
+  ('Reclaimed Aerated Concrete Blocks%', 5,   'confirmed', '1 day'),
+  ('Reclaimed Concrete Lintels%',        2,   'disputed',  '-3 days'),
+  ('Reclaimed Facing Bricks%',           10,  'completed', '-3 days');
+
+CREATE TEMP TABLE fixture_lots AS
+  SELECT l.id AS listing_id, l.seller_id, l.price_pence, plan.*
+  FROM fixture_plan plan
+  JOIN material_passports p ON p.product_name LIKE plan.product
     AND p.custom_attributes->>'seedSource' IS NOT NULL
-    AND u.email IN ('inspector@trace.eco', 'admin@stirlingreuse.com', 'platform@trace.eco');
+  JOIN listings l ON l.passport_id = p.id AND l.status = 'active';
 
--- An open order for part of a lot, so the invariants are checked against
--- orders as well as against a freshly seeded catalogue.
-CREATE TEMP TABLE fixture_lot AS
-  SELECT l.id, l.seller_id, l.price_pence
-  FROM listings l JOIN material_passports p ON p.id = l.passport_id
-  WHERE p.product_name LIKE 'K-BRIQ%' AND p.custom_attributes->>'seedSource' IS NOT NULL
-    AND l.status = 'active'
-  LIMIT 1;
-INSERT INTO transactions (listing_id, buyer_id, seller_id, amount_pence, quantity, status, notes)
-  SELECT lot.id, buyer.id, lot.seller_id, lot.price_pence * 250, 250, 'pending',
-         'upgrade fixture: part of a lot'
-  FROM fixture_lot lot, users buyer
+INSERT INTO transactions (listing_id, buyer_id, seller_id, amount_pence, quantity, status,
+                          dispute_deadline, notes, created_at)
+  SELECT lot.listing_id, buyer.id, lot.seller_id, lot.price_pence * lot.quantity, lot.quantity,
+         lot.order_status, now() + lot.deadline, 'upgrade fixture: ' || lot.order_status,
+         now() - interval '5 days'
+  FROM fixture_lots lot, users buyer
   WHERE buyer.email = 'buyer@example.com';
-UPDATE listings l SET quantity_available = quantity_available - 250
-  FROM fixture_lot lot WHERE l.id = lot.id;
+UPDATE listings l SET quantity_available = l.quantity_available - lot.quantity
+  FROM fixture_lots lot WHERE l.id = lot.listing_id;
 
-SELECT (SELECT count(*) FROM quality_reports WHERE report_notes LIKE 'upgrade fixture:%')
-       || ' report(s), '
-       || (SELECT count(*) FROM transactions WHERE notes LIKE 'upgrade fixture:%')
-       || ' order(s)';
+SELECT (SELECT count(*) FROM transactions WHERE notes LIKE 'upgrade fixture:%') || ' order(s): '
+       || (SELECT string_agg(status, ', ' ORDER BY status) FROM transactions
+           WHERE notes LIKE 'upgrade fixture:%');

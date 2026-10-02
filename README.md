@@ -189,7 +189,10 @@ evidence in `.local-stack/rehearsal/<commit>-<time>/`:
   inspector, hub staff, a supplier and a buyer on a phone, with a screenshot
   per step and every console error, failed request and broken image recorded;
 - **API probes** (`rehearsal/probes.ts`): inputs, sequences and races a browser
-  will not produce, each with the outcome it should have;
+  will not produce, each with the outcome it should have. The time-limit
+  probes move an order's deadline into the past through the stack's database
+  (`REHEARSAL_PSQL`, set by `pnpm stack rehearse`) and then watch the worker
+  close it;
 - the read-only crawler (`pnpm --filter @trace/e2e explore`): accessibility
   and mobile overflow;
 - **data invariants** (`pnpm stack check`): stock adds up with orders, statuses

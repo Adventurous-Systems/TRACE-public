@@ -255,6 +255,7 @@ packages/e2e/tests/buyer-journey.spec.ts
 packages/e2e/tests/inspector-journey.spec.ts
 packages/e2e/tests/mobile/mobile-nav.spec.ts
 packages/e2e/tests/mobile/overflow.spec.ts
+packages/e2e/tests/order-lifecycle.spec.ts
 packages/e2e/tests/photo-guard.spec.ts
 packages/e2e/tests/public-marketplace.spec.ts
 packages/e2e/tests/public-showcase.spec.ts
