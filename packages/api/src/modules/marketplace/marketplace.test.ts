@@ -1,13 +1,23 @@
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
-import { auditEvents, db, listings, materialPassports, organisations, users } from '@trace/db';
+import {
+  auditEvents,
+  db,
+  listings,
+  materialPassports,
+  orderEvents,
+  organisations,
+  transactions,
+  users,
+} from '@trace/db';
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 import {
   getMarketplaceFacets,
   getMarketplaceStats,
   searchListings,
+  sweepOrderLifecycle,
 } from './marketplace.service.js';
 
 const HUB_STAFF = getTestPersona('hubStaff');
@@ -219,7 +229,7 @@ describe('D-03: transaction authorization', () => {
       method: 'PATCH',
       url: `/api/v1/marketplace/transactions/${transactionId}`,
       headers: buyerAuth,
-      payload: { action: 'flag_dispute' },
+      payload: { action: 'flag_dispute', notes: 'Half the pallet arrived broken.' },
     });
     expect(flagRes.statusCode).toBe(200);
     expect(flagRes.json<{ data: { status: string } }>().data.status).toBe('disputed');
@@ -229,7 +239,7 @@ describe('D-03: transaction authorization', () => {
         method: 'PATCH',
         url: `/api/v1/marketplace/transactions/${transactionId}`,
         headers: auth,
-        payload: { action: 'resolve_dispute' },
+        payload: { action: 'resolve_dispute', outcome: 'sale_stands', notes: 'Seems fine to me.' },
       });
       expect(res.statusCode).toBe(403);
     }
@@ -240,7 +250,11 @@ describe('D-03: transaction authorization', () => {
       method: 'PATCH',
       url: `/api/v1/marketplace/transactions/${transactionId}`,
       headers: adminAuth,
-      payload: { action: 'resolve_dispute' },
+      payload: {
+        action: 'resolve_dispute',
+        outcome: 'sale_stands',
+        notes: 'Photos show the damage was in transit, after collection.',
+      },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ data: { status: string } }>().data.status).toBe('resolved');
@@ -796,6 +810,434 @@ describe('rehearsal round 1 fixes', () => {
 
     expect((await offer(staffAuth, { listingId: hubLot.listingId, quantity: 1 })).statusCode).toBe(
       403,
+    );
+  });
+});
+
+// Order lifecycle (plan: ai-os technical/2026-10-02-order-lifecycle-plan.md).
+// A flag carries a reason, a flagged order is resolved with an outcome, and
+// orders and listings no longer stay open for ever.
+describe('order lifecycle', () => {
+  type Auth = { authorization: string };
+  interface Step {
+    action: string;
+    toStatus: string;
+    actorSide: string;
+    note: string | null;
+  }
+  interface Order {
+    id: string;
+    status: string;
+    notes: string | null;
+    responseDeadline: string | null;
+    disputeDeadline: string | null;
+    steps: Step[];
+    isNew: boolean;
+    needsViewer: boolean;
+  }
+
+  let app: TestApp;
+  let sellerAuth: Auth;
+  let buyerAuth: Auth;
+  let adminAuth: Auth;
+  let organisationId: string;
+  let sellerId: string;
+  const HOUR = 60 * 60 * 1000;
+  const past = () => new Date(Date.now() - 60 * 1000);
+
+  async function makeUser(role: string, label: string): Promise<Auth> {
+    const email = `life-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+    await db.insert(users).values({
+      email,
+      passwordHash: await bcrypt.hash('LifeTest1234!', 10),
+      name: `Life ${label}`,
+      role,
+      organisationId: null,
+    });
+    return getAuthHeader(app, email, 'LifeTest1234!');
+  }
+
+  /** A lot of its own for each test, so they cannot disturb each other's stock. */
+  async function newLot(over: { quantity?: number; expiresAt?: Date } = {}) {
+    const [passport] = await db
+      .insert(materialPassports)
+      .values({
+        organisationId,
+        registeredBy: sellerId,
+        productName: `Lifecycle Lot ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        categoryL1: 'masonry',
+        unitOfMeasure: 'each',
+        conditionGrade: 'B',
+        status: 'listed',
+      })
+      .returning();
+    const quantity = over.quantity ?? 10;
+    const [listing] = await db
+      .insert(listings)
+      .values({
+        passportId: passport!.id,
+        organisationId,
+        sellerId,
+        pricePence: 300,
+        currency: 'GBP',
+        quantity,
+        quantityAvailable: quantity,
+        minOrderQuantity: 1,
+        shippingOptions: [{ method: 'collection' }],
+        status: 'active',
+        expiresAt: over.expiresAt ?? null,
+      })
+      .returning();
+    return { listingId: listing!.id, passportId: passport!.id };
+  }
+  const lotOf = async (listingId: string) =>
+    (await db.query.listings.findFirst({ where: eq(listings.id, listingId) }))!;
+  const passportStatusOf = async (passportId: string) =>
+    (await db.query.materialPassports.findFirst({ where: eq(materialPassports.id, passportId) }))!
+      .status;
+
+  const order = async (listingId: string, quantity: number, auth = buyerAuth, notes?: string) => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marketplace/offers',
+      headers: auth,
+      payload: { listingId, quantity, ...(notes ? { notes } : {}) },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json<{ data: { id: string } }>().data.id;
+  };
+  const act = (auth: Auth, id: string, payload: Record<string, unknown>) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/transactions/${id}`,
+      headers: auth,
+      payload,
+    });
+  const ordersOf = async (auth: Auth) =>
+    (
+      await app.inject({ method: 'GET', url: '/api/v1/marketplace/transactions', headers: auth })
+    ).json<{ data: Order[] }>().data;
+  const orderFor = async (auth: Auth, id: string) =>
+    (await ordersOf(auth)).find((o) => o.id === id)!;
+  const summaryOf = async (auth: Auth) =>
+    (
+      await app.inject({
+        method: 'GET',
+        url: '/api/v1/marketplace/transactions/summary',
+        headers: auth,
+      })
+    ).json<{ data: { needsAction: number; changed: number; flagged: number } }>().data;
+  const messageOf = (res: { json: <T>() => T }) =>
+    res.json<{ error: { message: string } }>().error.message;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    const org = await db.query.organisations.findFirst({
+      where: eq(organisations.slug, 'stirling'),
+    });
+    const seller = await db.query.users.findFirst({
+      where: eq(users.email, 'staff@stirlingreuse.com'),
+    });
+    organisationId = org!.id;
+    sellerId = seller!.id;
+    sellerAuth = await getAuthHeader(app, HUB_STAFF.email, HUB_STAFF.password);
+    buyerAuth = await makeUser('buyer', 'buyer');
+    adminAuth = await makeUser('platform_admin', 'admin');
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('a new order says when the seller must answer by, and records who placed it', async () => {
+    const { listingId } = await newLot();
+    const before = Date.now();
+    const id = await order(listingId, 2, buyerAuth, 'Collecting on Friday.');
+    const placed = await orderFor(buyerAuth, id);
+
+    const deadline = new Date(placed.responseDeadline!).getTime();
+    expect(deadline).toBeGreaterThanOrEqual(before + 72 * HOUR - 1000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 72 * HOUR);
+    expect(placed.steps).toMatchObject([
+      { action: 'placed', toStatus: 'pending', actorSide: 'buyer', note: 'Collecting on Friday.' },
+    ]);
+    // No step carries a user id.
+    expect(JSON.stringify(placed.steps)).not.toMatch(/actorId/);
+  });
+
+  it('a problem cannot be flagged without saying what it is', async () => {
+    const { listingId } = await newLot();
+    const id = await order(listingId, 2, buyerAuth, 'Collecting on Friday.');
+    expect((await act(sellerAuth, id, { action: 'accept' })).statusCode).toBe(200);
+
+    expect((await act(buyerAuth, id, { action: 'flag_dispute' })).statusCode).toBe(400);
+    expect((await act(buyerAuth, id, { action: 'flag_dispute', notes: ' no ' })).statusCode).toBe(
+      400,
+    );
+    const flagged = await act(buyerAuth, id, {
+      action: 'flag_dispute',
+      notes: 'A third of the bricks are cracked.',
+    });
+    expect(flagged.statusCode).toBe(200);
+
+    // The seller reads the reason; the buyer's own note on the order is kept.
+    const seen = await orderFor(sellerAuth, id);
+    expect(seen.status).toBe('disputed');
+    expect(seen.notes).toBe('Collecting on Friday.');
+    expect(seen.steps.at(-1)).toMatchObject({
+      action: 'flag_dispute',
+      actorSide: 'buyer',
+      note: 'A third of the bricks are cracked.',
+    });
+  });
+
+  it('a flagged order is resolved with an outcome and a reason, by the platform admin', async () => {
+    const stands = await newLot({ quantity: 4 });
+    const cancelled = await newLot({ quantity: 4 });
+    const ids: Record<string, string> = {};
+    for (const [key, lot] of Object.entries({ stands, cancelled })) {
+      ids[key] = await order(lot.listingId, 4);
+      await act(sellerAuth, ids[key]!, { action: 'accept' });
+      await act(buyerAuth, ids[key]!, { action: 'flag_dispute', notes: `Problem with ${key}.` });
+    }
+
+    // The list the platform admin works from: waiting orders, with the reason.
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/v1/marketplace/transactions/flagged',
+      headers: adminAuth,
+    });
+    expect(list.statusCode).toBe(200);
+    const waiting = list
+      .json<{ data: Array<Record<string, unknown>> }>()
+      .data.find((o) => o['id'] === ids['stands']);
+    expect(waiting).toMatchObject({
+      status: 'disputed',
+      reason: 'Problem with stands.',
+      sellerOrganisation: expect.any(String),
+      buyer: { name: 'Life buyer', email: expect.stringContaining('@') },
+      resolution: null,
+    });
+    for (const auth of [buyerAuth, sellerAuth]) {
+      expect(
+        (
+          await app.inject({
+            method: 'GET',
+            url: '/api/v1/marketplace/transactions/flagged',
+            headers: auth,
+          })
+        ).statusCode,
+      ).toBe(403);
+    }
+    expect((await summaryOf(adminAuth)).flagged).toBeGreaterThanOrEqual(2);
+
+    // Neither an outcome alone nor a reason alone is enough.
+    expect((await act(adminAuth, ids['stands']!, { action: 'resolve_dispute' })).statusCode).toBe(
+      400,
+    );
+    expect(
+      (await act(adminAuth, ids['stands']!, { action: 'resolve_dispute', outcome: 'sale_stands' }))
+        .statusCode,
+    ).toBe(400);
+
+    // The sale stands: resolved, and the lot is sold.
+    const kept = await act(adminAuth, ids['stands']!, {
+      action: 'resolve_dispute',
+      outcome: 'sale_stands',
+      notes: 'The photos show sound bricks.',
+    });
+    expect(kept.json<{ data: { status: string } }>().data.status).toBe('resolved');
+    expect(await lotOf(stands.listingId)).toMatchObject({ status: 'sold', quantityAvailable: 0 });
+    expect(await passportStatusOf(stands.passportId)).toBe('sold');
+
+    // The order is cancelled: the stock is back on the marketplace.
+    const undone = await act(adminAuth, ids['cancelled']!, {
+      action: 'resolve_dispute',
+      outcome: 'cancel_order',
+      notes: 'The seller agrees they were damaged.',
+    });
+    expect(undone.json<{ data: { status: string } }>().data.status).toBe('cancelled');
+    expect(await lotOf(cancelled.listingId)).toMatchObject({
+      status: 'active',
+      quantityAvailable: 4,
+    });
+    expect(await passportStatusOf(cancelled.passportId)).toBe('listed');
+
+    // Both sides read the outcome and why.
+    for (const auth of [buyerAuth, sellerAuth]) {
+      expect((await orderFor(auth, ids['cancelled']!)).steps.at(-1)).toMatchObject({
+        action: 'resolve_dispute',
+        toStatus: 'cancelled',
+        actorSide: 'platform',
+        note: 'The seller agrees they were damaged.',
+      });
+    }
+    const after = (
+      await app.inject({
+        method: 'GET',
+        url: '/api/v1/marketplace/transactions/flagged',
+        headers: adminAuth,
+      })
+    ).json<{ data: Array<{ id: string; resolution: { outcome: string } | null }> }>().data;
+    expect(after.find((o) => o.id === ids['stands'])?.resolution?.outcome).toBe('sale_stands');
+    expect(after.find((o) => o.id === ids['cancelled'])?.resolution?.outcome).toBe('cancel_order');
+  });
+
+  it('an order the seller does not answer in 72 hours lapses, and its stock returns', async () => {
+    const { listingId, passportId } = await newLot({ quantity: 3 });
+    const id = await order(listingId, 3);
+    expect(await lotOf(listingId)).toMatchObject({ status: 'reserved', quantityAvailable: 0 });
+
+    await db.update(transactions).set({ responseDeadline: past() }).where(eq(transactions.id, id));
+    const swept = await sweepOrderLifecycle();
+    expect(swept.lapsed).toBeGreaterThanOrEqual(1);
+
+    const lapsed = await orderFor(buyerAuth, id);
+    expect(lapsed.status).toBe('cancelled');
+    expect(lapsed.steps.at(-1)).toMatchObject({ action: 'lapse', actorSide: 'time_limit' });
+    expect(await lotOf(listingId)).toMatchObject({ status: 'active', quantityAvailable: 3 });
+    expect(await passportStatusOf(passportId)).toBe('listed');
+    // Sweeping again changes nothing.
+    await sweepOrderLifecycle();
+    expect((await orderFor(buyerAuth, id)).steps.filter((s) => s.action === 'lapse')).toHaveLength(
+      1,
+    );
+  });
+
+  it('a seller who answers after the limit is told the order lapsed, without waiting for the sweep', async () => {
+    const { listingId } = await newLot({ quantity: 3 });
+    const id = await order(listingId, 2);
+    await db.update(transactions).set({ responseDeadline: past() }).where(eq(transactions.id, id));
+
+    const late = await act(sellerAuth, id, { action: 'accept' });
+    expect(late.statusCode).toBe(409);
+    expect(messageOf(late)).toMatch(/did not answer within 72 hours/);
+    expect((await orderFor(sellerAuth, id)).status).toBe('cancelled');
+    expect((await lotOf(listingId)).quantityAvailable).toBe(3);
+  });
+
+  it('an order the previous release placed, with no deadline of its own, lapses 72 hours after it was placed', async () => {
+    const { listingId } = await newLot({ quantity: 3 });
+    const id = await order(listingId, 1);
+    await db
+      .update(transactions)
+      .set({ responseDeadline: null, createdAt: new Date(Date.now() - 71 * HOUR) })
+      .where(eq(transactions.id, id));
+    expect((await orderFor(buyerAuth, id)).status).toBe('pending');
+
+    await db
+      .update(transactions)
+      .set({ createdAt: new Date(Date.now() - 73 * HOUR) })
+      .where(eq(transactions.id, id));
+    expect((await orderFor(buyerAuth, id)).status).toBe('cancelled');
+  });
+
+  it('an accepted order completes when the time to report a problem runs out', async () => {
+    const { listingId, passportId } = await newLot({ quantity: 2 });
+    const id = await order(listingId, 2);
+    await act(sellerAuth, id, { action: 'accept' });
+    await db.update(transactions).set({ disputeDeadline: past() }).where(eq(transactions.id, id));
+
+    // Opening the orders list is enough: no sweep has run.
+    const done = await orderFor(buyerAuth, id);
+    expect(done.status).toBe('completed');
+    expect(done.steps.at(-1)).toMatchObject({ action: 'auto_complete', actorSide: 'time_limit' });
+    expect(await lotOf(listingId)).toMatchObject({ status: 'sold', quantityAvailable: 0 });
+    expect(await passportStatusOf(passportId)).toBe('sold');
+
+    const late = await act(buyerAuth, id, {
+      action: 'flag_dispute',
+      notes: 'Found a crack later.',
+    });
+    expect(late.statusCode).toBe(409);
+  });
+
+  it('a problem flagged just after the window closed is refused, and says why', async () => {
+    const { listingId } = await newLot({ quantity: 2 });
+    const id = await order(listingId, 2);
+    await act(sellerAuth, id, { action: 'accept' });
+    await db.update(transactions).set({ disputeDeadline: past() }).where(eq(transactions.id, id));
+
+    const late = await act(buyerAuth, id, {
+      action: 'flag_dispute',
+      notes: 'Found a crack later.',
+    });
+    expect(late.statusCode).toBe(409);
+    expect(messageOf(late)).toMatch(/48 hours to report a problem ran out/);
+  });
+
+  it('a listing past its date leaves the marketplace at once, and is marked expired by the sweep', async () => {
+    const { listingId, passportId } = await newLot({ expiresAt: past() });
+    const inBrowse = async () =>
+      (
+        await searchListings({ page: 1, limit: 50, sortBy: 'createdAt', sortOrder: 'desc' })
+      ).data.some((l) => l.id === listingId);
+    expect(await inBrowse()).toBe(false);
+    expect((await lotOf(listingId)).status).toBe('active');
+
+    const swept = await sweepOrderLifecycle();
+    expect(swept.expiredListings).toBeGreaterThanOrEqual(1);
+    expect((await lotOf(listingId)).status).toBe('expired');
+    // The material can be listed again.
+    expect(await passportStatusOf(passportId)).toBe('active');
+  });
+
+  it('a listing past its date waits for its open orders before it expires', async () => {
+    const { listingId } = await newLot({ quantity: 5 });
+    const id = await order(listingId, 2);
+    await db.update(listings).set({ expiresAt: past() }).where(eq(listings.id, listingId));
+
+    await sweepOrderLifecycle();
+    expect((await lotOf(listingId)).status).toBe('active');
+    // No new orders in the meantime.
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marketplace/offers',
+      headers: buyerAuth,
+      payload: { listingId, quantity: 1 },
+    });
+    expect(refused.statusCode).toBe(409);
+
+    expect((await act(buyerAuth, id, { action: 'cancel' })).statusCode).toBe(200);
+    await sweepOrderLifecycle();
+    expect(await lotOf(listingId)).toMatchObject({ status: 'expired', quantityAvailable: 5 });
+  });
+
+  it('the Orders count says what waits for each side, and what changed since they looked', async () => {
+    const fresh = await makeUser('buyer', 'fresh');
+    const { listingId } = await newLot();
+    const sellerBefore = await summaryOf(sellerAuth);
+
+    const id = await order(listingId, 1, fresh);
+    // A new order waits for the seller, and is new to them; not to the buyer.
+    expect((await summaryOf(sellerAuth)).needsAction).toBe(sellerBefore.needsAction + 1);
+    expect((await orderFor(sellerAuth, id)).isNew).toBe(true);
+    expect(await summaryOf(fresh)).toMatchObject({ needsAction: 0, changed: 0, flagged: 0 });
+
+    await act(sellerAuth, id, { action: 'accept' });
+    // Accepted: it now waits for the buyer, who has not seen the change.
+    expect(await summaryOf(fresh)).toMatchObject({ needsAction: 1, changed: 1 });
+    expect((await orderFor(sellerAuth, id)).isNew).toBe(false);
+
+    const seen = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marketplace/transactions/seen',
+      headers: fresh,
+    });
+    expect(seen.statusCode).toBe(200);
+    expect(await summaryOf(fresh)).toMatchObject({ needsAction: 1, changed: 0 });
+  });
+
+  it('every step of an order is recorded once', async () => {
+    const { listingId } = await newLot();
+    const id = await order(listingId, 1);
+    await act(sellerAuth, id, { action: 'accept' });
+    await act(buyerAuth, id, { action: 'confirm_delivery' });
+    const events = await db.query.orderEvents.findMany({
+      where: eq(orderEvents.transactionId, id),
+    });
+    expect(events.map((e) => `${e.fromStatus ?? '-'}>${e.toStatus}:${e.actorSide}`).sort()).toEqual(
+      ['->pending:buyer', 'confirmed>completed:buyer', 'pending>confirmed:seller'],
     );
   });
 });

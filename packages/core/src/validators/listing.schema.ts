@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_AMOUNT_PENCE, MAX_LOT_QUANTITY } from '../constants/config.js';
+import { DISPUTE_OUTCOMES, MAX_AMOUNT_PENCE, MAX_LOT_QUANTITY } from '../constants/config.js';
 
 const ShippingOptionSchema = z.object({
   method: z.enum(['collection', 'delivery', 'both']),
@@ -62,19 +62,49 @@ export const MarketplaceQuerySchema = z.object({
 
 export type MarketplaceQueryInput = z.infer<typeof MarketplaceQuerySchema>;
 
-export const UpdateTransactionSchema = z.object({
-  // Seller: accept | reject. Buyer: confirm_delivery | flag_dispute.
-  // Either: cancel. Platform admin: resolve_dispute.
-  action: z.enum([
-    'accept',
-    'reject',
-    'confirm_delivery',
-    'flag_dispute',
-    'resolve_dispute',
-    'cancel',
-  ]),
-  notes: z.string().max(1000).optional(),
-  evidenceUrls: z.array(z.string().url()).optional(),
-});
+export const UpdateTransactionSchema = z
+  .object({
+    // Seller: accept | reject. Buyer: confirm_delivery | flag_dispute.
+    // Either: cancel. Platform admin: resolve_dispute.
+    action: z.enum([
+      'accept',
+      'reject',
+      'confirm_delivery',
+      'flag_dispute',
+      'resolve_dispute',
+      'cancel',
+    ]),
+    /** What the person says about this step. Required to flag and to resolve. */
+    notes: z.string().trim().max(1000).optional(),
+    /** resolve_dispute only: the sale stands, or the order is cancelled. */
+    outcome: z.enum(DISPUTE_OUTCOMES).optional(),
+    evidenceUrls: z.array(z.string().url()).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const said = (value.notes ?? '').length >= 5;
+    if (value.action === 'flag_dispute' && !said) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['notes'],
+        message: 'Say what the problem is, so the seller and the platform can act on it',
+      });
+    }
+    if (value.action === 'resolve_dispute') {
+      if (!value.outcome) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['outcome'],
+          message: 'Choose an outcome: the sale stands, or the order is cancelled',
+        });
+      }
+      if (!said) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['notes'],
+          message: 'Say why, for the buyer and the seller',
+        });
+      }
+    }
+  });
 
 export type UpdateTransactionInput = z.infer<typeof UpdateTransactionSchema>;
