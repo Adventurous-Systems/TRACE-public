@@ -248,7 +248,11 @@ Application rollback is an nginx operation:
 3. Preserve the failed slot and logs for diagnosis.
 
 Do not reverse a database migration during an application rollback. Every
-migration must remain compatible with the previous slot. A destructive migration
+migration must remain compatible with the previous slot. `pnpm stack upgrade`
+checks this before a release: it migrates a database built by the previous
+release, then has that release create lots on the new schema. (Migration
+`0010` exists because that check was missing: a new required column would have
+stopped the previous release creating listings.) A destructive migration
 is ineligible for this procedure.
 
 ## Backup and restore

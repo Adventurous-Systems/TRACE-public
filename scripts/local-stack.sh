@@ -289,8 +289,26 @@ upgrade_rehearsal() {
        && pnpm -s --filter @trace/db check:invariants -- --env local) || failed=1
   done
 
-  say 'orders and lots after the upgrade'
-  "${psql[@]}" -d "$db" -c "select left(p.product_name, 30) as lot, l.status as listing, l.quantity as qty, l.quantity_available as avail, t.status as \"order\", t.quantity as order_qty, t.amount_pence as pence, p.status as passport from transactions t join listings l on l.id = t.listing_id join material_passports p on p.id = l.passport_id where t.notes like 'legacy fixture:%' order by 1"
+  # The previous release serves traffic while a deploy migrates, and is the
+  # rollback target afterwards, so it must still work on the new schema.
+  # Replenishment makes it create lots, the write most likely to break.
+  say "the $base release creating lots on the new schema"
+  if (set -a; # shellcheck disable=SC1090
+      source "$ENV_FILE"; set +a
+      export DATABASE_URL="$url" TRACE_ENV=local
+      cd "$work" && pnpm --filter @trace/db demo:replenish -- --env local --yes) \
+      >"$STATE/upgrade-old-release.log" 2>&1; then
+    (set -a; # shellcheck disable=SC1090
+     source "$ENV_FILE"; set +a
+     export DATABASE_URL="$url" TRACE_ENV=local
+     cd "$repo_root" && pnpm -s --filter @trace/db check:invariants -- --env local) || failed=1
+  else
+    echo "    the $base release failed on the new schema; see $STATE/upgrade-old-release.log"
+    failed=1
+  fi
+
+  say 'lots and orders after the upgrade'
+  "${psql[@]}" -d "$db" -c "select left(p.product_name, 38) as lot, l.status as listing, l.quantity as qty, l.quantity_available as avail, coalesce(t.status, '-') as \"order\", t.quantity as order_qty, t.amount_pence as pence, p.status as passport from listings l join material_passports p on p.id = l.passport_id left join transactions t on t.listing_id = l.id where p.custom_attributes->>'seedSource' is not null order by 1, l.created_at"
 
   git -C "$repo_root" worktree remove --force "$work" >/dev/null 2>&1 || true
   "${psql[@]}" -d trace -c "drop database if exists $db" >/dev/null
