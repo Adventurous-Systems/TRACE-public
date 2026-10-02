@@ -60,10 +60,12 @@ async function main() {
       );
     }
     const pending = passports.filter((p) => !p.blockchainPassportHash && p.status !== 'draft');
+    const legacy = orders.filter((o) => o.legacyWholeLot).length;
     console.log(
       `\nChecked ${listings.length} listing(s), ${orders.length} order(s), ${passports.length} passport(s) ` +
         `on ${target.description}: ${errors.length} error(s), ${warnings.length} warning(s); ` +
-        `${pending.length} passport(s) waiting for an anchor.`,
+        `${pending.length} passport(s) waiting for an anchor` +
+        (legacy ? `; ${legacy} order(s) placed before quantity ordering.` : '.'),
     );
     if (errors.length > 0 || (strict && warnings.length > 0)) process.exitCode = 1;
   } finally {
