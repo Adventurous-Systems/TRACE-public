@@ -4,6 +4,9 @@ import type { QualityReportSummary } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
 import { latestIndependent, reportedBy } from '@/lib/inspection';
 
+/** The reports listed under the inspection; the API returns the newest first. */
+const OTHERS_SHOWN = 5;
+
 /**
  * What a buyer most needs to know about quality: has anyone independent of
  * the seller inspected this material, and what did they find? The seller's
@@ -26,6 +29,7 @@ export function InspectionCard({
       ]
     : [];
   const others = reports.filter((r) => r.id !== inspection?.id);
+  const shown = others.slice(0, OTHERS_SHOWN);
 
   return (
     <Card>
@@ -79,7 +83,7 @@ export function InspectionCard({
           <div className="border-t pt-3">
             <p className="text-gray-500">Other checks on record</p>
             <ul className="mt-1 space-y-1 text-gray-700">
-              {others.map((r) => (
+              {shown.map((r) => (
                 <li key={r.id}>
                   {formatDate(r.createdAt)} ·{' '}
                   {r.source === 'independent'
@@ -90,6 +94,9 @@ export function InspectionCard({
                   {r.overallGrade ? ` · Grade ${r.overallGrade}` : ''} · {reportedBy(r)}
                 </li>
               ))}
+              {others.length > shown.length && (
+                <li className="text-gray-500">and {others.length - shown.length} earlier</li>
+              )}
             </ul>
           </div>
         )}

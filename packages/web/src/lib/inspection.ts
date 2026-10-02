@@ -31,9 +31,10 @@ export function reportedBy(report: ReportForBuyer): string {
 }
 
 /**
- * Where the grade on the passport comes from. The latest report that gave
- * the grade the passport shows set it; if no report did, the organisation
- * that registered the material declared it.
+ * Where the grade on the passport comes from. If the latest inspection that
+ * gave a grade gave this one, the inspection stands behind it, whoever has
+ * repeated it since. Otherwise the latest report that gave this grade set
+ * it; if none did, the organisation that registered the material declared it.
  */
 export function gradeBasis(
   grade: string | null | undefined,
@@ -41,10 +42,12 @@ export function gradeBasis(
   organisationName: string | null | undefined,
 ): string | null {
   if (!grade) return null;
-  const setBy = [...reports].sort(byNewest).find((r) => r.overallGrade === grade);
-  if (setBy?.source === 'independent') {
-    return `Set by independent inspection on ${formatDate(setBy.createdAt)}`;
+  const newestFirst = [...reports].sort(byNewest);
+  const inspected = newestFirst.find((r) => r.source === 'independent' && r.overallGrade);
+  if (inspected?.overallGrade === grade) {
+    return `Set by independent inspection on ${formatDate(inspected.createdAt)}`;
   }
+  const setBy = newestFirst.find((r) => r.overallGrade === grade);
   if (setBy?.source === 'platform') {
     return `Set by the platform operator on ${formatDate(setBy.createdAt)}`;
   }

@@ -101,12 +101,13 @@ export async function qualityRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── POST /api/v1/quality/reports/:id/dispute ─────────────────────────────
-  // Authenticated: flag a report as disputed
+  // The organisation that holds the material, or the platform: flag a report
+  // on it as disputed
   app.post<{ Params: { id: string } }>(
     '/reports/:id/dispute',
     { preHandler: [authenticate] },
     async (request, reply) => {
-      const report = await disputeReport(request.params.id);
+      const report = await disputeReport(request.params.id, reporterOf(request.user));
       await recordAuditEvent({
         actor: request.user,
         action: 'quality_report.dispute',

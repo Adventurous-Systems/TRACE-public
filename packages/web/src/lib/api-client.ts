@@ -659,7 +659,7 @@ export const quality = {
       structuralScore?: number;
       aestheticScore?: number;
       environmentalScore?: number;
-      overallGrade?: 'A' | 'B' | 'C' | 'D';
+      overallGrade: 'A' | 'B' | 'C' | 'D';
       reportNotes?: string;
       photoUrls?: string[];
     },

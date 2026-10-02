@@ -251,7 +251,7 @@ upgrade_rehearsal() {
   local base="${1:-origin/main}" db='trace_upgrade' user='trace' port work="$STATE/upgrade-base"
   port=$(env_value POSTGRES_HOST_PORT)
   local url="postgresql://$user:$user@localhost:${port:-5432}/$db"
-  local fixture="$repo_root/packages/db/scripts/upgrade-fixtures/legacy-orders.sql"
+  local fixtures="$repo_root/packages/db/scripts/upgrade-fixtures"
   local -a psql=(compose exec -T postgres psql -U "$user" -v ON_ERROR_STOP=1 -q)
   local failed=0
 
@@ -275,8 +275,8 @@ upgrade_rehearsal() {
      && pnpm --filter @trace/db seed:products) >"$STATE/upgrade-base.log" 2>&1 \
     || die "building or seeding $base failed; see $STATE/upgrade-base.log"
 
-  say 'adding old-model orders in every state'
-  "${psql[@]}" -d "$db" -tA < "$fixture" | sed 's/^/    legacy orders: /'
+  say "adding data as $base can leave it"
+  "${psql[@]}" -d "$db" -tA < "$fixtures/before.sql" | sed 's/^/    /'
 
   local round
   for round in 1 2; do
@@ -288,6 +288,9 @@ upgrade_rehearsal() {
      pnpm --filter @trace/db migrate >/dev/null \
        && pnpm -s --filter @trace/db check:invariants -- --env local) || failed=1
   done
+
+  say 'checking what the migrations did with that data'
+  "${psql[@]}" -d "$db" -tA < "$fixtures/after.sql" | sed 's/^/    /' || failed=1
 
   # The previous release serves traffic while a deploy migrates, and is the
   # rollback target afterwards, so it must still work on the new schema.

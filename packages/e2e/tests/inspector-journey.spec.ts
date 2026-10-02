@@ -59,8 +59,11 @@ test.describe('Inspector journey', () => {
     await expect(page.getByText(productName).first()).toBeVisible();
     await expect(page.getByText('None. This will be the first.')).toBeVisible();
 
+    // A report needs a verdict: scores alone do not make it submittable.
     await page.locator('#structuralScore').fill('8');
+    await expect(submit).toBeDisabled();
     await page.getByRole('button', { name: /^C\s*Fair$/ }).click();
+    await expect(submit).toBeEnabled();
     await page.locator('textarea').first().fill('E2E: sound, with surface weathering.');
     await submit.click();
 

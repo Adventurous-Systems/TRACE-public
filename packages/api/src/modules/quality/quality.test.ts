@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { db, materialPassports, computePassportHash } from '@trace/db';
+import { db, materialPassports, qualityReports, users, computePassportHash } from '@trace/db';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
 /**
@@ -110,7 +110,7 @@ describe('quality reports and the passport fingerprint', () => {
     expect(after?.blockchainPassportHash).toBe(computePassportHash(after!));
   });
 
-  it('records a report without a grade without disturbing the fingerprint', async () => {
+  it('refuses a report without a grade, and leaves the passport alone', async () => {
     const before = await db.query.materialPassports.findFirst({
       where: eq(materialPassports.id, passportId),
     });
@@ -121,7 +121,9 @@ describe('quality reports and the passport fingerprint', () => {
       headers: inspectorAuth,
       payload: { passportId, structuralScore: 6, reportNotes: 'Scores only.', photoUrls: [] },
     });
-    expect(report.statusCode).toBe(201);
+    // A report is a verdict; without a grade it would stand on the passport
+    // as the latest inspection and say nothing.
+    expect(report.statusCode).toBe(400);
 
     const after = await db.query.materialPassports.findFirst({
       where: eq(materialPassports.id, passportId),
@@ -134,6 +136,7 @@ describe('quality reports and the passport fingerprint', () => {
 // The inspector journey (plan: ai-os technical/2026-10-02-inspector-journey-plan.md).
 describe('inspector journey: finding materials, and who stands behind a report', () => {
   const HUB_ADMIN = getTestPersona('hubAdmin');
+  const PLATFORM_ADMIN = getTestPersona('platformAdmin');
   const SUPPLIER = getTestPersona('supplier');
   const BUYER = getTestPersona('buyer');
   const marker = `Inspect${Date.now()}`;
@@ -142,6 +145,7 @@ describe('inspector journey: finding materials, and who stands behind a report',
   let inspectorAuth: { authorization: string };
   let hubAdminAuth: { authorization: string };
   let hubMaterial: string;
+  let uninspectedHubMaterial: string;
   let supplierMaterial: string;
 
   const create = async (auth: { authorization: string }, payload: Record<string, unknown>) => {
@@ -170,6 +174,12 @@ describe('inspector journey: finding materials, and who stands behind a report',
       categoryL1: 'structural-steel',
       conditionGrade: 'B',
       serialNumber: `${marker}-SN-1`,
+    });
+    uninspectedHubMaterial = await create(hubAdminAuth, {
+      // Named without the marker, so the searches below do not find it.
+      productName: `Hub Plank ${Date.now()}`,
+      categoryL1: 'structural-timber',
+      conditionGrade: 'B',
     });
     supplierMaterial = await create(supplierAuth, {
       productName: `${marker} Supplier Brick`,
@@ -303,6 +313,108 @@ describe('inspector journey: finding materials, and who stands behind a report',
       url: `/api/v1/quality/reports/${String(reports[0]!['id'])}`,
     });
     expect(JSON.stringify(one.json().data)).not.toContain('@');
+  });
+
+  it('once an inspector has graded a material, its seller cannot change the grade', async () => {
+    const grade = async () =>
+      (await db.query.materialPassports.findFirst({ where: eq(materialPassports.id, hubMaterial) }))
+        ?.conditionGrade;
+    expect(await grade()).toBe('C');
+
+    // The hub's own check is recorded, but the inspection's grade stands.
+    const own = await app.inject({
+      method: 'POST',
+      url: '/api/v1/quality/reports',
+      headers: hubAdminAuth,
+      payload: { passportId: hubMaterial, overallGrade: 'A', reportNotes: 'We think A.' },
+    });
+    expect(own.statusCode).toBe(201);
+    expect(await grade()).toBe('C');
+
+    // Nor can it be edited on the passport; everything else still can.
+    const patch = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/v1/passports/${hubMaterial}`,
+        headers: hubAdminAuth,
+        payload,
+      });
+    const refused = await patch({ conditionGrade: 'A' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.message).toMatch(/only another inspection can change it/);
+    expect(
+      (await patch({ conditionGrade: 'C', conditionNotes: 'Stored indoors.' })).statusCode,
+    ).toBe(200);
+    expect(await grade()).toBe('C');
+
+    // Another inspection can, and so can the platform.
+    const platformAuth = await getAuthHeader(app, PLATFORM_ADMIN.email, PLATFORM_ADMIN.password);
+    for (const [auth, next] of [
+      [inspectorAuth, 'D'],
+      [platformAuth, 'B'],
+    ] as const) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/quality/reports',
+        headers: auth,
+        payload: { passportId: hubMaterial, overallGrade: next },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(await grade()).toBe(next);
+    }
+  });
+
+  it('a material nobody has inspected keeps a grade its seller may change', async () => {
+    const own = await app.inject({
+      method: 'POST',
+      url: '/api/v1/quality/reports',
+      headers: hubAdminAuth,
+      payload: { passportId: uninspectedHubMaterial, overallGrade: 'A' },
+    });
+    expect(own.statusCode).toBe(201);
+    const passport = await db.query.materialPassports.findFirst({
+      where: eq(materialPassports.id, uninspectedHubMaterial),
+    });
+    expect(passport?.conditionGrade).toBe('A');
+  });
+
+  it('only the holder of the material, or the platform, can flag a report on it', async () => {
+    const reports = (
+      await app.inject({ method: 'GET', url: `/api/v1/quality/reports/passport/${hubMaterial}` })
+    ).json().data as Array<{ id: string }>;
+    const flag = (id: string, auth: { authorization: string }) =>
+      app.inject({ method: 'POST', url: `/api/v1/quality/reports/${id}/dispute`, headers: auth });
+    const buyerAuth = await getAuthHeader(app, BUYER.email, BUYER.password);
+    const supplierAuth = await getAuthHeader(app, SUPPLIER.email, SUPPLIER.password);
+
+    expect((await flag(reports[0]!.id, buyerAuth)).statusCode).toBe(403);
+    expect((await flag(reports[0]!.id, supplierAuth)).statusCode).toBe(403);
+    expect((await flag(reports[0]!.id, hubAdminAuth)).statusCode).toBe(200);
+    expect((await flag(reports[0]!.id, hubAdminAuth)).statusCode).toBe(409);
+  });
+
+  it('a report with no role recorded takes the role its reporter has', async () => {
+    // The release before the role was recorded keeps filing reports while a
+    // deploy migrates, and after a rollback.
+    const inspector = await db.query.users.findFirst({ where: eq(users.email, INSPECTOR.email) });
+    await db.insert(qualityReports).values({
+      passportId: supplierMaterial,
+      inspectorId: inspector!.id,
+      overallGrade: 'B',
+      reportNotes: 'Filed by the previous release.',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/quality/reports/passport/${supplierMaterial}`,
+    });
+    expect(res.json().data[0]).toMatchObject({
+      source: 'independent',
+      inspector: { name: expect.any(String), role: 'inspector' },
+    });
+    // It counts as an inspection in the work queue too.
+    expect(names(await materials(`q=${marker}&uninspected=true`))).not.toContain(
+      `${marker} Supplier Brick`,
+    );
   });
 
   it("an inspector's own reports name the material, and the summary counts are real", async () => {
