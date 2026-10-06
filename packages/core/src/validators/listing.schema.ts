@@ -35,7 +35,8 @@ export const UpdateListingSchema = z.object({
   quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   minOrderQuantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   shippingOptions: z.array(ShippingOptionSchema).min(1).optional(),
-  expiresAt: FutureDate.optional(),
+  // null clears the date: the listing no longer expires (D3).
+  expiresAt: FutureDate.nullable().optional(),
 });
 
 export type UpdateListingInput = z.infer<typeof UpdateListingSchema>;

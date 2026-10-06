@@ -33,6 +33,9 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
+/** Lots a seller can still change; a sold or cancelled one stays closed. */
+const EDITABLE = ['active', 'reserved', 'expired'];
+
 /** How much of a lot is left, and how much orders have taken. */
 function stockLine(l: ListingSummary): string {
   const unit = l.passport.unitOfMeasure;
@@ -183,6 +186,13 @@ export default function ListingsPage() {
                           View
                         </Button>
                       </Link>
+                      {EDITABLE.includes(listingStatus(l)) && (
+                        <Link href={`/listings/${l.id}/edit`}>
+                          <Button variant="outline" size="sm">
+                            Edit
+                          </Button>
+                        </Link>
+                      )}
                       {listingStatus(l) === 'active' && (
                         <Button
                           variant="outline"

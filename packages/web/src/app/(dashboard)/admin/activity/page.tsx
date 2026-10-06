@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NoAccess } from '@/components/ui/load-state';
 import { audit, type AuditEvent, type BlockchainTransactionsResponse } from '@/lib/api-client';
+import { listingChangeSummary } from '@/lib/listing-changes';
 import { getToken, getUser, canViewAdmin, type StoredUser } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format';
 
@@ -175,6 +176,11 @@ export default function AdminActivityPage() {
                       {event.resourceId ? `:${event.resourceId}` : ''} ·{' '}
                       {formatDateTime(event.createdAt)}
                     </p>
+                    {event.action === 'listing.update' && listingChangeSummary(event.metadata) && (
+                      <p className="text-xs text-gray-700">
+                        {listingChangeSummary(event.metadata)}
+                      </p>
+                    )}
                     {event.origin && <p className="text-xs text-gray-500">Origin {event.origin}</p>}
                     {event.failureReason && (
                       <p className="text-xs text-red-600">{event.failureReason}</p>
