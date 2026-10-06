@@ -152,3 +152,16 @@ export const CONDITION_GRADE_LABELS: Record<string, string> = {
   C: 'Fair — moderate wear, may need minor repair',
   D: 'Poor — significant wear, requires assessment',
 };
+
+// ── Order time limits (owner decisions, 2026-10-02) ─────────────────────────
+/** A seller has this long to answer an order; then it lapses and the stock returns. */
+export const ORDER_RESPONSE_HOURS = 72;
+/**
+ * After the seller accepts, the buyer has this long to report a problem; an
+ * order with no word from the buyer then completes by itself.
+ */
+export const ORDER_PROBLEM_WINDOW_HOURS = 48;
+
+/** How a flagged order is resolved. */
+export const DISPUTE_OUTCOMES = ['sale_stands', 'cancel_order'] as const;
+export type DisputeOutcome = (typeof DISPUTE_OUTCOMES)[number];

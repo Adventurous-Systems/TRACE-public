@@ -109,7 +109,13 @@ export default function QualityReportsPage() {
             <CardContent className="py-16 text-center">
               <p className="text-gray-500 mb-4">No reports submitted yet.</p>
               <Link href="/quality/new">
-                <Button variant="outline">Submit your first inspection</Button>
+                {/* T3: a hub's report is its own check of its own material,
+                    not an inspection (same wording as /quality/new). */}
+                <Button variant="outline">
+                  {user?.role === 'hub_admin'
+                    ? 'Record your first quality check'
+                    : 'Submit your first inspection'}
+                </Button>
               </Link>
             </CardContent>
           </Card>

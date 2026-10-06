@@ -48,6 +48,8 @@ export const users = pgTable(
     organisationId: uuid('organisation_id').references(() => organisations.id),
     blockchainAddress: text('blockchain_address'),
     notificationPrefs: jsonb('notification_prefs').$type<Record<string, unknown>>().default({}),
+    // When this person last opened their orders: what changed since is new to them.
+    ordersSeenAt: timestamp('orders_seen_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [unique('users_email_unique').on(table.email)],
@@ -357,8 +359,14 @@ export const transactions = pgTable(
     amountPence: integer('amount_pence').notNull(),
     status: text('status').default('pending').notNull(),
     // pending | confirmed | disputed | resolved | completed | cancelled
+    // Accepted orders: the buyer may report a problem until then, and the
+    // order completes by itself after it.
     disputeDeadline: timestamp('dispute_deadline', { withTimezone: true }),
+    // Unanswered orders: the seller has until then, after which it lapses.
+    responseDeadline: timestamp('response_deadline', { withTimezone: true }),
     blockchainTxHash: text('blockchain_tx_hash'),
+    // What the buyer wrote when ordering. Later steps keep their own notes in
+    // order_events.
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -371,6 +379,37 @@ export const transactions = pgTable(
 
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
+
+// ── Order events ──────────────────────────────────────────────────────────────
+
+/**
+ * Every step of an order: who took it and what they said. The order row holds
+ * the current state; these are how it got there. An order the release before
+ * this table placed or moved has no events for those steps.
+ */
+export const orderEvents = pgTable(
+  'order_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    transactionId: uuid('transaction_id')
+      .notNull()
+      .references(() => transactions.id, { onDelete: 'cascade' }),
+    // placed | accept | reject | cancel | confirm_delivery | flag_dispute |
+    // resolve_dispute | lapse | auto_complete
+    action: text('action').notNull(),
+    fromStatus: text('from_status'),
+    toStatus: text('to_status').notNull(),
+    // Null when a time limit took the step.
+    actorId: uuid('actor_id').references(() => users.id),
+    // buyer | seller | platform | time_limit
+    actorSide: text('actor_side').notNull(),
+    note: text('note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_order_events_transaction').on(table.transactionId, table.createdAt)],
+);
+
+export type OrderEvent = typeof orderEvents.$inferSelect;
 
 // ── Quality Reports ───────────────────────────────────────────────────────────
 
@@ -561,7 +600,15 @@ export const listingsRelations = relations(listings, ({ one, many }) => ({
   transactions: many(transactions),
 }));
 
-export const transactionsRelations = relations(transactions, ({ one }) => ({
+export const orderEventsRelations = relations(orderEvents, ({ one }) => ({
+  transaction: one(transactions, {
+    fields: [orderEvents.transactionId],
+    references: [transactions.id],
+  }),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one, many }) => ({
+  events: many(orderEvents),
   listing: one(listings, {
     fields: [transactions.listingId],
     references: [listings.id],

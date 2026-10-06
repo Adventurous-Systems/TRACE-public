@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { UNITS_OF_MEASURE } from '@trace/core';
 import { CATALOG, SEED_TAG } from './catalogue.js';
-import { catalogueCorrections, isCatalogueLot } from './catalogue-corrections.js';
+import {
+  catalogueCorrections,
+  isCatalogueLot,
+  SUPERSEDED_CONDITION_NOTES,
+} from './catalogue-corrections.js';
 
 const studWalling = CATALOG.find((p) => p.key === 'reclaimed-aluminium-stud-walling')!;
 const bricks = CATALOG.find((p) => p.key === 'reclaimed-facing-bricks')!;
@@ -69,4 +73,37 @@ test('lots are matched by catalogueKey, and legacy curated rows by exact name', 
   assert.equal(isCatalogueLot(legacy, studWalling), true);
   // A visitor's own passport with the same name is never a catalogue lot.
   assert.equal(isCatalogueLot({ ...legacy, customAttributes: {} }, studWalling), false);
+});
+
+function brickLot(conditionNotes: string | null) {
+  return {
+    productName: `${bricks.passport.productName} — Demo Lot 001`,
+    customAttributes: { seedSource: SEED_TAG, catalogueKey: bricks.key, demoLotNumber: 1 },
+    categoryL1: bricks.passport.categoryL1,
+    categoryL2: bricks.passport.categoryL2 ?? null,
+    reclaimedBy: bricks.passport.reclaimedBy ?? null,
+    unitOfMeasure: bricks.passport.unitOfMeasure ?? null,
+    conditionNotes,
+  };
+}
+
+test('a condition note still as an earlier catalogue wrote it gets the current text', () => {
+  const old = 'Reclaimed perforated facing bricks, cleaned and palletised. B grade.';
+  assert.deepEqual(catalogueCorrections(brickLot(old), bricks), {
+    conditionNotes: bricks.passport.conditionNotes,
+  });
+});
+
+test('a condition note someone edited is never corrected', () => {
+  assert.deepEqual(catalogueCorrections(brickLot('Two pallets chipped. B grade.'), bricks), {});
+  assert.deepEqual(catalogueCorrections(brickLot(null), bricks), {});
+  assert.deepEqual(catalogueCorrections(brickLot(bricks.passport.conditionNotes!), bricks), {});
+});
+
+test('no current catalogue note states a grade, and none is listed as superseded', () => {
+  for (const product of CATALOG) {
+    assert.doesNotMatch(product.passport.conditionNotes ?? '', /\b[A-D] grade\b/, product.key);
+    const superseded = SUPERSEDED_CONDITION_NOTES[product.key] ?? [];
+    assert.ok(!superseded.includes(product.passport.conditionNotes ?? ''), product.key);
+  }
 });

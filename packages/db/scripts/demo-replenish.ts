@@ -1,8 +1,8 @@
 /**
  * Keep the public demo marketplace stocked without modifying visitor data.
  *
- * This command creates independent, numbered lots only when active inventory
- * for a catalogue product drops below the requested target. It never updates
+ * This command creates independent, numbered lots only when a catalogue
+ * product has fewer lots on sale or fully ordered than the requested target. It never updates
  * or deletes users, offers, transactions, reserved listings, or sold listings.
  *
  * Usage:
@@ -14,12 +14,18 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, sql as dsql } from 'drizzle-orm';
+import { eq, inArray, sql as dsql } from 'drizzle-orm';
 import * as Minio from 'minio';
 import postgres from 'postgres';
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
-import { CATALOG, CATALOGUE_LOCK_NAME, SEED_TAG, type Product } from './lib/catalogue.js';
+import {
+  CATALOG,
+  CATALOGUE_LOCK_NAME,
+  LIVE_LOT_STATUSES,
+  SEED_TAG,
+  type Product,
+} from './lib/catalogue.js';
 import { resolveTarget } from './lib/guard.js';
 
 const PACKAGE_ROOT = process.cwd();
@@ -157,11 +163,15 @@ async function main() {
         .select()
         .from(schema.materialPassports)
         .where(dsql`${schema.materialPassports.customAttributes}->>'seedSource' = ${SEED_TAG}`);
-      const activeListingRows = await tx
+      // A lot that is fully ordered is still that product's lot: its orders
+      // either complete (then it is sold, and a new lot is due) or lapse or
+      // are cancelled (then it is back on sale). Adding a second lot while
+      // one is only held left two on sale once the order fell through.
+      const liveListingRows = await tx
         .select({ passportId: schema.listings.passportId })
         .from(schema.listings)
-        .where(eq(schema.listings.status, 'active'));
-      const activePassportIds = new Set(activeListingRows.map((listing) => listing.passportId));
+        .where(inArray(schema.listings.status, [...LIVE_LOT_STATUSES]));
+      const activePassportIds = new Set(liveListingRows.map((listing) => listing.passportId));
       const batch = new Date().toISOString().slice(0, 10);
 
       for (const product of CATALOG) {
@@ -174,7 +184,7 @@ async function main() {
         const missing = Math.max(0, targetActive - activeLots.length);
 
         console.log(
-          `${product.key}: ${activeLots.length} active / ${targetActive} target${missing ? `, add ${missing}` : ''}`,
+          `${product.key}: ${activeLots.length} on sale or fully ordered / ${targetActive} target${missing ? `, add ${missing}` : ''}`,
         );
 
         for (let offset = 0; offset < missing; offset += 1) {

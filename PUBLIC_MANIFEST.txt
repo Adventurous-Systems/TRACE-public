@@ -133,6 +133,7 @@ packages/api/src/test-utils.ts
 packages/api/src/types/fastify.d.ts
 packages/api/src/worker.ts
 packages/api/src/workers/anchor-passport.worker.ts
+packages/api/src/workers/order-lifecycle.worker.ts
 packages/api/tsconfig.build.json
 packages/api/tsconfig.json
 packages/api/vitest.config.ts
@@ -153,6 +154,8 @@ packages/core/package.json
 packages/core/src/constants/categories.ts
 packages/core/src/constants/config.test.ts
 packages/core/src/constants/config.ts
+packages/core/src/constants/dates.test.ts
+packages/core/src/constants/dates.ts
 packages/core/src/constants/demo-catalogue.ts
 packages/core/src/constants/demo-personas.ts
 packages/core/src/errors.ts
@@ -192,6 +195,7 @@ packages/db/migrations/0008_listing_quantity.sql
 packages/db/migrations/0009_legacy_orders.sql
 packages/db/migrations/0010_release_safety.sql
 packages/db/migrations/0011_inspection_role.sql
+packages/db/migrations/0012_order_lifecycle.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
@@ -250,9 +254,11 @@ packages/e2e/rehearsal/run.ts
 packages/e2e/scripts/assert-smoke-isolation.ts
 packages/e2e/tests/auth-redirect.spec.ts
 packages/e2e/tests/buyer-journey.spec.ts
+packages/e2e/tests/header-fit.spec.ts
 packages/e2e/tests/inspector-journey.spec.ts
 packages/e2e/tests/mobile/mobile-nav.spec.ts
 packages/e2e/tests/mobile/overflow.spec.ts
+packages/e2e/tests/order-lifecycle.spec.ts
 packages/e2e/tests/photo-guard.spec.ts
 packages/e2e/tests/public-marketplace.spec.ts
 packages/e2e/tests/public-showcase.spec.ts
@@ -281,6 +287,7 @@ packages/web/src/app/(auth)/register/page.tsx
 packages/web/src/app/(dashboard)/admin/access-requests/page.tsx
 packages/web/src/app/(dashboard)/admin/activity/page.tsx
 packages/web/src/app/(dashboard)/admin/feedback/page.tsx
+packages/web/src/app/(dashboard)/admin/flagged-orders/page.tsx
 packages/web/src/app/(dashboard)/dashboard/page.tsx
 packages/web/src/app/(dashboard)/listings/new/page.tsx
 packages/web/src/app/(dashboard)/listings/page.tsx
@@ -345,12 +352,15 @@ packages/web/src/lib/inspection.test.ts
 packages/web/src/lib/inspection.ts
 packages/web/src/lib/order-quantity.test.ts
 packages/web/src/lib/order-quantity.ts
+packages/web/src/lib/orders.test.ts
+packages/web/src/lib/orders.ts
 packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
 packages/web/src/lib/register-wizard.test.ts
 packages/web/src/lib/register-wizard.ts
 packages/web/src/lib/trust-mode.test.ts
 packages/web/src/lib/trust-mode.ts
+packages/web/src/lib/use-orders-summary.ts
 packages/web/src/lib/utils.ts
 packages/web/src/middleware.ts
 packages/web/src/types/umami.d.ts

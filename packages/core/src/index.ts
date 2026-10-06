@@ -54,6 +54,10 @@ export {
   formatQuantity,
   MAX_AMOUNT_PENCE,
   MAX_LOT_QUANTITY,
+  ORDER_RESPONSE_HOURS,
+  ORDER_PROBLEM_WINDOW_HOURS,
+  DISPUTE_OUTCOMES,
+  type DisputeOutcome,
   inspectionSource,
   INSPECTION_SOURCE_LABELS,
   INSPECTOR_ROLE_LABELS,
@@ -145,6 +149,9 @@ export type {
 // Logger
 export { createLogger, logger } from './logger.js';
 export type { Logger } from './logger.js';
+
+// Dates
+export { BUSINESS_TIME_ZONE, endOfDayInLondon } from './constants/dates.js';
 
 // Errors
 export {

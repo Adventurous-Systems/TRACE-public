@@ -384,6 +384,8 @@ export interface ListingSummary {
   quantity: number;
   /** What open and completed orders have not taken. */
   quantityAvailable: number;
+  /** How much one order may take; less than quantityAvailable when the demo keeps a lot's last unit. */
+  orderableQuantity?: number;
   /** The smallest order a buyer may place, unless less than that is left. */
   minOrderQuantity: number;
   shippingOptions: ListingShippingOption[];
@@ -424,6 +426,49 @@ export interface MarketplaceTransaction {
   viewerSide?: 'buyer' | 'seller';
   /** The order steps the signed-in user may take now (order list only). */
   allowedActions?: string[];
+  /** When an unanswered order lapses (pending orders only). */
+  responseDeadline?: string | null;
+  /** How the order got to where it is, oldest first (order list only). */
+  steps?: OrderStep[];
+  /** Someone else moved it since the signed-in user last opened their orders. */
+  isNew?: boolean;
+  /** It is waiting for the signed-in user. */
+  needsViewer?: boolean;
+}
+
+/** One step of an order: who took it and what they said. */
+export interface OrderStep {
+  action: string;
+  toStatus: string;
+  actorSide: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** What the "Orders" link shows: what waits for this person, and what changed. */
+export interface OrdersSummary {
+  needsAction: number;
+  changed: number;
+  /** Platform admin only: flagged orders waiting to be resolved. */
+  flagged: number;
+}
+
+/** A flagged order as the platform admin, who resolves it, sees it. */
+export interface FlaggedOrder {
+  id: string;
+  status: string;
+  quantity: number;
+  amountPence: number;
+  createdAt: string;
+  productName: string | null;
+  passportId: string | null;
+  unitOfMeasure: string | null;
+  buyer: { name: string; email: string } | null;
+  sellerOrganisation: string | null;
+  flaggedAt: string | null;
+  reason: string | null;
+  resolution: { outcome: 'sale_stands' | 'cancel_order'; note: string | null; at: string } | null;
+  steps: OrderStep[];
 }
 
 export interface AuditEvent {
@@ -519,12 +564,33 @@ export const marketplace = {
   transactions: (token: string) =>
     request<MarketplaceTransaction[]>('/api/v1/marketplace/transactions', { token }),
 
-  updateTransaction: (id: string, action: string, token: string, notes?: string) =>
+  updateTransaction: (
+    id: string,
+    action: string,
+    token: string,
+    extra: { notes?: string; outcome?: 'sale_stands' | 'cancel_order' } = {},
+  ) =>
     request<MarketplaceTransaction>(`/api/v1/marketplace/transactions/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ action, notes }),
+      body: JSON.stringify({ action, ...extra }),
       token,
     }),
+
+  ordersSummary: (token: string) =>
+    request<OrdersSummary>('/api/v1/marketplace/transactions/summary', { token }),
+
+  /** The person has opened their orders: what is there now is no longer new. */
+  markOrdersSeen: (token: string) =>
+    request<null>('/api/v1/marketplace/transactions/seen', {
+      method: 'POST',
+      // A JSON request with no body at all is refused before it reaches the route.
+      body: '{}',
+      token,
+    }),
+
+  /** Platform admin: flagged orders, waiting first, then those resolved. */
+  flaggedOrders: (token: string) =>
+    request<FlaggedOrder[]>('/api/v1/marketplace/transactions/flagged', { token }),
 };
 
 export const audit = {

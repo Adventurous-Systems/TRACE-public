@@ -50,10 +50,21 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       ...(who ? { token: who.token } : {}),
       body: { listingId, ...body },
     });
-  const act = (who: Session, orderId: string, action: string) =>
+  // Flagging needs a reason and resolving an outcome and a reason; a probe
+  // about something else sends them, one about them overrides them.
+  const SAID: Record<string, Record<string, unknown>> = {
+    flag_dispute: { notes: 'Rehearsal probe: damaged on arrival.' },
+    resolve_dispute: { outcome: 'sale_stands', notes: 'Rehearsal probe: the sale stands.' },
+  };
+  const act = (
+    who: Session,
+    orderId: string,
+    action: string,
+    extra: Record<string, unknown> = {},
+  ) =>
     rehearsal.api<Order>('PATCH', `/api/v1/marketplace/transactions/${orderId}`, {
       token: who.token,
-      body: { action },
+      body: { action, ...SAID[action], ...extra },
     });
   const lot = async (listingId: string) =>
     (await rehearsal.api<Lot>('GET', `/api/v1/marketplace/listings/${listingId}`)).body.data!;
@@ -307,6 +318,14 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
   const disputeLot = await newLot({ quantity: 1 });
   const disputed = await placed(buyer, disputeLot, 1);
   await act(seller, disputed, 'accept');
+  for (const [name, notes] of [
+    ['without saying what it is', undefined],
+    ['with two characters', 'no'],
+  ] as const) {
+    await probe(`the buyer flags a problem ${name}`, 'HTTP 400', async () =>
+      expectStatus(await act(buyer, disputed, 'flag_dispute', { notes }), 400),
+    );
+  }
   await probe('the buyer flags a problem on an accepted order', 'HTTP 200, disputed', async () => {
     const res = await act(buyer, disputed, 'flag_dispute');
     return {
@@ -325,6 +344,37 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
   await probe('a disputed order can be cancelled by neither side', 'HTTP 409', async () =>
     expectStatus(await act(buyer, disputed, 'cancel'), 409),
   );
+  for (const [name, extra] of [
+    ['without an outcome', { outcome: undefined }],
+    ['without a reason', { notes: undefined }],
+    ['with an outcome that does not exist', { outcome: 'refund' }],
+  ] as const) {
+    await probe(`the platform admin resolves ${name}`, 'HTTP 400', async () =>
+      expectStatus(await act(admin, disputed, 'resolve_dispute', extra), 400),
+    );
+  }
+  await probe('a seller reads the list of flagged orders', 'HTTP 403', async () =>
+    expectStatus(
+      await rehearsal.api('GET', '/api/v1/marketplace/transactions/flagged', {
+        token: seller.token,
+      }),
+      403,
+    ),
+  );
+  await probe(
+    'the platform admin reads it: the order, the reason, both parties',
+    'listed with its reason',
+    async () => {
+      const res = await rehearsal.api<
+        Array<{ id: string; reason: string | null; buyer: unknown; sellerOrganisation: string }>
+      >('GET', '/api/v1/marketplace/transactions/flagged', { token: admin.token });
+      const found = res.body.data?.find((o) => o.id === disputed);
+      return {
+        pass: !!found?.reason && !!found.buyer && !!found.sellerOrganisation,
+        actual: `${says(res)} reason "${found?.reason ?? 'none'}"`,
+      };
+    },
+  );
   await probe('the platform admin resolves the dispute', 'HTTP 200, resolved', async () => {
     const res = await act(admin, disputed, 'resolve_dispute');
     return {
@@ -339,6 +389,216 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       actual: `${now.status}, ${now.quantityAvailable}`,
     };
   });
+
+  await probe(
+    'both sides read the steps of the order, and no user id',
+    'placed, accept, flag_dispute, resolve_dispute',
+    async () => {
+      const read = async (who: Session) =>
+        (
+          await rehearsal.api<Array<{ id: string; steps: Array<{ action: string }> }>>(
+            'GET',
+            '/api/v1/marketplace/transactions',
+            { token: who.token },
+          )
+        ).body.data?.find((o) => o.id === disputed)?.steps ?? [];
+      const [forBuyer, forSeller] = [await read(buyer), await read(seller)];
+      const actions = forBuyer.map((s) => s.action).join(', ');
+      const text = JSON.stringify([forBuyer, forSeller]);
+      const leaks = [buyer.user.id, seller.user.id, admin.user.id].filter((id) =>
+        text.includes(id),
+      );
+      return {
+        pass:
+          actions === 'placed, accept, flag_dispute, resolve_dispute' &&
+          forSeller.length === 4 &&
+          leaks.length === 0,
+        actual: `${actions}; ${leaks.length} user id(s)`,
+      };
+    },
+  );
+  const undoneLot = await newLot({ quantity: 2 });
+  const undone = await placed(buyer, undoneLot, 2);
+  await act(seller, undone, 'accept');
+  await act(buyer, undone, 'flag_dispute');
+  await probe(
+    'the platform admin resolves a dispute by cancelling the order',
+    'cancelled; the lot is back on sale with 2',
+    async () => {
+      const res = await act(admin, undone, 'resolve_dispute', {
+        outcome: 'cancel_order',
+        notes: 'Rehearsal probe: the seller agrees.',
+      });
+      const now = await lot(undoneLot);
+      return {
+        pass:
+          res.body.data?.status === 'cancelled' &&
+          now.status === 'active' &&
+          now.quantityAvailable === 2,
+        actual: `${says(res)} ${res.body.data?.status}; lot ${now.status}, ${now.quantityAvailable}`,
+      };
+    },
+  );
+  await probe('a resolved order is resolved again', 'HTTP 409', async () =>
+    expectStatus(await act(admin, undone, 'resolve_dispute'), 409),
+  );
+
+  // ── Time limits ──────────────────────────────────────────────────────────
+  // The limits are 72 and 48 hours; a probe moves the order's deadline into
+  // the past instead of waiting. That needs the stack's database.
+  if (!rehearsal.canSql) {
+    rehearsal.finding({
+      source: 'probes: time limits',
+      severity: 'info',
+      type: 'not run',
+      what: 'REHEARSAL_PSQL is not set, so the time-limit probes were skipped',
+    });
+  } else {
+    const overdue = (orderId: string, column: 'response_deadline' | 'dispute_deadline') =>
+      rehearsal.sql(
+        `update transactions set ${column} = now() - interval '1 minute' where id = '${orderId}'`,
+      );
+    const until = async (done: () => Promise<boolean>, seconds: number) => {
+      for (let waited = 0; waited < seconds; waited += 5) {
+        if (await done()) return waited;
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      return (await done()) ? seconds : -1;
+    };
+
+    const lateLot = await newLot({ quantity: 4 });
+    const late = await placed(buyer, lateLot, 4);
+    overdue(late, 'response_deadline');
+    await probe(
+      'the seller accepts an order after its 72 hours',
+      'HTTP 409, it lapsed; the lot is back on sale with 4',
+      async () => {
+        const res = await act(seller, late, 'accept');
+        const now = await lot(lateLot);
+        return {
+          pass: res.status === 409 && now.status === 'active' && now.quantityAvailable === 4,
+          actual: `${says(res)}; lot ${now.status}, ${now.quantityAvailable}`,
+        };
+      },
+    );
+
+    const windowLot = await newLot({ quantity: 1 });
+    const windowed = await placed(buyer, windowLot, 1);
+    await act(seller, windowed, 'accept');
+    overdue(windowed, 'dispute_deadline');
+    await probe(
+      'the buyer flags a problem after the 48 hours',
+      'HTTP 409, it completed; the lot is sold',
+      async () => {
+        const res = await act(buyer, windowed, 'flag_dispute');
+        const now = await lot(windowLot);
+        return {
+          pass: res.status === 409 && now.status === 'sold',
+          actual: `${says(res)}; lot ${now.status}`,
+        };
+      },
+    );
+
+    // Nobody opens these two: only the sweep can close them.
+    const quietLot = await newLot({ quantity: 3 });
+    const quiet = await placed(buyer, quietLot, 3);
+    const soldLot = await newLot({ quantity: 1 });
+    const sold = await placed(buyer, soldLot, 1);
+    await act(seller, sold, 'accept');
+    overdue(quiet, 'response_deadline');
+    overdue(sold, 'dispute_deadline');
+    await probe(
+      'the sweep lapses an unanswered order nobody is looking at',
+      'within 90 s the lot is back on sale with 3',
+      async () => {
+        const waited = await until(async () => (await lot(quietLot)).quantityAvailable === 3, 90);
+        const now = await lot(quietLot);
+        return {
+          pass: waited >= 0 && now.status === 'active',
+          actual: `${waited < 0 ? 'not within 90 s' : `after ~${waited} s`}; lot ${now.status}, ${now.quantityAvailable}`,
+        };
+      },
+      { severity: 'blocker', type: 'ops' },
+    );
+    await probe(
+      'the sweep completes an accepted order past its problem window',
+      'within 90 s the lot is sold',
+      async () => {
+        const waited = await until(async () => (await lot(soldLot)).status === 'sold', 90);
+        return {
+          pass: waited >= 0,
+          actual: `${waited < 0 ? 'not within 90 s' : `after ~${waited} s`}; lot ${(await lot(soldLot)).status}`,
+        };
+      },
+      { severity: 'blocker', type: 'ops' },
+    );
+    await probe(
+      'an order a time limit closed says so in its steps',
+      'lapse by time_limit',
+      async () => {
+        const steps =
+          (
+            await rehearsal.api<
+              Array<{ id: string; steps: Array<{ action: string; actorSide: string }> }>
+            >('GET', '/api/v1/marketplace/transactions', { token: buyer.token })
+          ).body.data?.find((o) => o.id === quiet)?.steps ?? [];
+        const last = steps.at(-1);
+        return {
+          pass: last?.action === 'lapse' && last.actorSide === 'time_limit',
+          actual: `${last?.action} by ${last?.actorSide}`,
+        };
+      },
+    );
+  }
+
+  // ── What waits for whom ──────────────────────────────────────────────────
+  const fresh = await rehearsal.register('probe counts');
+  const countsOf = async (who: Session) =>
+    (
+      await rehearsal.api<{ needsAction: number; changed: number; flagged: number }>(
+        'GET',
+        '/api/v1/marketplace/transactions/summary',
+        { token: who.token },
+      )
+    ).body.data ?? { needsAction: -1, changed: -1, flagged: -1 };
+  const countedLot = await newLot({ quantity: 2 });
+  const sellerBefore = await countsOf(seller);
+  const counted = await placed(fresh, countedLot, 1);
+  await probe(
+    'a new order waits for the seller, not for its buyer',
+    'seller +1; buyer 0',
+    async () => {
+      const [forSeller, forBuyer] = [await countsOf(seller), await countsOf(fresh)];
+      return {
+        pass: forSeller.needsAction === sellerBefore.needsAction + 1 && forBuyer.needsAction === 0,
+        actual: `seller ${sellerBefore.needsAction} → ${forSeller.needsAction}; buyer ${forBuyer.needsAction}`,
+      };
+    },
+  );
+  await act(seller, counted, 'accept');
+  await probe(
+    'once accepted it waits for the buyer, and is new to them until they look',
+    'waits 1, changed 1; after looking, changed 0',
+    async () => {
+      const before = await countsOf(fresh);
+      const seen = await rehearsal.api('POST', '/api/v1/marketplace/transactions/seen', {
+        token: fresh.token,
+        body: {},
+      });
+      const after = await countsOf(fresh);
+      return {
+        pass:
+          before.needsAction === 1 &&
+          before.changed === 1 &&
+          seen.status === 200 &&
+          after.changed === 0,
+        actual: `waits ${before.needsAction}, changed ${before.changed}; after looking (${says(seen)}), changed ${after.changed}`,
+      };
+    },
+  );
+  await probe('the counts without signing in', 'HTTP 401', async () =>
+    expectStatus(await rehearsal.api('GET', '/api/v1/marketplace/transactions/summary'), 401),
+  );
 
   // ── What a seller may do under open orders ───────────────────────────────
   const held = await newLot({ quantity: 6 });
@@ -396,8 +656,8 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
 
   // ── Expiry ───────────────────────────────────────────────────────────────
   await probe(
-    'an expired listing',
-    'the order is refused (HTTP 409) and the listing reads expired',
+    'a listing past its date',
+    'an order is refused (HTTP 409), it is out of browse, and within 90 s it reads expired',
     async () => {
       const brief = await newLot({
         quantity: 3,
@@ -405,13 +665,22 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       });
       await new Promise((resolve) => setTimeout(resolve, 3500));
       const res = await offer(buyer, brief, { quantity: 1 });
+      const browse = await rehearsal.api<{ data: Array<{ id: string }> }>(
+        'GET',
+        '/api/v1/marketplace/listings?limit=50&sortBy=createdAt&sortOrder=desc',
+      );
+      const listed = (browse.body.data?.data ?? []).some((l) => l.id === brief);
+      let waited = 0;
+      while (waited < 90 && (await lot(brief)).status !== 'expired') {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        waited += 5;
+      }
       const now = await lot(brief);
       return {
-        pass: res.status === 409 && now.status === 'expired',
-        actual: `${says(res)}; listing is ${now.status}`,
+        pass: res.status === 409 && !listed && now.status === 'expired',
+        actual: `${says(res)}; ${listed ? 'STILL in browse' : 'out of browse'}; listing is ${now.status} after ~${waited} s`,
       };
     },
-    { severity: 'minor', type: 'caveat', known: 'F4, deferred with order time limits' },
   );
 
   // ── A hub's orders belong to the hub ─────────────────────────────────────

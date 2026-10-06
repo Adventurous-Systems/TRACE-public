@@ -5,7 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ApiError, marketplace, type ListingSummary } from '@/lib/api-client';
 import { formatQuantity, perUnit, unitLabel } from '@trace/core';
-import { defaultOrderQuantity, orderQuantityProblem } from '@/lib/order-quantity';
+import {
+  defaultOrderQuantity,
+  keepsLastUnit,
+  orderableOf,
+  orderQuantityProblem,
+} from '@/lib/order-quantity';
+import { listingStatus } from '@/lib/orders';
 import { clearSession, getToken, getUser, type StoredUser } from '@/lib/auth';
 import { AccountNav } from '@/components/marketplace/AccountNav';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
@@ -104,10 +110,13 @@ export default function ListingDetailPage() {
       if (changed) {
         setListing(changed);
         setQuantity(defaultOrderQuantity(changed));
+        const now = listingStatus(changed);
         setError(
-          changed.status !== 'active'
-            ? 'Someone else has just ordered the rest of this lot.'
-            : `This lot changed while you were looking at it: ${formatQuantity(changed.quantityAvailable, changed.passport.unitOfMeasure)} left now. Check the quantity and order again.`,
+          now === 'expired'
+            ? 'This listing has expired, so it takes no new orders.'
+            : now !== 'active' || orderableOf(changed) < 1
+              ? 'Someone else has just ordered the rest of this lot.'
+              : `This lot changed while you were looking at it: ${formatQuantity(changed.quantityAvailable, changed.passport.unitOfMeasure)} left now. Check the quantity and order again.`,
         );
       } else {
         setError(getErrorMessage(e, 'place this order'));
@@ -181,8 +190,8 @@ export default function ListingDetailPage() {
                   Grade {listing.passport.conditionGrade}
                 </Badge>
               )}
-              {listing.status !== 'active' && (
-                <Badge variant="outline">{listingStatusLabel(listing.status)}</Badge>
+              {listingStatus(listing) !== 'active' && (
+                <Badge variant="outline">{listingStatusLabel(listingStatus(listing))}</Badge>
               )}
             </div>
 
@@ -301,7 +310,7 @@ export default function ListingDetailPage() {
                       Manage listings
                     </Link>
                   </div>
-                ) : listing.status === 'active' ? (
+                ) : listingStatus(listing) === 'active' ? (
                   !user ? (
                     /* Logged-out visitors get a sign-up CTA, never a buy button. */
                     <div className="space-y-3">
@@ -330,6 +339,12 @@ export default function ListingDetailPage() {
                         View orders
                       </Link>
                     </div>
+                  ) : orderableOf(listing) < 1 ? (
+                    /* The demo keeps a curated lot's last unit on the marketplace. */
+                    <p className="text-sm text-gray-600 text-center">
+                      This is the last one of this lot. On the demo it stays on the marketplace, so
+                      it can&apos;t be ordered.
+                    </p>
                   ) : (
                     <form
                       className="space-y-4"
@@ -350,7 +365,7 @@ export default function ListingDetailPage() {
                           type="number"
                           inputMode="numeric"
                           min={1}
-                          max={listing.quantityAvailable}
+                          max={orderableOf(listing)}
                           step={1}
                           value={Number.isNaN(quantity) ? '' : quantity}
                           onChange={(e) => setQuantity(e.target.valueAsNumber)}
@@ -366,7 +381,13 @@ export default function ListingDetailPage() {
                             </span>
                           </p>
                         )}
-                        {listing.quantityAvailable < listing.minOrderQuantity && (
+                        {keepsLastUnit(listing) && !quantityProblem && (
+                          <p className="text-xs text-gray-500">
+                            On the demo the last one of a lot stays on the marketplace: you can
+                            order up to {orderableOf(listing).toLocaleString('en-GB')}.
+                          </p>
+                        )}
+                        {orderableOf(listing) < listing.minOrderQuantity && (
                           <p className="text-xs text-gray-500">
                             Less than the minimum order is left, so you can order what remains.
                           </p>
@@ -393,7 +414,7 @@ export default function ListingDetailPage() {
                   )
                 ) : (
                   <p className="text-sm text-gray-500 text-center">
-                    This listing is {listingStatusLabel(listing.status).toLowerCase()}.
+                    This listing is {listingStatusLabel(listingStatus(listing)).toLowerCase()}.
                   </p>
                 )}
               </CardContent>

@@ -29,3 +29,26 @@ describe('orderQuantityProblem', () => {
     expect(orderQuantityProblem(1.5, bricks)).toMatch(/whole number/);
   });
 });
+
+describe('a curated lot on the demo keeps its last unit', () => {
+  const staircase = { quantityAvailable: 2, minOrderQuantity: 1, orderableQuantity: 1 };
+
+  it('lets one order take all but the last unit', () => {
+    expect(orderQuantityProblem(1, staircase)).toBeNull();
+    expect(orderQuantityProblem(2, staircase)).toBe(
+      'On the demo the last one stays on the marketplace: you can order up to 1.',
+    );
+  });
+
+  it('starts within what may be ordered, and lets the capped rest go below the minimum', () => {
+    const bricks = { quantityAvailable: 100, minOrderQuantity: 100, orderableQuantity: 99 };
+    expect(defaultOrderQuantity(bricks)).toBe(99);
+    expect(orderQuantityProblem(99, bricks)).toBeNull();
+    expect(orderQuantityProblem(50, bricks)).toBe('The minimum order is 100.');
+  });
+
+  it('says nothing about it where all that is left may be ordered', () => {
+    const lot = { quantityAvailable: 2, minOrderQuantity: 1, orderableQuantity: 2 };
+    expect(orderQuantityProblem(3, lot)).toBe('Only 2 left.');
+  });
+});

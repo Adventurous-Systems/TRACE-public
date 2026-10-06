@@ -69,7 +69,7 @@ import {
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
 import { resolveTarget } from './lib/guard.js';
-import { CATALOG, SEED_TAG } from './lib/catalogue.js';
+import { CATALOG, LIVE_LOT_STATUSES, SEED_TAG } from './lib/catalogue.js';
 import { DEMO_QUALITY_REPORT, DEMO_ACCESS_REQUEST, DEMO_FEEDBACK } from './lib/demo-content.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -881,7 +881,11 @@ async function main() {
         schema.materialPassports,
         eq(schema.listings.passportId, schema.materialPassports.id),
       )
-      .where(and(eq(schema.listings.status, 'active'), curatedFilter));
+      // A lot a visitor has fully ordered is still that product's lot: it
+      // comes back on sale or sells when the order closes, which the order
+      // time limits guarantee. Counting only lots on sale let one order
+      // block a deploy.
+      .where(and(inArray(schema.listings.status, [...LIVE_LOT_STATUSES]), curatedFilter));
 
     const finalCurated = await db.select().from(schema.materialPassports).where(curatedFilter);
     const finalCuratedById = new Map(finalCurated.map((passport) => [passport.id, passport]));
@@ -923,7 +927,7 @@ async function main() {
         problems.push({
           severity: 'error',
           message:
-            `${product.key}: expected ${expectedPerProduct} active catalogue listing(s), found ${actual}` +
+            `${product.key}: expected ${expectedPerProduct} catalogue listing(s) on sale or fully ordered, found ${actual}` +
             (dryRun ? ' - run demo:replenish to fix' : ''),
         });
       }
@@ -1104,7 +1108,7 @@ async function main() {
       `Anchor mode             : ${simulateAnchor ? 'simulated' : registryAddress ? 'on-chain' : 'NONE'}`,
     );
     if (furnitureSummary) process.stdout.write(furnitureSummary);
-    console.log(`Active curated listings : ${finalListings.length}/${CATALOG.length}`);
+    console.log(`Live curated listings   : ${finalListings.length}/${CATALOG.length}`);
     console.log(
       `Fingerprints matching   : ${finalCurated.length - badHashes.length}/${finalCurated.length}`,
     );

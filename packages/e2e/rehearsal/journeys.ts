@@ -61,12 +61,14 @@ async function placeOrder(journey: Journey, listingId: string, quantity: number)
   return `ordered ${quantity}: ${total?.trim()}`;
 }
 
+// An order is a row of the list; the steps of its history are an <ol> inside it.
+const orderRows = (journey: Journey) => journey.page.locator('main ul > li');
 const order = (journey: Journey, product: string) =>
-  journey.page.getByRole('listitem').filter({ hasText: product }).first();
+  orderRows(journey).filter({ hasText: product }).first();
 
 async function ordersSummary(journey: Journey): Promise<string> {
   await journey.goto('/transactions');
-  const rows = await journey.page.getByRole('listitem').allInnerTexts();
+  const rows = await orderRows(journey).allInnerTexts();
   return rows.map((row) => row.split('\n').slice(0, 5).join(' · ')).join(' || ') || 'no orders';
 }
 
@@ -222,10 +224,25 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       return (await j.page.locator('dl').innerText()).replace(/\s+/g, ' ').slice(0, 260);
     });
     await j.step('order 5 blocks', () => placeOrder(j, blocks.id, 5));
-    await j.step('order both staircases (the whole lot)', () => placeOrder(j, staircase.id, 2));
-    await j.step('a fully ordered lot', async () => {
+    // On the demo a curated lot keeps its last unit (owner, 2026-10-06).
+    await j.step('both staircases: the demo keeps the last one', async () => {
+      await j.goto(`/marketplace/${staircase.id}`);
+      await j.page.getByLabel('Quantity').fill('2');
+      const said = await j.page.locator('#order-quantity ~ p').first().innerText();
+      const disabled = await j.page
+        .getByRole('button', { name: /order at asking price/i })
+        .isDisabled();
+      if (!disabled || !/last one stays/.test(said)) {
+        throw new Error(`ordering both was not stopped: "${said}", button disabled: ${disabled}`);
+      }
+      return `quantity 2 → "${said}", button disabled`;
+    });
+    await j.step('order one staircase', () => placeOrder(j, staircase.id, 1));
+    await j.step('the last staircase stays, and cannot be ordered', async () => {
       await j.page.reload({ waitUntil: 'networkidle' });
-      return (await j.text(/This listing is .*/)) ?? 'the order form is still shown';
+      const said = await j.text(/This is the last one.*/);
+      if (!said) throw new Error('the order form is still shown for the last staircase');
+      return said;
     });
     await j.step(
       'order on a page that has gone stale',
@@ -235,7 +252,8 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
         const rival = await rehearsal.register('stale rival');
         const taken = await rehearsal.api('POST', '/api/v1/marketplace/offers', {
           token: rival.token,
-          body: { listingId: lintels.id, quantity: 14 },
+          // All but the last: the demo keeps a curated lot's last unit.
+          body: { listingId: lintels.id, quantity: 13 },
         });
         await j.page.getByRole('button', { name: /order at asking price/i }).click();
         await j.page.waitForTimeout(2000);
@@ -244,10 +262,11 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       },
       { expectIssues: /409/ },
     );
-    await j.step('marketplace without the staircase', async () => {
+    await j.step('the staircase is still on the marketplace', async () => {
       await j.goto('/marketplace');
       await j.page.waitForTimeout(COUNT_UP_MS);
       const shown = await j.page.getByText(STAIRCASE).count();
+      if (!shown) throw new Error('the staircase left the marketplace');
       return `${await j.text(/Reusing everything/)} · staircase shown: ${shown}`;
     });
     await j.step('orders', () => ordersSummary(j));
@@ -264,20 +283,20 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       await order(j, KBRIQ)
         .getByRole('button', { name: /accept order/i })
         .click();
-      await order(j, KBRIQ).getByText('Accepted').waitFor({ timeout: 8000 });
+      await order(j, KBRIQ).getByText('Accepted', { exact: true }).waitFor({ timeout: 8000 });
       return (await order(j, KBRIQ).innerText()).replace(/\s+/g, ' ');
     });
     await j.step('accept the blocks order', async () => {
       await order(j, BLOCKS)
         .getByRole('button', { name: /accept order/i })
         .click();
-      await order(j, BLOCKS).getByText('Accepted').waitFor({ timeout: 8000 });
+      await order(j, BLOCKS).getByText('Accepted', { exact: true }).waitFor({ timeout: 8000 });
     });
     await j.step('reject the staircase order', async () => {
       await order(j, STAIRCASE)
         .getByRole('button', { name: /^reject$/i })
         .click();
-      await order(j, STAIRCASE).getByText('Cancelled').waitFor({ timeout: 8000 });
+      await order(j, STAIRCASE).getByText('Cancelled', { exact: true }).waitFor({ timeout: 8000 });
       return (await order(j, STAIRCASE).innerText()).replace(/\s+/g, ' ');
     });
     await j.step('own listing: no order form', async () => {
@@ -310,15 +329,31 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       await order(j, KBRIQ)
         .getByRole('button', { name: /confirm delivery/i })
         .click();
-      await order(j, KBRIQ).getByText('Completed').waitFor({ timeout: 8000 });
+      await order(j, KBRIQ).getByText('Completed', { exact: true }).waitFor({ timeout: 8000 });
       return (await order(j, KBRIQ).innerText()).replace(/\s+/g, ' ');
     });
-    await j.step('report a problem with the blocks', async () => {
+    await j.step('report a problem with the blocks: it asks what is wrong', async () => {
       await order(j, BLOCKS)
         .getByRole('button', { name: /report a problem/i })
         .click();
-      await order(j, BLOCKS).getByText('Problem flagged').waitFor({ timeout: 8000 });
-      return (await order(j, BLOCKS).innerText()).replace(/\s+/g, ' ');
+      const send = j.page.getByRole('button', { name: 'Send report' });
+      const emptyRefused = await send.isDisabled();
+      await j.page.getByLabel('What is the problem?').fill('ok');
+      const shortRefused = await send.isDisabled();
+      await j.page
+        .getByLabel('What is the problem?')
+        .fill('Rehearsal: a third of the blocks are cracked through.');
+      await send.click();
+      await order(j, BLOCKS)
+        .getByText('Problem flagged', { exact: true })
+        .waitFor({ timeout: 8000 });
+      return `send ${emptyRefused && shortRefused ? 'waits for a reason' : 'IS ENABLED WITHOUT A REASON'}: ${(
+        await order(j, BLOCKS).innerText()
+      ).replace(/\s+/g, ' ')}`;
+    });
+    await j.step('the history of the blocks order', async () => {
+      await order(j, BLOCKS).locator('summary', { hasText: 'History' }).click();
+      return (await order(j, BLOCKS).locator('ol').innerText()).replace(/\s+/g, ' ');
     });
     await j.step('the staircase is back on sale', async () => {
       await j.goto(`/marketplace/${staircase.id}`);
@@ -343,7 +378,56 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
         return (await j.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 160);
       });
     }
-    await j.step('orders: can the admin see the flagged order?', () => ordersSummary(j));
+    await j.step('flagged orders: what waits for the admin', async () => {
+      await j.goto('/dashboard');
+      const links = (await j.page.locator('header nav a').allInnerTexts()).map((l) =>
+        l.replace(/\s+/g, ' ').trim(),
+      );
+      await j.goto('/admin/flagged-orders');
+      return `nav [${links.filter((l) => /order/i.test(l)).join(', ')}]: ${(
+        await j.page.locator('main').innerText()
+      )
+        .replace(/\s+/g, ' ')
+        .slice(0, 420)}`;
+    });
+    await j.step('resolve the blocks order: cancel it, with a reason', async () => {
+      const waiting = j.page
+        .getByRole('list', { name: 'Waiting for a decision' })
+        .getByRole('listitem')
+        .filter({ hasText: BLOCKS })
+        .first();
+      const resolve = waiting.getByRole('button', { name: 'Resolve order' });
+      const bareRefused = await resolve.isDisabled();
+      await waiting.getByLabel('Cancel the order').check();
+      const noReasonRefused = await resolve.isDisabled();
+      await waiting.getByLabel('Why').fill('Rehearsal: the seller agrees the blocks were damaged.');
+      await resolve.click();
+      await j.page.getByRole('list', { name: 'Resolved' }).getByText(BLOCKS).first().waitFor();
+      return `resolve ${bareRefused && noReasonRefused ? 'waits for an outcome and a reason' : 'IS ENABLED TOO EARLY'}: ${(
+        await j.page.locator('main').innerText()
+      )
+        .replace(/\s+/g, ' ')
+        .slice(0, 420)}`;
+    });
+    await j.step('the blocks are back on the marketplace', async () => {
+      await j.goto(`/marketplace/${blocks.id}`);
+      return (await j.page.locator('dl').innerText()).replace(/\s+/g, ' ').slice(0, 200);
+    });
+  });
+  await rehearsal.journey('6b the buyer reads the outcome', 'buyer', async (j) => {
+    await j.step('orders: the count on the link, and the outcome', async () => {
+      await j.goto('/marketplace');
+      const link = (
+        await j.page
+          .getByRole('link', { name: /Orders/ })
+          .first()
+          .innerText()
+      )
+        .replace(/\s+/g, ' ')
+        .trim();
+      await j.goto('/transactions');
+      return `link "${link}": ${(await order(j, BLOCKS).innerText()).replace(/\s+/g, ' ')}`;
+    });
   });
 
   // ── 7. The inspector finds a material and re-grades it ───────────────────
