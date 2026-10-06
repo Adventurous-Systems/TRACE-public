@@ -30,7 +30,7 @@ import * as Minio from 'minio';
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
 import { resolveTarget } from './lib/guard.js';
-import { CATALOG, SEED_TAG } from './lib/catalogue.js';
+import { CATALOG, SEED_TAG, lotShippingNote } from './lib/catalogue.js';
 
 const PACKAGE_ROOT = process.cwd();
 loadEnv({ path: path.resolve(PACKAGE_ROOT, '../../.env') });
@@ -238,9 +238,7 @@ async function main() {
         quantityAvailable: product.listing.quantity,
         minOrderQuantity: product.listing.minOrderQuantity ?? 1,
         status: 'active',
-        shippingOptions: [
-          { method: 'both', notes: product.listing.note ?? 'Delivery from FK7 or collection' },
-        ],
+        shippingOptions: [{ method: 'both', notes: lotShippingNote(product) }],
         // Curated demo listings never expire by default. A 90-day TTL used to be
         // hardcoded here; it silently detonated on 2026-09-02 (90 days after the
         // June seed), leaving the marketplace rendering listings that threw

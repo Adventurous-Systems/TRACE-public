@@ -1414,7 +1414,11 @@ describe('listing management', () => {
     // A supplier in an organisation of its own: a seller, but not of these lots.
     const [otherOrg] = await db
       .insert(organisations)
-      .values({ name: 'Other Seller Ltd', slug: `other-seller-${Date.now()}`, type: 'manufacturer' })
+      .values({
+        name: 'Other Seller Ltd',
+        slug: `other-seller-${Date.now()}`,
+        type: 'manufacturer',
+      })
       .returning();
     const otherEmail = `edit-other-${Date.now()}@example.com`;
     await db.insert(users).values({

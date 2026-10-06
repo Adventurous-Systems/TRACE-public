@@ -7,6 +7,8 @@
  * opening every screenshot. They use the curated catalogue, so run them on a
  * freshly restored stack (`pnpm stack restore`).
  */
+import { request } from '@playwright/test';
+import { createListedPassport } from '../fixtures/api';
 import { throwawayPassword, type Journey, type Rehearsal } from './harness';
 
 const KBRIQ = 'K-BRIQ';
@@ -618,4 +620,76 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
     },
     { mobile: true },
   );
+
+  // ── 11. The hub admin manages a listing ──────────────────────────────────
+  // A lot of its own, fully ordered by a fresh buyer, so the curated lots and
+  // the other journeys' orders are left alone.
+  const hubAdmin = await rehearsal.persona('hubAdmin');
+  const ctx = await request.newContext();
+  const managedName = `Rehearsal Managed Lot ${Date.now()}`;
+  const managed = await createListedPassport(ctx, hubAdmin.token, {
+    productName: managedName,
+    pricePence: 400,
+    quantity: 3,
+  });
+  const holder = await rehearsal.register('listing holder');
+  const held = await rehearsal.api('POST', '/api/v1/marketplace/offers', {
+    token: holder.token,
+    body: { listingId: managed.listingId, quantity: 3 },
+  });
+  if (held.status !== 201) throw new Error(`setup order failed: HTTP ${held.status}`);
+  await ctx.dispose();
+
+  await rehearsal.journey('11 hub admin manages a listing', 'hubAdmin', async (j) => {
+    const row = () => j.page.locator('main ul > li').filter({ hasText: managedName }).first();
+    const save = () => j.page.getByRole('button', { name: /save changes/i }).click();
+    await j.step('the fully-ordered lot on Listings', async () => {
+      await j.goto('/listings');
+      return (await row().innerText()).replace(/\s+/g, ' ');
+    });
+    await j.step('open its edit form', async () => {
+      await row()
+        .getByRole('link', { name: /^edit$/i })
+        .click();
+      await j.page.getByRole('button', { name: /save changes/i }).waitFor({ timeout: 8000 });
+      return (await j.page.locator('main form').innerText()).replace(/\s+/g, ' ').slice(0, 400);
+    });
+    await j.step('try a quantity below what is ordered', async () => {
+      await j.page.locator('#quantity').fill('2');
+      await save();
+      return (await j.page.locator('main form [role=alert]').innerText()).trim();
+    });
+    await j.step('add stock and change the price', async () => {
+      await j.page.locator('#quantity').fill('8');
+      await j.page.locator('#price').fill('3.50');
+      await save();
+      await j.page.waitForURL(/\/listings$/, { timeout: 10_000 });
+      return (await row().innerText()).replace(/\s+/g, ' ');
+    });
+    await j.step('back on the marketplace at the new price', async () => {
+      await j.goto(`/marketplace/${managed.listingId}`);
+      return (await j.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 300);
+    });
+    await j.step('change the shipping note and set an end date', async () => {
+      await j.page.getByRole('link', { name: /edit this listing/i }).click();
+      await j.page.getByRole('button', { name: /save changes/i }).waitFor({ timeout: 8000 });
+      const inMonth = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      await j.page.locator('#expires').fill(inMonth);
+      await j.page.locator('#shippingNotes').fill('Forklift on site');
+      await save();
+      await j.page.waitForURL(/\/listings$/, { timeout: 10_000 });
+      return (await row().innerText()).replace(/\s+/g, ' ');
+    });
+    await j.step('the change in the activity record', async () => {
+      const events = await rehearsal.api<
+        Array<{ action: string; resourceId: string; metadata: { changes?: object } }>
+      >('GET', '/api/v1/audit/events?limit=40', {
+        token: (await rehearsal.persona('platformAdmin')).token,
+      });
+      return (events.body.data ?? [])
+        .filter((e) => e.action === 'listing.update' && e.resourceId === managed.listingId)
+        .map((e) => Object.keys(e.metadata.changes ?? {}).join('+'))
+        .join(' | ');
+    });
+  });
 }
