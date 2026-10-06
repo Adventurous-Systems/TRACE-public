@@ -13,6 +13,7 @@ import {
   getUser,
   canRegisterMaterial,
   canCreateListing,
+  hasOrganisation,
   type StoredUser,
 } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -51,6 +52,13 @@ export default function PassportsPage() {
   }, []);
 
   function fetchPassports() {
+    // Same as the dashboard: an account with no organisation holds no
+    // materials, so don't make a request that can only fail with a 400 (T4).
+    const current = getUser();
+    if (current && !hasOrganisation(current)) {
+      setLoad({ phase: 'no-org' });
+      return;
+    }
     const token = getToken();
     if (!token) {
       // See dashboard/page.tsx's identical comment — middleware already
