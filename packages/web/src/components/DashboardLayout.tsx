@@ -126,9 +126,13 @@ export default function DashboardLayout({ children }: Props) {
     );
   }
 
-  // Ten links do not fit the bar below 1280px, so an account with that many
-  // keeps the menu button up to there.
-  const manyLinks = navLinks.length > 9;
+  // Nine or more links do not fit the bar below 1280px, so an account with
+  // that many keeps the menu button up to there. Its email never fits beside
+  // them (the bar is at most 1280px wide), so it moves to Sign out's tooltip.
+  // (It was ten links, with the email from 1536px: the hub admin's nine links
+  // ran into the email at 1366px, and the platform admin's at 1536px; owner's
+  // test O3.)
+  const manyLinks = navLinks.length > 8;
 
   const homeHref =
     user.role === 'buyer' ? '/marketplace' : user.role === 'supplier' ? '/passports' : '/dashboard';
@@ -189,12 +193,17 @@ export default function DashboardLayout({ children }: Props) {
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span
-              className={`text-sm text-gray-500 hidden ${manyLinks ? '2xl:block' : 'xl:block'} truncate max-w-[14rem]`}
+            {!manyLinks && (
+              <span className="text-sm text-gray-500 hidden xl:block truncate max-w-[14rem]">
+                {user.email}
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              title={`Signed in as ${user.email}`}
             >
-              {user.email}
-            </span>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
               Sign out
             </Button>
           </div>
