@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEMO_PERSONAS, demoPersonaPassword } from '@trace/core/constants/demo-personas';
 
-export type Role = 'supplier' | 'supplier2' | 'hubStaff' | 'buyer' | 'platformAdmin';
+export type Role = 'supplier' | 'supplier2' | 'hubStaff' | 'buyer' | 'platformAdmin' | 'inspector';
 
 export interface Account {
   role: Role;
@@ -48,6 +48,11 @@ export const ACCOUNTS: Record<Role, Account> = {
     role: 'platformAdmin',
     email: DEMO_PERSONAS.platformAdmin.email,
     password: passwordFor(DEMO_PERSONAS.platformAdmin),
+  },
+  inspector: {
+    role: 'inspector',
+    email: DEMO_PERSONAS.inspector.email,
+    password: passwordFor(DEMO_PERSONAS.inspector),
   },
 };
 

@@ -8,7 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadFailure } from '@/components/ui/load-state';
 import { passports, ApiError, type PassportSummary } from '@/lib/api-client';
-import { getToken, getUser, canRegisterMaterial, type StoredUser } from '@/lib/auth';
+import {
+  getToken,
+  getUser,
+  canRegisterMaterial,
+  hasOrganisation,
+  type StoredUser,
+} from '@/lib/auth';
+import { InspectorDashboard } from '@/components/quality/InspectorDashboard';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
 
@@ -29,9 +36,15 @@ const STATUS_COLORS: Record<string, 'default' | 'success' | 'warning' | 'outline
 // a genuinely empty catalogue: "Total passports 0", "No passports yet.
 // Register one." Same failure class as D-07 (an error state rendered as
 // fact), in a place D-07's fix didn't reach.
+interface Stats {
+  total: number;
+  byStatus: Record<string, number>;
+  anchored: number;
+}
+
 type Load =
   | { phase: 'loading' }
-  | { phase: 'ready'; items: PassportSummary[]; total: number }
+  | { phase: 'ready'; items: PassportSummary[]; stats: Stats }
   | { phase: 'no-org' }
   | { phase: 'error'; message: string };
 
@@ -46,6 +59,14 @@ export default function DashboardPage() {
   }, []);
 
   function fetchPassports() {
+    const current = getUser();
+    // An account with no organisation holds no materials. That is known
+    // before asking, so don't make a request that can only fail (it used to
+    // put a 400 in the console on every load).
+    if (current && !hasOrganisation(current)) {
+      setLoad({ phase: 'no-org' });
+      return;
+    }
     const token = getToken();
     if (!token) {
       // Middleware already redirects an unauthenticated visitor to /login
@@ -61,9 +82,14 @@ export default function DashboardPage() {
       return;
     }
     setLoad({ phase: 'loading' });
-    passports
-      .list(new URLSearchParams({ limit: '5' }), token)
-      .then((res) => setLoad({ phase: 'ready', items: res.data, total: res.total }))
+    // The tiles count every passport the organisation holds; the list below
+    // shows the five most recent. (The tiles used to be counted from those
+    // five: "Total 10, Active 0, Anchored 5".)
+    Promise.all([
+      passports.list(new URLSearchParams({ limit: '5' }), token),
+      passports.stats(token),
+    ])
+      .then(([recent, stats]) => setLoad({ phase: 'ready', items: recent.data, stats }))
       .catch((e: unknown) => {
         if (e instanceof ApiError && e.code === 'NO_ORGANISATION') {
           setLoad({ phase: 'no-org' });
@@ -75,8 +101,9 @@ export default function DashboardPage() {
 
   useEffect(fetchPassports, []);
 
-  const total = load.phase === 'ready' ? load.total : null;
+  const stats = load.phase === 'ready' ? load.stats : null;
   const items = load.phase === 'ready' ? load.items : [];
+  const isInspector = user?.role === 'inspector';
 
   return (
     <DashboardLayout>
@@ -99,102 +126,99 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Total passports</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* A rendered 0 is a claim the platform holds no materials — do
-                  not make that claim from any phase but 'ready' (J-02). */}
-              <p className="text-3xl font-bold">{total ?? '—'}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Active</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">
-                {load.phase === 'ready' ? items.filter((p) => p.status === 'active').length : '—'}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Anchored on-chain</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">
-                {load.phase === 'ready' ? items.filter((p) => p.blockchainTxHash).length : '—'}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        {isInspector && <InspectorDashboard />}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Recent passports</CardTitle>
-            <Link href="/passports" className="text-sm text-brand-600 hover:underline">
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent className="p-0">
-            {load.phase === 'loading' && (
-              <div className="px-6 py-8 text-center text-gray-400 text-sm">Loading…</div>
-            )}
-            {load.phase === 'no-org' && (
-              <div className="px-6 py-8 text-center text-gray-400 text-sm max-w-sm mx-auto">
-                This account isn&apos;t linked to an organisation, so it holds no materials of its
-                own.
-                {user && (user.role === 'platform_admin' || user.role === 'inspector') && (
-                  <>
-                    {' '}
-                    Browse the{' '}
-                    <Link href="/marketplace" className="text-brand-600 hover:underline">
-                      public marketplace
-                    </Link>{' '}
-                    to see what suppliers have listed.
-                  </>
-                )}
-              </div>
-            )}
-            {load.phase === 'error' && (
-              <LoadFailure message={load.message} onRetry={fetchPassports} />
-            )}
-            {load.phase === 'ready' && items.length === 0 && (
-              <div className="px-6 py-8 text-center text-gray-400 text-sm">
-                No passports yet.{' '}
-                {canRegisterMaterial(user) && (
-                  <Link href="/passports/new" className="text-brand-600 hover:underline">
-                    Register one
-                  </Link>
-                )}
-              </div>
-            )}
-            {load.phase === 'ready' && items.length > 0 && (
-              <ul className="divide-y">
-                {items.map((p) => (
-                  <li key={p.id}>
-                    <Link
-                      href={`/passports/${p.id}`}
-                      className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
-                    >
-                      <div>
-                        <p className="font-medium text-sm">{p.productName}</p>
-                        <p className="text-xs text-gray-500">
-                          {categoryLabel(p.categoryL1, p.categoryL2)}
-                          {p.conditionGrade ? ` · Grade ${p.conditionGrade}` : ''}
-                        </p>
-                      </div>
-                      <Badge variant={STATUS_COLORS[p.status] ?? 'outline'}>{p.status}</Badge>
+        {!isInspector && load.phase !== 'no-org' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {(
+              [
+                // A rendered 0 is a claim the organisation holds no materials:
+                // only make it from the 'ready' phase (J-02).
+                ['Total passports', stats?.total],
+                [
+                  'On the marketplace',
+                  stats && (stats.byStatus['listed'] ?? 0) + (stats.byStatus['reserved'] ?? 0),
+                ],
+                ['Anchored on-chain', stats?.anchored],
+              ] as const
+            ).map(([label, value]) => (
+              <Card key={label}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">{label}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-bold">{value ?? '—'}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {!isInspector && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Recent passports</CardTitle>
+              <Link href="/passports" className="text-sm text-brand-600 hover:underline">
+                View all
+              </Link>
+            </CardHeader>
+            <CardContent className="p-0">
+              {load.phase === 'loading' && (
+                <div className="px-6 py-8 text-center text-gray-400 text-sm">Loading…</div>
+              )}
+              {load.phase === 'no-org' && (
+                <div className="px-6 py-8 text-center text-gray-400 text-sm max-w-sm mx-auto">
+                  This account isn&apos;t linked to an organisation, so it holds no materials of its
+                  own.
+                  {user && (user.role === 'platform_admin' || user.role === 'inspector') && (
+                    <>
+                      {' '}
+                      Browse the{' '}
+                      <Link href="/marketplace" className="text-brand-600 hover:underline">
+                        public marketplace
+                      </Link>{' '}
+                      to see what suppliers have listed.
+                    </>
+                  )}
+                </div>
+              )}
+              {load.phase === 'error' && (
+                <LoadFailure message={load.message} onRetry={fetchPassports} />
+              )}
+              {load.phase === 'ready' && items.length === 0 && (
+                <div className="px-6 py-8 text-center text-gray-400 text-sm">
+                  No passports yet.{' '}
+                  {canRegisterMaterial(user) && (
+                    <Link href="/passports/new" className="text-brand-600 hover:underline">
+                      Register one
                     </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+                  )}
+                </div>
+              )}
+              {load.phase === 'ready' && items.length > 0 && (
+                <ul className="divide-y">
+                  {items.map((p) => (
+                    <li key={p.id}>
+                      <Link
+                        href={`/passports/${p.id}`}
+                        className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+                      >
+                        <div>
+                          <p className="font-medium text-sm">{p.productName}</p>
+                          <p className="text-xs text-gray-500">
+                            {categoryLabel(p.categoryL1, p.categoryL2)}
+                            {p.conditionGrade ? ` · Grade ${p.conditionGrade}` : ''}
+                          </p>
+                        </div>
+                        <Badge variant={STATUS_COLORS[p.status] ?? 'outline'}>{p.status}</Badge>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );

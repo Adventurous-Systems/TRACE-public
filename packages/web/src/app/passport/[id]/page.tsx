@@ -3,6 +3,8 @@ import {
   ApiError,
   type PassportCertificate,
   type PassportDetail,
+  quality,
+  type QualityReportSummary,
 } from '@/lib/api-client';
 import { unitLabel, perUnit } from '@trace/core';
 import { categoryPath } from '@/lib/categories';
@@ -14,6 +16,8 @@ import CertificatePanel from '@/components/passport/CertificatePanel';
 import ProvenanceTimeline, { type AmendmentEntry } from '@/components/passport/ProvenanceTimeline';
 import Link from 'next/link';
 import { deconstructionMethodLabel, formatDate } from '@/lib/format';
+import { gradeBasis } from '@/lib/inspection';
+import { InspectionCard } from '@/components/passport/InspectionCard';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -46,6 +50,16 @@ async function getCertificate(id: string): Promise<PassportCertificate | null> {
   }
 }
 
+// Quality reports are secondary: if they can't be loaded the passport still
+// renders, and the inspection card says nothing rather than something false.
+async function getReports(id: string): Promise<QualityReportSummary[] | null> {
+  try {
+    return await quality.getForPassport(id);
+  } catch {
+    return null;
+  }
+}
+
 // Append-only amendments, oldest-first, for the provenance timeline.
 async function getAmendments(id: string): Promise<AmendmentEntry[]> {
   try {
@@ -64,10 +78,11 @@ async function getAmendments(id: string): Promise<AmendmentEntry[]> {
 
 export default async function PublicPassportPage({ params }: Props) {
   const { id } = await params;
-  const [loaded, certificate, amendments] = await Promise.all([
+  const [loaded, certificate, amendments, reports] = await Promise.all([
     getPassport(id),
     getCertificate(id),
     getAmendments(id),
+    getReports(id),
   ]);
 
   if (loaded.kind !== 'ok') {
@@ -93,6 +108,11 @@ export default async function PublicPassportPage({ params }: Props) {
   }
 
   const passport = loaded.passport;
+  // The organisation that registered the material: what it declared is its
+  // own statement until someone independent has checked it.
+  const declaredBy = certificate?.hub?.name ?? null;
+  const basisOfGrade = reports ? gradeBasis(passport.conditionGrade, reports, declaredBy) : null;
+  const declaredLine = `Declared by ${declaredBy ?? 'the seller'}.`;
 
   // D-07: when only the certificate call fails, fall back to the same
   // simulated convention the API uses (anchoredAt set + txHash null), rather
@@ -157,6 +177,7 @@ export default async function PublicPassportPage({ params }: Props) {
                   </span>
                 </div>
               )}
+              {basisOfGrade && <p className="mt-1 text-xs text-gray-500">{basisOfGrade}</p>}
             </div>
 
             {passport.conditionPhotos?.[0] ? (
@@ -175,7 +196,12 @@ export default async function PublicPassportPage({ params }: Props) {
           </div>
 
           {passport.conditionNotes && (
-            <p className="mt-4 text-sm text-gray-600 border-t pt-4">{passport.conditionNotes}</p>
+            <p className="mt-4 text-sm text-gray-600 border-t pt-4">
+              <span className="text-gray-400">
+                {declaredBy ? `${declaredBy} says: ` : 'The seller says: '}
+              </span>
+              {passport.conditionNotes}
+            </p>
           )}
         </div>
 
@@ -226,6 +252,8 @@ export default async function PublicPassportPage({ params }: Props) {
           <ProvenanceTimeline passport={passport} amendments={amendments} />
         </div>
 
+        {reports && <InspectionCard reports={reports} organisationName={declaredBy} />}
+
         {/* The passport's own QR code and Digital Link. It used to appear only
             as a fallback when there was no photo, so passports with a photo
             (all of the demo's) never showed it. */}
@@ -261,6 +289,7 @@ export default async function PublicPassportPage({ params }: Props) {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Product information</CardTitle>
+              <p className="text-xs text-gray-500">{declaredLine}</p>
             </CardHeader>
             <CardContent>
               <dl className="text-sm space-y-2">
@@ -290,6 +319,7 @@ export default async function PublicPassportPage({ params }: Props) {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Circular economy</CardTitle>
+              <p className="text-xs text-gray-500">{declaredLine}</p>
             </CardHeader>
             <CardContent>
               <dl className="text-sm space-y-2">
@@ -334,6 +364,7 @@ export default async function PublicPassportPage({ params }: Props) {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Environmental performance</CardTitle>
+                <p className="text-xs text-gray-500">{declaredLine} Not independently verified.</p>
               </CardHeader>
               <CardContent>
                 <dl className="text-sm space-y-2">

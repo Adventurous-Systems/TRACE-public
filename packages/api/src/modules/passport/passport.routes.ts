@@ -6,6 +6,7 @@ import {
   createPassport,
   getPassportById,
   listPassports,
+  getPassportStats,
   updatePassport,
   verifyPassport,
   verifyPassportIntegrity,
@@ -64,6 +65,19 @@ export async function passportRoutes(app: FastifyInstance): Promise<void> {
 
     const result = await listPassports(query, organisationId);
     return reply.send({ success: true, data: result });
+  });
+
+  // ── GET /api/v1/passports/stats ───────────────────────────────────────────
+  // The dashboard counts for the authenticated user's organisation
+  app.get('/stats', { preHandler: [authenticate] }, async (request, reply) => {
+    const { organisationId } = request.user;
+    if (!organisationId) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'NO_ORGANISATION', message: 'User is not associated with an organisation' },
+      });
+    }
+    return reply.send({ success: true, data: await getPassportStats(organisationId) });
   });
 
   // ── GET /api/v1/passports/:id ─────────────────────────────────────────────

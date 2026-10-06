@@ -560,10 +560,10 @@ export const blockchain = {
 
 // ─── Quality ──────────────────────────────────────────────────────────────
 
+/** A quality report as anyone may see it: no email address, no user id. */
 export interface QualityReportSummary {
   id: string;
   passportId: string;
-  inspectorId: string;
   structuralScore: number | null;
   aestheticScore: number | null;
   environmentalScore: number | null;
@@ -573,7 +573,46 @@ export interface QualityReportSummary {
   blockchainTxHash: string | null;
   disputed: boolean;
   createdAt: string;
-  inspector: { id: string; name: string; email: string } | null;
+  /** Who filed it: name and role. */
+  inspector: { name: string; role: string } | null;
+  /** An inspector's report is independent; a hub's own is the seller's check. */
+  source: 'independent' | 'seller' | 'platform';
+}
+
+/** One of the signed-in user's own reports, with the material it is about. */
+export interface OwnQualityReport extends Omit<QualityReportSummary, 'inspector' | 'source'> {
+  inspectorRole: string | null;
+  material: {
+    productName: string;
+    serialNumber: string | null;
+    categoryL1: string;
+    photo: string | null;
+  } | null;
+}
+
+/** A registered material an inspector can choose to inspect. */
+export interface InspectionMaterial {
+  id: string;
+  productName: string;
+  serialNumber: string | null;
+  categoryL1: string;
+  categoryL2: string | null;
+  conditionGrade: string | null;
+  conditionNotes: string | null;
+  status: string;
+  unitOfMeasure: string | null;
+  dimensions: {
+    length?: number;
+    width?: number;
+    height?: number;
+    weight?: number;
+    unit?: string;
+    weightUnit?: string;
+  } | null;
+  photo: string | null;
+  organisationName: string;
+  reportCount: number;
+  lastIndependentInspectionAt: string | null;
 }
 
 export const quality = {
@@ -583,7 +622,36 @@ export const quality = {
   getReport: (id: string) => request<QualityReportSummary>(`/api/v1/quality/reports/${id}`),
 
   myReports: (token: string) =>
-    request<QualityReportSummary[]>('/api/v1/quality/reports/mine', { token }),
+    request<OwnQualityReport[]>('/api/v1/quality/reports/mine', { token }),
+
+  /** Materials to inspect, least recently inspected first. */
+  materials: (
+    params: {
+      q?: string;
+      categoryL1?: string;
+      uninspected?: boolean;
+      page?: number;
+      limit?: number;
+    },
+    token: string,
+  ) => {
+    const query = new URLSearchParams();
+    if (params.q) query.set('q', params.q);
+    if (params.categoryL1) query.set('categoryL1', params.categoryL1);
+    if (params.uninspected) query.set('uninspected', 'true');
+    if (params.page) query.set('page', String(params.page));
+    if (params.limit) query.set('limit', String(params.limit));
+    return request<{ data: InspectionMaterial[]; total: number; page: number; limit: number }>(
+      `/api/v1/quality/materials?${query.toString()}`,
+      { token },
+    );
+  },
+
+  summary: (token: string) =>
+    request<{ materials: number; notIndependentlyInspected: number; myReports: number }>(
+      '/api/v1/quality/summary',
+      { token },
+    ),
 
   submit: (
     data: {
@@ -591,20 +659,20 @@ export const quality = {
       structuralScore?: number;
       aestheticScore?: number;
       environmentalScore?: number;
-      overallGrade?: 'A' | 'B' | 'C' | 'D';
+      overallGrade: 'A' | 'B' | 'C' | 'D';
       reportNotes?: string;
       photoUrls?: string[];
     },
     token: string,
   ) =>
-    request<QualityReportSummary>('/api/v1/quality/reports', {
+    request<OwnQualityReport>('/api/v1/quality/reports', {
       method: 'POST',
       body: JSON.stringify(data),
       token,
     }),
 
   dispute: (reportId: string, token: string) =>
-    request<QualityReportSummary>(`/api/v1/quality/reports/${reportId}/dispute`, {
+    request<OwnQualityReport>(`/api/v1/quality/reports/${reportId}/dispute`, {
       method: 'POST',
       token,
     }),
@@ -647,6 +715,15 @@ export const passports = {
     }),
 
   history: (id: string) => request<unknown[]>(`/api/v1/passports/${id}/history`),
+
+  /** Counts over all of the organisation's passports, for the dashboard. */
+  stats: (token: string) =>
+    request<{
+      total: number;
+      byStatus: Record<string, number>;
+      anchored: number;
+      awaitingAnchor: number;
+    }>('/api/v1/passports/stats', { token }),
 
   uploadPhoto: async (id: string, file: File, token: string): Promise<PassportDetail> => {
     const formData = new FormData();

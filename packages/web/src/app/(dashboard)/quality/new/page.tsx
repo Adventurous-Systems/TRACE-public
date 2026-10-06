@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { quality } from '@/lib/api-client';
-import { getToken } from '@/lib/auth';
+import { quality, type InspectionMaterial } from '@/lib/api-client';
+import { canViewQuality, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { NoAccess } from '@/components/ui/load-state';
+import { MaterialPicker } from '@/components/quality/MaterialPicker';
+import { MaterialUnderInspection } from '@/components/quality/MaterialUnderInspection';
 import { getErrorMessage } from '@/lib/api-errors';
 
 const GRADES = ['A', 'B', 'C', 'D'] as const;
@@ -25,9 +28,34 @@ export default function SubmitQualityReportPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const passportId = searchParams.get('passportId') ?? '';
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<StoredUser | null>(null);
+  const [material, setMaterial] = useState<InspectionMaterial | null>(null);
+  const [notFound, setNotFound] = useState(false);
+
+  // Arriving from a material's page or the work queue (?passportId=…) starts
+  // with that material already chosen.
+  useEffect(() => {
+    const current = getToken();
+    const currentUser = getUser();
+    setToken(current);
+    setUser(currentUser);
+    if (!current || !passportId || !canViewQuality(currentUser)) return;
+    quality
+      .materials({ q: passportId, limit: 5 }, current)
+      .then((res) => {
+        const found = res.data.find((m) => m.id === passportId) ?? null;
+        setMaterial(found);
+        setNotFound(!found);
+      })
+      .catch(() => setNotFound(true));
+  }, [passportId]);
+
+  // A hub's report is its own check of its own material, and the passport
+  // says so. Only an inspector's report is an independent inspection.
+  const ownCheck = user?.role === 'hub_admin';
 
   const [form, setForm] = useState({
-    passportId,
     structuralScore: '',
     aestheticScore: '',
     environmentalScore: '',
@@ -49,15 +77,25 @@ export default function SubmitQualityReportPage() {
     setError(null);
     setSubmitting(true);
 
-    const token = getToken();
     if (!token) {
       router.push('/login');
+      return;
+    }
+    if (!material) {
+      setError('Choose the material this report is about.');
+      setSubmitting(false);
+      return;
+    }
+    if (!form.overallGrade) {
+      setError('Choose an overall grade: a report needs a verdict.');
+      setSubmitting(false);
       return;
     }
 
     try {
       const payload: Parameters<typeof quality.submit>[0] = {
-        passportId: form.passportId,
+        passportId: material.id,
+        overallGrade: form.overallGrade,
         photoUrls: [],
       };
       if (form.reportNotes) payload.reportNotes = form.reportNotes;
@@ -66,7 +104,6 @@ export default function SubmitQualityReportPage() {
       if (form.aestheticScore) payload.aestheticScore = parseInt(form.aestheticScore, 10);
       if (form.environmentalScore)
         payload.environmentalScore = parseInt(form.environmentalScore, 10);
-      if (form.overallGrade) payload.overallGrade = form.overallGrade;
 
       await quality.submit(payload, token);
       router.push('/quality');
@@ -91,34 +128,66 @@ export default function SubmitQualityReportPage() {
 
   const suggested = computedGrade();
 
+  if (user && !canViewQuality(user)) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-2xl mx-auto space-y-6">
+          <h1 className="text-2xl font-bold">Submit Quality Report</h1>
+          <NoAccess message="Quality reports are filed by inspectors, hub administrators and the platform." />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Submit Quality Report</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Assess the condition of this material for reuse
+            Choose the material, then assess its condition for reuse
           </p>
         </div>
 
+        {ownCheck && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            This report is your hub&apos;s own check of its own material. The passport will show it
+            as the seller&apos;s own check, not as an independent inspection.
+          </p>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Passport ID */}
+          {/* The material */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Material passport</CardTitle>
+              <CardTitle className="text-base">
+                {material
+                  ? ownCheck
+                    ? 'Material being checked'
+                    : 'Material being inspected'
+                  : ownCheck
+                    ? 'Which material are you checking?'
+                    : 'Which material are you inspecting?'}
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-1">
-                <Label htmlFor="passportId">Passport ID</Label>
-                <Input
-                  id="passportId"
-                  name="passportId"
-                  value={form.passportId}
-                  onChange={handleChange}
-                  placeholder="UUID of the material passport"
-                  required
+            <CardContent className="space-y-3">
+              {notFound && !material && (
+                <p role="status" className="rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                  The material in that link isn&apos;t among the registered materials you can report
+                  on. Choose one below.
+                </p>
+              )}
+              {material ? (
+                <MaterialUnderInspection material={material} onChange={() => setMaterial(null)} />
+              ) : token ? (
+                <MaterialPicker
+                  token={token}
+                  onSelect={setMaterial}
+                  actionLabel={ownCheck ? 'Check' : 'Inspect'}
                 />
-              </div>
+              ) : (
+                <p className="text-sm text-gray-400">Loading…</p>
+              )}
             </CardContent>
           </Card>
 
@@ -178,9 +247,18 @@ export default function SubmitQualityReportPage() {
           {/* Overall grade */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Overall condition grade</CardTitle>
+              <CardTitle className="text-base">
+                Overall condition grade{' '}
+                <span className="font-normal text-gray-500">(required)</span>
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              {ownCheck && material?.lastIndependentInspectionAt && (
+                <p className="rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                  An independent inspection has graded this material. Your check will be recorded
+                  with the grade you give, but the passport keeps the inspection&apos;s grade.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {GRADES.map((g) => (
                   <button
@@ -226,10 +304,14 @@ export default function SubmitQualityReportPage() {
             </div>
           )}
 
+          {material && !form.overallGrade && (
+            <p className="text-sm text-gray-500">Choose an overall grade to submit the report.</p>
+          )}
+
           <div className="flex gap-3">
             <Button
               type="submit"
-              disabled={submitting || !form.passportId}
+              disabled={submitting || !material || !form.overallGrade}
               className="bg-brand-600 hover:bg-brand-700"
             >
               {submitting ? 'Submitting…' : 'Submit report'}

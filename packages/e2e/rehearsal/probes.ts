@@ -505,5 +505,184 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     );
   }
 
+  // ── Inspection: who may look, who may report, what the public learns ─────
+  const inspector = await rehearsal.persona('inspector');
+  interface Material {
+    id: string;
+    productName: string;
+    organisationName: string;
+    conditionGrade: string | null;
+  }
+  interface PublicReport {
+    source: string;
+    inspector: { name: string; role: string } | null;
+  }
+  const inspectable = await createListedPassport(ctx, seller.token, {
+    productName: uniqueName('Rehearsal Probe Inspectable'),
+  });
+  const materials = (who: Session | null, query = '') =>
+    rehearsal.api<{ data: Material[]; total: number }>('GET', `/api/v1/quality/materials${query}`, {
+      ...(who ? { token: who.token } : {}),
+    });
+  const report = (who: Session, passportId: string, body: Record<string, unknown> = {}) =>
+    rehearsal.api<{ id: string }>('POST', '/api/v1/quality/reports', {
+      token: who.token,
+      body: { passportId, overallGrade: 'B', reportNotes: 'Rehearsal probe.', ...body },
+    });
+
+  await probe('the materials list without signing in', 'HTTP 401', async () =>
+    expectStatus(await materials(null), 401),
+  );
+  for (const [name, who] of [
+    ['a buyer', buyer],
+    ['a supplier', seller],
+    ['hub staff', staff],
+  ] as const) {
+    await probe(`${name} reads the materials list`, 'HTTP 403', async () =>
+      expectStatus(await materials(who), 403),
+    );
+    await probe(`${name} files a quality report`, 'HTTP 403', async () =>
+      expectStatus(await report(who, inspectable.passportId), 403),
+    );
+  }
+  await probe(
+    'an inspector sees materials of more than one organisation',
+    'HTTP 200, 2+ organisations',
+    async () => {
+      const res = await materials(inspector, '?limit=50');
+      const holders = new Set((res.body.data?.data ?? []).map((m) => m.organisationName));
+      return {
+        pass: res.status === 200 && holders.size > 1,
+        actual: `${says(res)}, ${holders.size}`,
+      };
+    },
+  );
+  await probe("a hub admin sees only the hub's own materials", '1 organisation', async () => {
+    const res = await materials(hubAdmin, '?limit=50');
+    const holders = new Set((res.body.data?.data ?? []).map((m) => m.organisationName));
+    return {
+      pass: res.status === 200 && holders.size === 1,
+      actual: `${says(res)}, ${holders.size}`,
+    };
+  });
+  await probe("a hub admin reports on another organisation's material", 'HTTP 403', async () =>
+    expectStatus(await report(hubAdmin, inspectable.passportId, { overallGrade: 'D' }), 403),
+  );
+  await probe('a search with SQL wildcards matches literally', '0 found', async () => {
+    const res = await materials(inspector, `?q=${encodeURIComponent('%_%')}`);
+    return { pass: res.body.data?.total === 0, actual: `${says(res)}, ${res.body.data?.total}` };
+  });
+  for (const query of ['?limit=500', '?page=0', '?uninspected=maybe']) {
+    await probe(`materials list with ${query}`, 'HTTP 400', async () =>
+      expectStatus(await materials(inspector, query), 400),
+    );
+  }
+  for (const [name, body] of [
+    ['a score of 11', { structuralScore: 11 }],
+    ['a grade of E', { overallGrade: 'E' }],
+    ['no grade', { overallGrade: undefined, structuralScore: 6 }],
+  ] as const) {
+    await probe(`a report with ${name}`, 'HTTP 400', async () =>
+      expectStatus(await report(inspector, inspectable.passportId, body), 400),
+    );
+  }
+  await probe('a report on a material that does not exist', 'HTTP 404', async () =>
+    expectStatus(await report(inspector, '00000000-0000-4000-8000-000000000000'), 404),
+  );
+  await probe('an inspector reports on it', 'HTTP 201', async () =>
+    expectStatus(await report(inspector, inspectable.passportId), 201),
+  );
+  await probe(
+    'the public reports name the inspector and role, and nothing private',
+    'independent, no email or user id',
+    async () => {
+      const res = await rehearsal.api<PublicReport[]>(
+        'GET',
+        `/api/v1/quality/reports/passport/${inspectable.passportId}`,
+      );
+      const text = JSON.stringify(res.body.data ?? null);
+      const first = res.body.data?.[0];
+      const leaks = [/@/, /inspectorId/, new RegExp(inspector.user.id)].filter((p) => p.test(text));
+      return {
+        pass: first?.source === 'independent' && !!first.inspector?.name && leaks.length === 0,
+        actual: `${says(res)} ${first?.source}, ${first?.inspector?.role}, ${leaks.length} leaks`,
+      };
+    },
+  );
+  // Once an inspector has graded a material, its seller cannot change the grade.
+  const hubMaterial = await createListedPassport(ctx, hubAdmin.token, {
+    productName: uniqueName('Rehearsal Probe Hub Material'),
+  });
+  const gradeOf = async (passportId: string) =>
+    (await materials(inspector, `?q=${passportId}`)).body.data?.data[0]?.conditionGrade ?? null;
+  await probe(
+    "a hub's own check sets the grade of a material nobody has inspected",
+    'A',
+    async () => {
+      const res = await report(hubAdmin, hubMaterial.passportId, { overallGrade: 'A' });
+      const grade = await gradeOf(hubMaterial.passportId);
+      return { pass: res.status === 201 && grade === 'A', actual: `${says(res)}, grade ${grade}` };
+    },
+  );
+  await probe('an inspector grades it C', 'C', async () => {
+    const res = await report(inspector, hubMaterial.passportId, { overallGrade: 'C' });
+    const grade = await gradeOf(hubMaterial.passportId);
+    return { pass: res.status === 201 && grade === 'C', actual: `${says(res)}, grade ${grade}` };
+  });
+  await probe(
+    "the hub's own check, grade A, after the inspection",
+    'recorded (HTTP 201); the grade stays C',
+    async () => {
+      const res = await report(hubAdmin, hubMaterial.passportId, { overallGrade: 'A' });
+      const grade = await gradeOf(hubMaterial.passportId);
+      return { pass: res.status === 201 && grade === 'C', actual: `${says(res)}, grade ${grade}` };
+    },
+  );
+  await probe('the hub edits the grade on the passport', 'HTTP 409', async () =>
+    expectStatus(
+      await rehearsal.api('PATCH', `/api/v1/passports/${hubMaterial.passportId}`, {
+        token: hubAdmin.token,
+        body: { conditionGrade: 'A' },
+      }),
+      409,
+    ),
+  );
+  await probe('the platform admin re-grades it B', 'B', async () => {
+    const res = await report(admin, hubMaterial.passportId, { overallGrade: 'B' });
+    const grade = await gradeOf(hubMaterial.passportId);
+    return { pass: res.status === 201 && grade === 'B', actual: `${says(res)}, grade ${grade}` };
+  });
+
+  // Flagging a report is for whoever holds the material.
+  const reportsOn = async (passportId: string) =>
+    (
+      await rehearsal.api<Array<{ id: string }>>(
+        'GET',
+        `/api/v1/quality/reports/passport/${passportId}`,
+      )
+    ).body.data ?? [];
+  const flag = (who: Session, reportId: string) =>
+    rehearsal.api('POST', `/api/v1/quality/reports/${reportId}/dispute`, { token: who.token });
+  const hubReport = (await reportsOn(hubMaterial.passportId))[0]?.id ?? '';
+  for (const [name, who] of [
+    ['a buyer with no part in it', buyer],
+    ['a seller of another organisation', seller],
+  ] as const) {
+    await probe(`${name} flags a report`, 'HTTP 403', async () =>
+      expectStatus(await flag(who, hubReport), 403),
+    );
+  }
+  await probe('the hub that holds the material flags a report on it', 'HTTP 200', async () =>
+    expectStatus(await flag(hubAdmin, hubReport), 200),
+  );
+  await probe('it flags the same report again', 'HTTP 409', async () =>
+    expectStatus(await flag(hubAdmin, hubReport), 409),
+  );
+
+  await probe('once inspected, it leaves the not-yet-inspected queue', '0 found', async () => {
+    const res = await materials(inspector, `?uninspected=true&q=${inspectable.passportId}`);
+    return { pass: res.body.data?.total === 0, actual: `${says(res)}, ${res.body.data?.total}` };
+  });
+
   await ctx.dispose();
 }

@@ -8,7 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { NoAccess } from '@/components/ui/load-state';
-import { quality, type QualityReportSummary } from '@/lib/api-client';
+import { quality, type OwnQualityReport } from '@/lib/api-client';
+import { categoryLabel } from '@/lib/categories';
+import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 import { getToken, getUser, canViewQuality, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { formatDate } from '@/lib/format';
@@ -38,7 +40,7 @@ export default function QualityReportsPage() {
   // platform_admin" rendered raw into the red error box (also J-10).
   // Effect-based user read to avoid a hydration mismatch.
   const [user, setUser] = useState<StoredUser | null>(null);
-  const [reports, setReports] = useState<QualityReportSummary[]>([]);
+  const [reports, setReports] = useState<OwnQualityReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +85,7 @@ export default function QualityReportsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Quality Reports</h1>
-            <p className="text-gray-500 text-sm mt-1">Your inspection history</p>
+            <p className="text-gray-500 text-sm mt-1">The reports you have filed</p>
           </div>
           <Link href="/quality/new">
             <Button className="bg-brand-600 hover:bg-brand-700">+ New report</Button>
@@ -119,6 +121,12 @@ export default function QualityReportsPage() {
               <Card key={report.id}>
                 <CardContent className="pt-4">
                   <div className="flex items-start justify-between gap-4">
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-gray-50">
+                      <ListingPhoto
+                        src={report.material?.photo}
+                        alt={report.material?.productName ?? 'Material'}
+                      />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <GradeBadge grade={report.overallGrade} />
@@ -132,12 +140,21 @@ export default function QualityReportsPage() {
                         )}
                       </div>
 
+                      {/* The material, not its ID. The public passport: an
+                          inspector belongs to no organisation, so the
+                          organisation's own passport page is not theirs. */}
                       <Link
-                        href={`/passports/${report.passportId}`}
-                        className="text-sm text-brand-600 hover:underline mt-1 block font-mono"
+                        href={`/passport/${report.passportId}`}
+                        className="text-sm font-medium text-brand-600 hover:underline mt-1 block"
                       >
-                        Passport: {report.passportId.slice(0, 8)}…
+                        {report.material?.productName ?? 'A material that no longer exists'}
                       </Link>
+                      {report.material && (
+                        <p className="text-xs text-gray-500">
+                          {categoryLabel(report.material.categoryL1, null)}
+                          {report.material.serialNumber ? ` · ${report.material.serialNumber}` : ''}
+                        </p>
+                      )}
 
                       {report.reportNotes && (
                         <p className="text-sm text-gray-600 mt-1 line-clamp-2">

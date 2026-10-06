@@ -39,6 +39,8 @@ export const CreatePassportSchema = z.object({
 
   // Product — optional
   unitOfMeasure: z.enum(UNITS_OF_MEASURE).optional(), // basis for quantity / price / carbon
+  // The supplier's own serial or batch number, as printed on the material.
+  serialNumber: z.string().trim().min(1).max(100).optional(),
   materialComposition: z.array(MaterialComponentSchema).optional(),
   dimensions: DimensionsSchema.optional(),
   technicalSpecs: z.record(z.unknown()).optional(),

@@ -17,6 +17,7 @@ import {
 } from '@trace/core';
 import sharp from 'sharp';
 import { anchorQueue } from '../../lib/queue.js';
+import { hasIndependentInspection } from '../quality/quality.service.js';
 import { uploadBuffer } from '../../lib/storage.js';
 import { computePassportHash } from '../../lib/passport-hash.js';
 import { simulatePassportAnchor } from '../../lib/anchor.js';
@@ -138,6 +139,34 @@ export async function getPassportById(
   return passport;
 }
 
+/**
+ * The counts on an organisation's dashboard, over all of its passports. (The
+ * dashboard used to count these from the five most recent ones it had loaded.)
+ */
+export async function getPassportStats(organisationId: string): Promise<{
+  total: number;
+  byStatus: Record<string, number>;
+  anchored: number;
+  awaitingAnchor: number;
+}> {
+  const rows = await db
+    .select({
+      status: materialPassports.status,
+      count: sql<number>`cast(count(*) as int)`,
+      anchored: sql<number>`cast(count(${materialPassports.blockchainTxHash}) as int)`,
+      awaiting: sql<number>`cast(count(*) filter (where ${materialPassports.blockchainPassportHash} is null and ${materialPassports.status} <> 'draft') as int)`,
+    })
+    .from(materialPassports)
+    .where(eq(materialPassports.organisationId, organisationId))
+    .groupBy(materialPassports.status);
+  return {
+    total: rows.reduce((sum, row) => sum + row.count, 0),
+    byStatus: Object.fromEntries(rows.map((row) => [row.status, row.count])),
+    anchored: rows.reduce((sum, row) => sum + row.anchored, 0),
+    awaitingAnchor: rows.reduce((sum, row) => sum + row.awaiting, 0),
+  };
+}
+
 export async function listPassports(
   query: PassportQueryInput,
   organisationId: string,
@@ -208,6 +237,18 @@ export async function updatePassport(
   if (['listed', 'reserved', 'sold', 'decommissioned'].includes(existing.status)) {
     throw new ConflictError(
       `This material can no longer be edited because it is ${existing.status}. Editing is locked once a material is listed or sold.`,
+    );
+  }
+
+  // An inspector's grade is not the seller's to change (owner decision,
+  // 2026-10-02). Everything else on the passport stays editable.
+  if (
+    input.conditionGrade !== undefined &&
+    input.conditionGrade !== existing.conditionGrade &&
+    (await hasIndependentInspection(passportId))
+  ) {
+    throw new ConflictError(
+      'An independent inspection set the grade of this material, so only another inspection can change it.',
     );
   }
 
@@ -450,6 +491,7 @@ function buildInsertValues(input: CreatePassportInput): InsertRow {
     categoryL1: input.categoryL1,
     categoryL2: input.categoryL2 ?? null,
     unitOfMeasure: input.unitOfMeasure ?? null,
+    serialNumber: input.serialNumber ?? null,
     // Cast JSONB arrays/objects to bypass exactOptionalPropertyTypes friction
     materialComposition: (input.materialComposition ?? []) as unknown,
     dimensions: (input.dimensions ?? null) as unknown,
@@ -500,6 +542,7 @@ function buildUpdateValues(input: UpdatePassportInput): InsertRow {
   if (input.categoryL1 !== undefined) set['categoryL1'] = input.categoryL1;
   if (input.categoryL2 !== undefined) set['categoryL2'] = input.categoryL2;
   if (input.unitOfMeasure !== undefined) set['unitOfMeasure'] = input.unitOfMeasure;
+  if (input.serialNumber !== undefined) set['serialNumber'] = input.serialNumber;
   if (input.materialComposition !== undefined)
     set['materialComposition'] = input.materialComposition as unknown;
   if (input.dimensions !== undefined) set['dimensions'] = input.dimensions as unknown;

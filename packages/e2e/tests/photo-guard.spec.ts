@@ -1,6 +1,6 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
-import { ACCOUNTS, API_URL, statePath } from '../fixtures/accounts';
-import { apiLogin, createPassportNoPhoto } from '../fixtures/api';
+import { API_URL, statePath } from '../fixtures/accounts';
+import { sessionToken, createPassportNoPhoto } from '../fixtures/api';
 import { uniqueName } from '../fixtures/test-helpers';
 
 /**
@@ -10,7 +10,7 @@ import { uniqueName } from '../fixtures/test-helpers';
 test.describe('Listing requires a photo', () => {
   test('API rejects listing a photoless passport with 409', async () => {
     const ctx = await pwRequest.newContext();
-    const token = await apiLogin(ctx, ACCOUNTS.supplier.email, ACCOUNTS.supplier.password);
+    const token = sessionToken('supplier');
     const passportId = await createPassportNoPhoto(ctx, token, uniqueName('E2E NoPhoto'));
 
     const res = await ctx.post(`${API_URL}/api/v1/marketplace/listings`, {
@@ -34,7 +34,7 @@ test.describe('Listing requires a photo', () => {
     test('photoless passport shows "Add a photo to list"', async ({ page }) => {
       // Create a photoless passport via API, then view the list.
       const ctx = await pwRequest.newContext();
-      const token = await apiLogin(ctx, ACCOUNTS.supplier.email, ACCOUNTS.supplier.password);
+      const token = sessionToken('supplier');
       const name = uniqueName('E2E UI NoPhoto');
       await createPassportNoPhoto(ctx, token, name);
       await ctx.dispose();

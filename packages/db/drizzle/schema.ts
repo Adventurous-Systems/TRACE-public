@@ -384,6 +384,10 @@ export const qualityReports = pgTable(
     inspectorId: uuid('inspector_id')
       .notNull()
       .references(() => users.id),
+    // The reporter's role when the report was filed: 'inspector' makes it an
+    // independent inspection, anything else the seller's or platform's own
+    // check. Null on reports filed by a release that did not record it.
+    inspectorRole: text('inspector_role'),
     structuralScore: integer('structural_score'), // 1–10
     aestheticScore: integer('aesthetic_score'), // 1–10
     environmentalScore: integer('environmental_score'), // 1–10

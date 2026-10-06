@@ -71,6 +71,30 @@ export const MAX_AMOUNT_PENCE = 2_000_000_000;
 /** The most units a lot may hold. */
 export const MAX_LOT_QUANTITY = 1_000_000_000;
 
+// Who stands behind a quality report. Only an inspector's report is an
+// independent inspection; a hub's or supplier's report on a material is the
+// seller's own check, and is shown as such (owner decision, 2026-10-02).
+export type InspectionSource = 'independent' | 'seller' | 'platform';
+
+export function inspectionSource(role: string | null | undefined): InspectionSource {
+  if (role === 'inspector') return 'independent';
+  if (role === 'platform_admin') return 'platform';
+  return 'seller';
+}
+
+export const INSPECTION_SOURCE_LABELS: Record<InspectionSource, string> = {
+  independent: 'Independent inspection',
+  seller: "Seller's own check",
+  platform: 'Checked by the platform',
+};
+
+/** The reporter's role in a buyer's words. */
+export const INSPECTOR_ROLE_LABELS: Record<InspectionSource, string> = {
+  independent: 'independent quality auditor',
+  seller: 'the seller',
+  platform: 'the platform operator',
+};
+
 export const DECONSTRUCTION_METHODS = ['selective', 'mechanical', 'manual', 'mixed'] as const;
 
 export const USER_ROLES = [
