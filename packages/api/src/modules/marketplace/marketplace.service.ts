@@ -619,6 +619,9 @@ export async function updateListing(
         .from(materialPassports)
         .where(eq(materialPassports.id, current.passportId))
         .for('update');
+      if (passport?.status === 'decommissioned') {
+        throw new ConflictError('Decommissioned materials cannot be listed');
+      }
       if (passport?.status !== 'active') {
         throw new TraceError(
           'This material has been listed again since this listing expired. Edit that listing instead.',
