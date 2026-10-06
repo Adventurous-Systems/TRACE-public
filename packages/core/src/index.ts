@@ -150,6 +150,9 @@ export type {
 export { createLogger, logger } from './logger.js';
 export type { Logger } from './logger.js';
 
+// Dates
+export { BUSINESS_TIME_ZONE, endOfDayInLondon } from './constants/dates.js';
+
 // Errors
 export {
   TraceError,

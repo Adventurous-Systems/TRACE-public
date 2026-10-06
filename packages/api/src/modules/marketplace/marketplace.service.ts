@@ -152,6 +152,21 @@ export interface ListingWithPassport extends Listing {
   };
 }
 
+/**
+ * A listing past its date reads as expired at once (R1). The sweep marks it
+ * expired only when no order is open on it, which can take days; until then
+ * the row still says active, and the listing page offered an order the API
+ * refuses. Applied when a listing is read; the row itself is left to the sweep.
+ */
+export function listingStatusAt(
+  listing: { status: string; expiresAt: Date | null },
+  now: Date = new Date(),
+): string {
+  return listing.status === 'active' && listing.expiresAt && listing.expiresAt <= now
+    ? 'expired'
+    : listing.status;
+}
+
 export async function getListingById(listingId: string): Promise<ListingWithPassport> {
   const listing = await db.query.listings.findFirst({
     where: eq(listings.id, listingId),
@@ -182,6 +197,7 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
   const { conditionPhotos, ...passport } = listing.passport;
   return {
     ...listing,
+    status: listingStatusAt(listing),
     passport: { ...passport, photo: (conditionPhotos as string[] | null)?.[0] ?? null },
   } as unknown as ListingWithPassport;
 }
@@ -386,7 +402,10 @@ export async function listHubListings(organisationId: string): Promise<ListingWi
     },
   });
 
-  return data as unknown as ListingWithPassport[];
+  return data.map((listing) => ({
+    ...listing,
+    status: listingStatusAt(listing),
+  })) as unknown as ListingWithPassport[];
 }
 
 // ─── A lot's status ──────────────────────────────────────────────────────────

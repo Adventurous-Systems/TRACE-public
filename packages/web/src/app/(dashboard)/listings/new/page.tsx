@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { BUSINESS_TIME_ZONE, endOfDayInLondon } from '@trace/core';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -84,7 +85,8 @@ export default function NewListingPage() {
       quantity: parseInt(quantity, 10) || 1,
       minOrderQuantity: parseInt(minOrderQuantity, 10) || 1,
       shippingOptions: [shippingOption],
-      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+      // The end of the chosen day in the UK, not midnight UTC at its start (R5).
+      expiresAt: expiresAt ? endOfDayInLondon(expiresAt).toISOString() : undefined,
     };
 
     setLoading(true);
@@ -213,8 +215,12 @@ export default function NewListingPage() {
                   type="date"
                   value={expiresAt}
                   onChange={(e) => setExpiresAt(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
+                  // Today in the UK ('en-CA' formats as YYYY-MM-DD).
+                  min={new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TIME_ZONE }).format(
+                    new Date(),
+                  )}
                 />
+                <p className="text-xs text-gray-500">On sale until the end of that day, UK time.</p>
               </div>
             </CardContent>
           </Card>

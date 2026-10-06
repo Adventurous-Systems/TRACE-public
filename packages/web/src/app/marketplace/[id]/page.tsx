@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ApiError, marketplace, type ListingSummary } from '@/lib/api-client';
 import { formatQuantity, perUnit, unitLabel } from '@trace/core';
 import { defaultOrderQuantity, orderQuantityProblem } from '@/lib/order-quantity';
+import { listingStatus } from '@/lib/orders';
 import { clearSession, getToken, getUser, type StoredUser } from '@/lib/auth';
 import { AccountNav } from '@/components/marketplace/AccountNav';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
@@ -104,10 +105,13 @@ export default function ListingDetailPage() {
       if (changed) {
         setListing(changed);
         setQuantity(defaultOrderQuantity(changed));
+        const now = listingStatus(changed);
         setError(
-          changed.status !== 'active'
-            ? 'Someone else has just ordered the rest of this lot.'
-            : `This lot changed while you were looking at it: ${formatQuantity(changed.quantityAvailable, changed.passport.unitOfMeasure)} left now. Check the quantity and order again.`,
+          now === 'expired'
+            ? 'This listing has expired, so it takes no new orders.'
+            : now !== 'active'
+              ? 'Someone else has just ordered the rest of this lot.'
+              : `This lot changed while you were looking at it: ${formatQuantity(changed.quantityAvailable, changed.passport.unitOfMeasure)} left now. Check the quantity and order again.`,
         );
       } else {
         setError(getErrorMessage(e, 'place this order'));
@@ -181,8 +185,8 @@ export default function ListingDetailPage() {
                   Grade {listing.passport.conditionGrade}
                 </Badge>
               )}
-              {listing.status !== 'active' && (
-                <Badge variant="outline">{listingStatusLabel(listing.status)}</Badge>
+              {listingStatus(listing) !== 'active' && (
+                <Badge variant="outline">{listingStatusLabel(listingStatus(listing))}</Badge>
               )}
             </div>
 
@@ -301,7 +305,7 @@ export default function ListingDetailPage() {
                       Manage listings
                     </Link>
                   </div>
-                ) : listing.status === 'active' ? (
+                ) : listingStatus(listing) === 'active' ? (
                   !user ? (
                     /* Logged-out visitors get a sign-up CTA, never a buy button. */
                     <div className="space-y-3">
@@ -393,7 +397,7 @@ export default function ListingDetailPage() {
                   )
                 ) : (
                   <p className="text-sm text-gray-500 text-center">
-                    This listing is {listingStatusLabel(listing.status).toLowerCase()}.
+                    This listing is {listingStatusLabel(listingStatus(listing)).toLowerCase()}.
                   </p>
                 )}
               </CardContent>

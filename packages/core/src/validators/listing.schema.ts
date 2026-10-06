@@ -8,6 +8,11 @@ const ShippingOptionSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+// An expiry already passed would make a listing that is expired on arrival (R5).
+const FutureDate = z.coerce
+  .date()
+  .refine((date) => date.getTime() > Date.now(), { message: 'The expiry date has already passed' });
+
 export const CreateListingSchema = z
   .object({
     passportId: z.string().uuid(),
@@ -16,7 +21,7 @@ export const CreateListingSchema = z
     quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).default(1),
     minOrderQuantity: z.number().int().positive().max(MAX_LOT_QUANTITY).default(1),
     shippingOptions: z.array(ShippingOptionSchema).min(1),
-    expiresAt: z.coerce.date().optional(),
+    expiresAt: FutureDate.optional(),
   })
   .refine((l) => l.minOrderQuantity <= l.quantity, {
     message: 'The minimum order cannot be more than the quantity listed',
@@ -30,7 +35,7 @@ export const UpdateListingSchema = z.object({
   quantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   minOrderQuantity: z.number().int().positive().max(MAX_LOT_QUANTITY).optional(),
   shippingOptions: z.array(ShippingOptionSchema).min(1).optional(),
-  expiresAt: z.coerce.date().optional(),
+  expiresAt: FutureDate.optional(),
 });
 
 export type UpdateListingInput = z.infer<typeof UpdateListingSchema>;

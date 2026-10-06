@@ -1182,6 +1182,32 @@ describe('order lifecycle', () => {
     expect(await passportStatusOf(passportId)).toBe('active');
   });
 
+  it('an expiry that has already passed is refused, on a new listing and on an edit (R5)', async () => {
+    const yesterday = new Date(Date.now() - 24 * HOUR).toISOString();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marketplace/listings',
+      headers: sellerAuth,
+      payload: {
+        passportId: '00000000-0000-4000-8000-000000000000',
+        pricePence: 300,
+        quantity: 1,
+        shippingOptions: [{ method: 'collection' }],
+        expiresAt: yesterday,
+      },
+    });
+    expect(created.statusCode).toBe(400);
+    const { listingId } = await newLot();
+    const edited = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/listings/${listingId}`,
+      headers: sellerAuth,
+      payload: { expiresAt: yesterday },
+    });
+    expect(edited.statusCode).toBe(400);
+    expect((await lotOf(listingId)).expiresAt).toBeNull();
+  });
+
   it('a listing past its date waits for its open orders before it expires', async () => {
     const { listingId } = await newLot({ quantity: 5 });
     const id = await order(listingId, 2);
@@ -1189,6 +1215,18 @@ describe('order lifecycle', () => {
 
     await sweepOrderLifecycle();
     expect((await lotOf(listingId)).status).toBe('active');
+    // R1: but it reads as expired, so the listing page offers no order form.
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/v1/marketplace/listings/${listingId}`,
+    });
+    expect(read.json().data.status).toBe('expired');
+    const hub = await app.inject({
+      method: 'GET',
+      url: '/api/v1/marketplace/listings/hub',
+      headers: sellerAuth,
+    });
+    expect(hub.json().data.find((l: { id: string }) => l.id === listingId).status).toBe('expired');
     // No new orders in the meantime.
     const refused = await app.inject({
       method: 'POST',
