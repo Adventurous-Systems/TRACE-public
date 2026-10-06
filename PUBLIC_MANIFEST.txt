@@ -256,6 +256,7 @@ packages/e2e/tests/auth-redirect.spec.ts
 packages/e2e/tests/buyer-journey.spec.ts
 packages/e2e/tests/header-fit.spec.ts
 packages/e2e/tests/inspector-journey.spec.ts
+packages/e2e/tests/listing-management.spec.ts
 packages/e2e/tests/mobile/mobile-nav.spec.ts
 packages/e2e/tests/mobile/overflow.spec.ts
 packages/e2e/tests/order-lifecycle.spec.ts
@@ -289,6 +290,7 @@ packages/web/src/app/(dashboard)/admin/activity/page.tsx
 packages/web/src/app/(dashboard)/admin/feedback/page.tsx
 packages/web/src/app/(dashboard)/admin/flagged-orders/page.tsx
 packages/web/src/app/(dashboard)/dashboard/page.tsx
+packages/web/src/app/(dashboard)/listings/[id]/edit/page.tsx
 packages/web/src/app/(dashboard)/listings/new/page.tsx
 packages/web/src/app/(dashboard)/listings/page.tsx
 packages/web/src/app/(dashboard)/passports/[id]/edit/page.tsx
@@ -315,6 +317,7 @@ packages/web/src/components/DemoGuide.tsx
 packages/web/src/components/FeedbackWidget.tsx
 packages/web/src/components/marketplace/AccountNav.tsx
 packages/web/src/components/marketplace/ListingPhoto.tsx
+packages/web/src/components/marketplace/ListingTermsFields.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
 packages/web/src/components/passport/InspectionCard.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx
@@ -350,6 +353,8 @@ packages/web/src/lib/format.test.ts
 packages/web/src/lib/format.ts
 packages/web/src/lib/inspection.test.ts
 packages/web/src/lib/inspection.ts
+packages/web/src/lib/listing-changes.test.ts
+packages/web/src/lib/listing-changes.ts
 packages/web/src/lib/order-quantity.test.ts
 packages/web/src/lib/order-quantity.ts
 packages/web/src/lib/orders.test.ts
