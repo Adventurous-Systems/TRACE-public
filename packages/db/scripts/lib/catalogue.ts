@@ -17,6 +17,12 @@ import type { NewMaterialPassport } from '../../drizzle/schema.js';
 export { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 export const CATALOGUE_LOCK_NAME = 'trace-demo-catalogue-v1';
 
+/**
+ * A catalogue product has its lot when one is on sale or fully ordered. A
+ * fully ordered lot comes back on sale, or sells, when its orders close.
+ */
+export const LIVE_LOT_STATUSES = ['active', 'reserved'] as const;
+
 const DAY = 24 * 60 * 60 * 1000;
 
 export type SeedPassport = Omit<

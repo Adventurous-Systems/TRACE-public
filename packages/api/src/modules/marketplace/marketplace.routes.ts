@@ -24,6 +24,9 @@ import {
   updateTransaction,
   getTransactionById,
   listUserTransactions,
+  getOrdersSummary,
+  markOrdersSeen,
+  listFlaggedOrders,
 } from './marketplace.service.js';
 
 /** The signed-in user as the order functions see them. */
@@ -131,7 +134,9 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
 
   // ── GET /api/v1/marketplace/listings/:id ──────────────────────────────────
   app.get<{ Params: { id: string } }>('/listings/:id', async (request, reply) => {
-    const listing = await getListingById(request.params.id);
+    const listing = await getListingById(request.params.id, {
+      keepLastCuratedUnit: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
+    });
     return reply.send({ success: true, data: listing });
   });
 
@@ -196,7 +201,9 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const input = MakeOfferSchema.parse(request.body);
-      const tx = await makeOffer(input, viewerOf(request.user));
+      const tx = await makeOffer(input, viewerOf(request.user), {
+        keepLastCuratedUnit: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
+      });
       await recordAuditEvent({
         actor: request.user,
         action: 'marketplace.offer',
@@ -220,6 +227,30 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
     const data = await listUserTransactions(viewerOf(request.user));
     return reply.send({ success: true, data });
   });
+
+  // ── GET /api/v1/marketplace/transactions/summary ──────────────────────────
+  // Authenticated: how many orders wait for this person, how many changed
+  // since they last looked, and for a platform admin how many are flagged
+  app.get('/transactions/summary', { preHandler: [authenticate] }, async (request, reply) => {
+    return reply.send({ success: true, data: await getOrdersSummary(viewerOf(request.user)) });
+  });
+
+  // ── POST /api/v1/marketplace/transactions/seen ────────────────────────────
+  // Authenticated: the person has opened their orders
+  app.post('/transactions/seen', { preHandler: [authenticate] }, async (request, reply) => {
+    await markOrdersSeen(viewerOf(request.user));
+    return reply.send({ success: true, data: null });
+  });
+
+  // ── GET /api/v1/marketplace/transactions/flagged ──────────────────────────
+  // Platform admin: orders with a problem flagged, and those already resolved
+  app.get(
+    '/transactions/flagged',
+    { preHandler: [authenticate, authorize('platform_admin')] },
+    async (_request, reply) => {
+      return reply.send({ success: true, data: await listFlaggedOrders() });
+    },
+  );
 
   // ── GET /api/v1/marketplace/transactions/:id ──────────────────────────────
   // Scoped to the buyer, the selling organisation's staff, or a platform admin — see D-03.
@@ -250,6 +281,7 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
         metadata: {
           listingId: tx.listingId,
           transactionStatus: tx.status,
+          ...(input.outcome ? { outcome: input.outcome } : {}),
         },
       });
       return reply.send({ success: true, data: tx });

@@ -346,6 +346,8 @@ rehearse() {
     (load_api_env
      export E2E_BASE_URL="http://localhost:$WEB_PORT" E2E_API_URL="http://localhost:$API_PORT"
      export E2E_CURATED_ONLY=1 REHEARSAL_OUT="$out/evidence" REHEARSAL_COMMIT="$sha"
+     # The time-limit probes move a deadline into the past; no API can.
+     export REHEARSAL_PSQL="docker compose --env-file $ENV_FILE -f $repo_root/docker-compose.yml exec -T postgres psql -U trace -d trace -tAc"
      cd "$repo_root/packages/e2e" && "$@")
   }
   restore_data() {

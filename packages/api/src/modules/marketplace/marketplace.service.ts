@@ -3,11 +3,14 @@ import {
   db,
   listings,
   transactions,
+  orderEvents,
+  users,
   materialPassports,
   passportEvents,
   organisations,
   type Listing,
   type Transaction,
+  type OrderEvent,
 } from '@trace/db';
 import {
   type CreateListingInput,
@@ -20,6 +23,8 @@ import {
   ConflictError,
   ValidationError,
   MAX_AMOUNT_PENCE,
+  ORDER_RESPONSE_HOURS,
+  ORDER_PROBLEM_WINDOW_HOURS,
 } from '@trace/core';
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 
@@ -35,7 +40,12 @@ const OPEN_TRANSACTION_STATUSES = ['pending', 'confirmed', 'disputed'] as const;
  * browse and its facets can never independently drift out of sync.
  */
 function browseConditions(curatedOnly: boolean): SQL[] {
-  const conditions = [eq(listings.status, 'active')];
+  const conditions: SQL[] = [
+    eq(listings.status, 'active'),
+    // Past its date, a listing is off the marketplace at once; the sweep
+    // marks it expired afterwards.
+    sql`(${listings.expiresAt} is null or ${listings.expiresAt} > now())`,
+  ];
   if (curatedOnly) {
     conditions.push(sql`${materialPassports.customAttributes}->>'seedSource' = ${SEED_TAG}`);
   }
@@ -140,9 +150,48 @@ export interface ListingWithPassport extends Listing {
     name: string;
     slug: string;
   };
+  /** How much one order may take now; see orderableQuantity. */
+  orderableQuantity?: number;
 }
 
-export async function getListingById(listingId: string): Promise<ListingWithPassport> {
+/**
+ * On the public demo a curated lot keeps its last unit (owner, 2026-10-06):
+ * nobody answers a visitor's order there, so a visitor who ordered a whole
+ * lot used to take the product off the demo marketplace for the 72 hours
+ * the order stays open. Everywhere else, and for anyone's own lots, all that
+ * is left can be ordered.
+ */
+export function orderableQuantity(
+  listing: { quantityAvailable: number },
+  passport: { customAttributes: unknown },
+  options: { keepLastCuratedUnit?: boolean } = {},
+): number {
+  const curated =
+    (passport.customAttributes as Record<string, unknown> | null)?.['seedSource'] === SEED_TAG;
+  return options.keepLastCuratedUnit && curated
+    ? Math.max(0, listing.quantityAvailable - 1)
+    : listing.quantityAvailable;
+}
+
+/**
+ * A listing past its date reads as expired at once (R1). The sweep marks it
+ * expired only when no order is open on it, which can take days; until then
+ * the row still says active, and the listing page offered an order the API
+ * refuses. Applied when a listing is read; the row itself is left to the sweep.
+ */
+export function listingStatusAt(
+  listing: { status: string; expiresAt: Date | null },
+  now: Date = new Date(),
+): string {
+  return listing.status === 'active' && listing.expiresAt && listing.expiresAt <= now
+    ? 'expired'
+    : listing.status;
+}
+
+export async function getListingById(
+  listingId: string,
+  options: { keepLastCuratedUnit?: boolean } = {},
+): Promise<ListingWithPassport> {
   const listing = await db.query.listings.findFirst({
     where: eq(listings.id, listingId),
     with: {
@@ -157,6 +206,7 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
           carbonSavingsVsNew: true,
           qrCodeUrl: true,
           conditionPhotos: true,
+          customAttributes: true,
         },
       },
       organisation: {
@@ -169,9 +219,11 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
 
   // Same shape as searchListings: the first condition photo as `photo`, so
   // the listing page can show the product (it showed none before).
-  const { conditionPhotos, ...passport } = listing.passport;
+  const { conditionPhotos, customAttributes, ...passport } = listing.passport;
   return {
     ...listing,
+    status: listingStatusAt(listing),
+    orderableQuantity: orderableQuantity(listing, { customAttributes }, options),
     passport: { ...passport, photo: (conditionPhotos as string[] | null)?.[0] ?? null },
   } as unknown as ListingWithPassport;
 }
@@ -376,7 +428,10 @@ export async function listHubListings(organisationId: string): Promise<ListingWi
     },
   });
 
-  return data as unknown as ListingWithPassport[];
+  return data.map((listing) => ({
+    ...listing,
+    status: listingStatusAt(listing),
+  })) as unknown as ListingWithPassport[];
 }
 
 // ─── A lot's status ──────────────────────────────────────────────────────────
@@ -587,7 +642,11 @@ function sellsFor(
  * the marketplace while anything is left, and is reserved once every unit is
  * held.
  */
-export async function makeOffer(input: MakeOfferInput, buyer: Viewer): Promise<Transaction> {
+export async function makeOffer(
+  input: MakeOfferInput,
+  buyer: Viewer,
+  options: { keepLastCuratedUnit?: boolean } = {},
+): Promise<Transaction> {
   return db.transaction(async (tx) => {
     // Lock the listing: concurrent offers on one lot queue here, so between
     // them buyers can never take more than is available.
@@ -611,15 +670,30 @@ export async function makeOffer(input: MakeOfferInput, buyer: Viewer): Promise<T
       throw new ConflictError('Listing has expired');
     }
 
+    const [passport] = await tx
+      .select({ customAttributes: materialPassports.customAttributes })
+      .from(materialPassports)
+      .where(eq(materialPassports.id, listing.passportId));
     const available = listing.quantityAvailable;
-    const quantity = input.quantity ?? Math.min(listing.minOrderQuantity, available);
+    const orderable = orderableQuantity(listing, passport ?? { customAttributes: null }, options);
+    if (orderable < available && orderable < 1) {
+      throw new ConflictError(
+        'This is the last one of this lot, and on the demo it stays on the marketplace',
+      );
+    }
+    const quantity = input.quantity ?? Math.min(listing.minOrderQuantity, orderable);
+    if (orderable < available && quantity > orderable) {
+      throw new ConflictError(
+        `On the demo the last one of a lot stays on the marketplace: you can order up to ${orderable}`,
+      );
+    }
     if (quantity > available) {
       throw new ConflictError(
         `Only ${available} of this lot ${available === 1 ? 'is' : 'are'} left`,
       );
     }
-    // Below the minimum only when that is everything that's left.
-    if (quantity < listing.minOrderQuantity && quantity < available) {
+    // Below the minimum only when that is everything that may be ordered.
+    if (quantity < listing.minOrderQuantity && quantity < orderable) {
       throw new ValidationError(`The minimum order for this lot is ${listing.minOrderQuantity}`);
     }
     const amountPence = listing.pricePence * quantity;
@@ -641,23 +715,39 @@ export async function makeOffer(input: MakeOfferInput, buyer: Viewer): Promise<T
         status: 'pending',
         // The dispute window opens when the seller accepts.
         disputeDeadline: null,
+        responseDeadline: new Date(Date.now() + RESPONSE_WINDOW_MS),
         notes: input.notes ?? null,
       })
       .returning();
 
     if (!transaction) throw new Error('Failed to create transaction');
 
+    await tx.insert(orderEvents).values({
+      transactionId: transaction.id,
+      action: 'placed',
+      fromStatus: null,
+      toStatus: 'pending',
+      actorId: buyer.userId,
+      actorSide: 'buyer',
+      note: input.notes ?? null,
+    });
     await settleLot(tx, listing, available - quantity);
     return transaction;
   });
 }
 
-// ─── Transaction: Update Status ──────────────────────────────────────────────
+// ─── Transaction: the order steps ────────────────────────────────────────────
 
-const DISPUTE_WINDOW_MS = 48 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const RESPONSE_WINDOW_MS = ORDER_RESPONSE_HOURS * HOUR_MS;
+const DISPUTE_WINDOW_MS = ORDER_PROBLEM_WINDOW_HOURS * HOUR_MS;
 
 type OrderAction = UpdateTransactionInput['action'];
 type OrderSide = 'buyer' | 'seller' | 'party' | 'platform_admin';
+/** Who took a step, as the other side reads it. */
+type ActorSide = 'buyer' | 'seller' | 'platform' | 'time_limit';
+/** Steps nobody asks for: a time limit takes them. */
+type TimedAction = 'lapse' | 'auto_complete';
 
 /**
  * The order steps:
@@ -665,13 +755,17 @@ type OrderSide = 'buyer' | 'seller' | 'party' | 'platform_admin';
  *   pending   --seller accepts-->           confirmed
  *   pending   --seller rejects-->           cancelled  (quantity returned)
  *   pending   --buyer or seller cancels-->  cancelled  (quantity returned)
+ *   pending   --72 hours unanswered-->      cancelled  (quantity returned)
  *   confirmed --buyer confirms delivery-->  completed  (sale final)
- *   confirmed --buyer flags a problem-->    disputed
+ *   confirmed --buyer flags a problem-->    disputed   (with a reason)
  *   confirmed --buyer or seller cancels-->  cancelled  (quantity returned)
+ *   confirmed --problem window closes-->    completed  (sale final)
  *   disputed  --platform admin resolves-->  resolved   (the sale stands)
+ *                                      or   cancelled  (quantity returned)
  *
  * "Seller" is anyone who sells for the lot's organisation (see sellsFor). A
- * buyer can't confirm delivery of an order the seller hasn't accepted.
+ * buyer can't confirm delivery of an order the seller hasn't accepted. The
+ * time limits are the owner's decisions of 2026-10-02.
  */
 const TRANSITIONS: Record<OrderAction, { from: readonly string[]; to: string; by: OrderSide }> = {
   accept: { from: ['pending'], to: 'confirmed', by: 'seller' },
@@ -679,6 +773,7 @@ const TRANSITIONS: Record<OrderAction, { from: readonly string[]; to: string; by
   cancel: { from: ['pending', 'confirmed'], to: 'cancelled', by: 'party' },
   confirm_delivery: { from: ['confirmed'], to: 'completed', by: 'buyer' },
   flag_dispute: { from: ['confirmed'], to: 'disputed', by: 'buyer' },
+  // "to" is the outcome "the sale stands"; "cancel the order" ends cancelled.
   resolve_dispute: { from: ['disputed'], to: 'resolved', by: 'platform_admin' },
 };
 
@@ -689,6 +784,12 @@ const ACTION_WORDING: Record<OrderAction, string> = {
   confirm_delivery: 'confirm delivery of',
   flag_dispute: 'flag a problem with',
   resolve_dispute: 'resolve',
+};
+
+/** Why an order a time limit closed can no longer be acted on. */
+const TIMED_OUT: Record<TimedAction, string> = {
+  lapse: `The seller did not answer within ${ORDER_RESPONSE_HOURS} hours, so this order lapsed and its quantity went back to the lot`,
+  auto_complete: `This order completed when the ${ORDER_PROBLEM_WINDOW_HOURS} hours to report a problem ran out`,
 };
 
 function mayAct(side: OrderSide, on: { buyer: boolean; seller: boolean; admin: boolean }): boolean {
@@ -714,13 +815,204 @@ function allowedActions(
   });
 }
 
+/** When an unanswered order lapses. An order the previous release placed has no date of its own. */
+export function responseDeadlineOf(
+  order: Pick<Transaction, 'responseDeadline' | 'createdAt'>,
+): Date {
+  return order.responseDeadline ?? new Date(order.createdAt.getTime() + RESPONSE_WINDOW_MS);
+}
+
+/** The step a time limit takes on this order at `now`, if any. */
+function timedStep(
+  order: Pick<Transaction, 'status' | 'responseDeadline' | 'createdAt' | 'disputeDeadline'>,
+  now: Date,
+): { action: TimedAction; to: string } | null {
+  if (order.status === 'pending' && responseDeadlineOf(order) <= now) {
+    return { action: 'lapse', to: 'cancelled' };
+  }
+  if (order.status === 'confirmed' && order.disputeDeadline && order.disputeDeadline <= now) {
+    return { action: 'auto_complete', to: 'completed' };
+  }
+  return null;
+}
+
+/**
+ * Move an order one step: its status, the lot's stock and status, the
+ * passport's history, and the record of the step. The caller holds the row
+ * locks on the order and its listing, and has checked the step is allowed.
+ */
+async function applyStep(
+  dbTx: DbTx,
+  order: Transaction,
+  listing: Listing,
+  step: {
+    action: OrderAction | TimedAction;
+    to: string;
+    actorId: string | null;
+    actorSide: ActorSide;
+    note: string | null;
+    now: Date;
+  },
+): Promise<Transaction> {
+  const updateSet: Partial<Transaction> = { status: step.to };
+  if (step.to === 'confirmed') {
+    updateSet.disputeDeadline = new Date(step.now.getTime() + DISPUTE_WINDOW_MS);
+  }
+  const [updated] = await dbTx
+    .update(transactions)
+    .set(updateSet)
+    .where(and(eq(transactions.id, order.id), eq(transactions.status, order.status)))
+    .returning();
+  if (!updated) {
+    throw new ConflictError('The order changed while this was being saved; try again');
+  }
+
+  // A cancelled order gives its share back; then the lot's status follows.
+  const returned = step.to === 'cancelled' ? order.quantity : 0;
+  await settleLot(dbTx, listing, Math.min(listing.quantity, listing.quantityAvailable + returned));
+
+  if (step.to === 'completed' || step.to === 'resolved') {
+    // EPCIS transfer event
+    await dbTx.insert(passportEvents).values({
+      passportId: listing.passportId,
+      eventType: 'TransactionEvent',
+      eventData: {
+        action: 'ADD',
+        bizStep: 'urn:epcglobal:cbv:bizstep:selling',
+        disposition: 'urn:epcglobal:cbv:disp:sold',
+        transactionId: order.id,
+        buyerId: order.buyerId,
+        quantity: order.quantity,
+        amountPence: order.amountPence,
+      },
+      actorId: step.actorId,
+    });
+  }
+
+  await dbTx.insert(orderEvents).values({
+    transactionId: order.id,
+    action: step.action,
+    fromStatus: order.status,
+    toStatus: step.to,
+    actorId: step.actorId,
+    actorSide: step.actorSide,
+    note: step.note,
+    createdAt: step.now,
+  });
+  return updated;
+}
+
+/**
+ * If a time limit has passed on this order, take its step now. The sweep does
+ * this for every order; a person's action does it first for theirs, so nobody
+ * acts on an order that should already have closed.
+ */
+async function closeIfOverdue(transactionId: string, now: Date): Promise<TimedAction | null> {
+  return db.transaction(async (dbTx) => {
+    const [order] = await dbTx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+      .for('update');
+    const due = order && timedStep(order, now);
+    if (!order || !due) return null;
+    const [listing] = await dbTx
+      .select()
+      .from(listings)
+      .where(eq(listings.id, order.listingId))
+      .for('update');
+    if (!listing) return null;
+    await applyStep(dbTx, order, listing, {
+      ...due,
+      actorId: null,
+      actorSide: 'time_limit',
+      note: null,
+      now,
+    });
+    return due.action;
+  });
+}
+
+/** Orders a time limit has passed on, as a query condition. */
+function overdueAt(now: Date): SQL {
+  return or(
+    and(
+      eq(transactions.status, 'pending'),
+      // A raw fragment gets no column type, so the date goes in as text.
+      sql`coalesce(${transactions.responseDeadline}, ${transactions.createdAt} + make_interval(hours => ${ORDER_RESPONSE_HOURS})) <= ${now.toISOString()}::timestamptz`,
+    ),
+    and(eq(transactions.status, 'confirmed'), lte(transactions.disputeDeadline, now)),
+  )!;
+}
+
+/**
+ * Close every order whose time limit has passed, and expire listings past
+ * their date. Run by the worker every minute, and before orders are listed
+ * so a late sweep never shows a stale state. Safe to run concurrently: each
+ * order is re-checked under its row lock.
+ */
+export async function sweepOrderLifecycle(
+  now = new Date(),
+): Promise<{ lapsed: number; completed: number; expiredListings: number }> {
+  const result = { lapsed: 0, completed: 0, expiredListings: 0 };
+
+  const due = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(overdueAt(now))
+    .limit(500);
+  for (const { id } of due) {
+    const taken = await closeIfOverdue(id, now);
+    if (taken === 'lapse') result.lapsed += 1;
+    if (taken === 'auto_complete') result.completed += 1;
+  }
+
+  // A listing past its date leaves the marketplace. One with open orders
+  // waits for them: an order must not be stranded on an expired listing.
+  const stale = await db
+    .select({ id: listings.id })
+    .from(listings)
+    .where(and(eq(listings.status, 'active'), lte(listings.expiresAt, now)))
+    .limit(500);
+  for (const { id } of stale) {
+    const expired = await db.transaction(async (dbTx) => {
+      const [listing] = await dbTx.select().from(listings).where(eq(listings.id, id)).for('update');
+      if (!listing || listing.status !== 'active') return false;
+      if (!listing.expiresAt || listing.expiresAt > now) return false;
+      const [open] = await dbTx
+        .select({ count: sql<number>`cast(count(*) as int)` })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.listingId, id),
+            inArray(transactions.status, [...OPEN_TRANSACTION_STATUSES]),
+          ),
+        );
+      if ((open?.count ?? 0) > 0) return false;
+      await dbTx.update(listings).set({ status: 'expired' }).where(eq(listings.id, id));
+      // As when a seller cancels a listing: the material can be listed again.
+      await dbTx
+        .update(materialPassports)
+        .set({ status: 'active', updatedAt: now })
+        .where(eq(materialPassports.id, listing.passportId));
+      return true;
+    });
+    if (expired) result.expiredListings += 1;
+  }
+  return result;
+}
+
 export async function updateTransaction(
   transactionId: string,
   input: UpdateTransactionInput,
   viewer: Viewer,
+  now = new Date(),
 ): Promise<Transaction> {
   const step = TRANSITIONS[input.action];
   if (!step) throw new ConflictError('Unknown action');
+
+  // A time limit that has passed takes its step before anyone else's.
+  const timedOut = await closeIfOverdue(transactionId, now);
 
   return db.transaction(async (dbTx) => {
     const [order] = await dbTx
@@ -737,9 +1029,9 @@ export async function updateTransaction(
       .for('update');
     if (!listing) throw new NotFoundError('Listing', order.listingId);
 
-    // No dispute-resolution governance exists yet (no arbiter role, no CBT/DAO
-    // voting) — platform_admin is the interim authority. Revisit when governance
-    // lands; keep this ownership check aligned with the route authorization.
+    // The platform admin resolves a flagged order (owner decision,
+    // 2026-10-02): the hub is often the seller. Revisit with the governance
+    // model; keep this check aligned with the route authorization.
     const on = {
       buyer: order.buyerId === viewer.userId,
       seller: sellsFor(viewer, order, listing),
@@ -755,6 +1047,7 @@ export async function updateTransaction(
       throw new ForbiddenError(`Only ${who} can ${ACTION_WORDING[input.action]} this order`);
     }
     if (!step.from.includes(order.status)) {
+      if (timedOut) throw new ConflictError(TIMED_OUT[timedOut]);
       const hint =
         order.status === 'pending' && input.action === 'confirm_delivery'
           ? ' — the seller has not accepted it yet'
@@ -764,47 +1057,19 @@ export async function updateTransaction(
       );
     }
 
-    const updateSet: Partial<Transaction> = { status: step.to };
-    if (input.notes) updateSet.notes = input.notes;
-    if (step.to === 'confirmed') {
-      updateSet.disputeDeadline = new Date(Date.now() + DISPUTE_WINDOW_MS);
-    }
-    const [updated] = await dbTx
-      .update(transactions)
-      .set(updateSet)
-      .where(and(eq(transactions.id, transactionId), eq(transactions.status, order.status)))
-      .returning();
-    if (!updated) {
-      throw new ConflictError('The order changed while this was being saved; try again');
-    }
-
-    // A cancelled order gives its share back; then the lot's status follows.
-    const returned = step.to === 'cancelled' ? order.quantity : 0;
-    await settleLot(
-      dbTx,
-      listing,
-      Math.min(listing.quantity, listing.quantityAvailable + returned),
-    );
-
-    if (step.to === 'completed' || step.to === 'resolved') {
-      // EPCIS transfer event
-      await dbTx.insert(passportEvents).values({
-        passportId: listing.passportId,
-        eventType: 'TransactionEvent',
-        eventData: {
-          action: 'ADD',
-          bizStep: 'urn:epcglobal:cbv:bizstep:selling',
-          disposition: 'urn:epcglobal:cbv:disp:sold',
-          transactionId,
-          buyerId: order.buyerId,
-          quantity: order.quantity,
-          amountPence: order.amountPence,
-        },
-        actorId: viewer.userId,
-      });
-    }
-
-    return updated;
+    const to =
+      input.action === 'resolve_dispute' && input.outcome === 'cancel_order'
+        ? 'cancelled'
+        : step.to;
+    return applyStep(dbTx, order, listing, {
+      action: input.action,
+      to,
+      actorId: viewer.userId,
+      actorSide:
+        on.admin && step.by === 'platform_admin' ? 'platform' : on.buyer ? 'buyer' : 'seller',
+      note: input.notes || null,
+      now,
+    });
   });
 }
 
@@ -834,6 +1099,23 @@ export async function getTransactionById(
   return order;
 }
 
+/** One step of an order, as its parties may read it: no user ids. */
+export interface OrderStep {
+  action: string;
+  toStatus: string;
+  actorSide: string;
+  note: string | null;
+  createdAt: Date;
+}
+
+const toStep = (event: OrderEvent): OrderStep => ({
+  action: event.action,
+  toStatus: event.toStatus,
+  actorSide: event.actorSide,
+  note: event.note,
+  createdAt: event.createdAt,
+});
+
 export type OrderForViewer = Transaction & {
   productName: string | null;
   passportId: string | null;
@@ -842,35 +1124,62 @@ export type OrderForViewer = Transaction & {
   viewerSide: 'buyer' | 'seller';
   /** The order steps the viewer may take now. */
   allowedActions: OrderAction[];
+  /** How the order got to where it is, oldest first. */
+  steps: OrderStep[];
+  /** Someone else moved it since the viewer last opened their orders. */
+  isNew: boolean;
+  /** The viewer is the one it is waiting for. */
+  needsViewer: boolean;
 };
 
 /** The viewer's orders: those they placed, and those their organisation sells. */
-export async function listUserTransactions(viewer: Viewer): Promise<OrderForViewer[]> {
+export async function listUserTransactions(
+  viewer: Viewer,
+  now = new Date(),
+): Promise<OrderForViewer[]> {
   // Plain names inside the subquery: the relational query builder re-aliases
   // any column object it is given to the root table.
   const sellsForOrganisation =
     viewer.organisationId && SELLER_ROLES.includes(viewer.role)
       ? sql`${transactions.listingId} in (select id from listings where organisation_id = ${viewer.organisationId})`
       : sql`false`;
-  const data = await db.query.transactions.findMany({
-    where: or(
-      eq(transactions.buyerId, viewer.userId),
-      eq(transactions.sellerId, viewer.userId),
-      sellsForOrganisation,
-    ),
-    orderBy: [desc(transactions.createdAt)],
-    with: {
-      listing: {
-        columns: { passportId: true, organisationId: true },
-        with: { passport: { columns: { productName: true, unitOfMeasure: true } } },
+  const mine = or(
+    eq(transactions.buyerId, viewer.userId),
+    eq(transactions.sellerId, viewer.userId),
+    sellsForOrganisation,
+  )!;
+
+  // Time limits that have passed take their step before the list is read, so
+  // it never shows an order the sweep has yet to reach as still open.
+  const overdue = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(and(mine, overdueAt(now)));
+  for (const { id } of overdue) await closeIfOverdue(id, now);
+
+  const [data, [me]] = await Promise.all([
+    db.query.transactions.findMany({
+      where: mine,
+      orderBy: [desc(transactions.createdAt)],
+      with: {
+        events: { orderBy: [asc(orderEvents.createdAt)] },
+        listing: {
+          columns: { passportId: true, organisationId: true },
+          with: { passport: { columns: { productName: true, unitOfMeasure: true } } },
+        },
       },
-    },
-  });
-  return data.map(({ listing, ...order }) => {
+    }),
+    db.select({ seenAt: users.ordersSeenAt }).from(users).where(eq(users.id, viewer.userId)),
+  ]);
+  const seenAt = me?.seenAt ?? null;
+
+  return data.map(({ listing, events, ...order }) => {
     const buyer = order.buyerId === viewer.userId;
     const seller = listing !== null && sellsFor(viewer, order, listing);
+    const last = events.at(-1);
     return {
       ...order,
+      responseDeadline: order.status === 'pending' ? responseDeadlineOf(order) : null,
       passportId: listing?.passportId ?? null,
       productName: listing?.passport?.productName ?? null,
       unitOfMeasure: listing?.passport?.unitOfMeasure ?? null,
@@ -880,6 +1189,122 @@ export async function listUserTransactions(viewer: Viewer): Promise<OrderForView
         seller,
         admin: viewer.role === 'platform_admin',
       }),
+      steps: events.map(toStep),
+      isNew: !!last && last.actorId !== viewer.userId && (!seenAt || last.createdAt > seenAt),
+      needsViewer:
+        (order.status === 'pending' && seller && !buyer) || (order.status === 'confirmed' && buyer),
     };
   });
+}
+
+/**
+ * What the "Orders" link should say: how many orders wait for this person,
+ * and how many someone else moved since they last looked. For a platform
+ * admin, flagged orders wait for them too.
+ */
+export async function getOrdersSummary(
+  viewer: Viewer,
+): Promise<{ needsAction: number; changed: number; flagged: number }> {
+  const orders = await listUserTransactions(viewer);
+  let flagged = 0;
+  if (viewer.role === 'platform_admin') {
+    const [row] = await db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(transactions)
+      .where(eq(transactions.status, 'disputed'));
+    flagged = row?.count ?? 0;
+  }
+  return {
+    needsAction: orders.filter((order) => order.needsViewer).length,
+    changed: orders.filter((order) => order.isNew).length,
+    flagged,
+  };
+}
+
+/** The viewer has opened their orders: what is there now is no longer new. */
+export async function markOrdersSeen(viewer: Viewer, now = new Date()): Promise<void> {
+  await db.update(users).set({ ordersSeenAt: now }).where(eq(users.id, viewer.userId));
+}
+
+// ─── Flagged orders: the platform admin's list ───────────────────────────────
+
+export interface FlaggedOrder {
+  id: string;
+  status: string;
+  quantity: number;
+  amountPence: number;
+  createdAt: Date;
+  productName: string | null;
+  passportId: string | null;
+  unitOfMeasure: string | null;
+  buyer: { name: string; email: string } | null;
+  sellerOrganisation: string | null;
+  /** When the buyer flagged it, and what they said; null on older flags. */
+  flaggedAt: Date | null;
+  reason: string | null;
+  /** How it was resolved, once it has been. */
+  resolution: { outcome: 'sale_stands' | 'cancel_order'; note: string | null; at: Date } | null;
+  steps: OrderStep[];
+}
+
+/**
+ * Orders with a problem flagged, waiting first, then those already resolved.
+ * For the platform admin, who resolves them (owner decision, 2026-10-02).
+ */
+export async function listFlaggedOrders(): Promise<FlaggedOrder[]> {
+  const data = await db.query.transactions.findMany({
+    where: or(
+      eq(transactions.status, 'disputed'),
+      sql`${transactions.id} in (select transaction_id from order_events where action = 'resolve_dispute')`,
+    ),
+    orderBy: [desc(transactions.createdAt)],
+    limit: 200,
+    with: {
+      events: { orderBy: [asc(orderEvents.createdAt)] },
+      buyer: { columns: { name: true, email: true } },
+      listing: {
+        columns: { passportId: true },
+        with: {
+          passport: { columns: { productName: true, unitOfMeasure: true } },
+          organisation: { columns: { name: true } },
+        },
+      },
+    },
+  });
+
+  const orders = data.map(({ listing, events, buyer, ...order }): FlaggedOrder => {
+    const latest = (action: string) => [...events].reverse().find((e) => e.action === action);
+    const flag = latest('flag_dispute');
+    const resolved = latest('resolve_dispute');
+    return {
+      id: order.id,
+      status: order.status,
+      quantity: order.quantity,
+      amountPence: order.amountPence,
+      createdAt: order.createdAt,
+      productName: listing?.passport?.productName ?? null,
+      passportId: listing?.passportId ?? null,
+      unitOfMeasure: listing?.passport?.unitOfMeasure ?? null,
+      buyer: buyer ? { name: buyer.name, email: buyer.email } : null,
+      sellerOrganisation: listing?.organisation?.name ?? null,
+      flaggedAt: flag?.createdAt ?? null,
+      reason: flag?.note ?? null,
+      resolution: resolved
+        ? {
+            outcome: resolved.toStatus === 'cancelled' ? 'cancel_order' : 'sale_stands',
+            note: resolved.note,
+            at: resolved.createdAt,
+          }
+        : null,
+      steps: events.map(toStep),
+    };
+  });
+  // Waiting first, longest-waiting at the top; then the resolved, newest first.
+  const waiting = orders
+    .filter((order) => order.status === 'disputed')
+    .sort((a, b) => (a.flaggedAt?.getTime() ?? 0) - (b.flaggedAt?.getTime() ?? 0));
+  const done = orders
+    .filter((order) => order.status !== 'disputed')
+    .sort((a, b) => (b.resolution?.at.getTime() ?? 0) - (a.resolution?.at.getTime() ?? 0));
+  return [...waiting, ...done];
 }

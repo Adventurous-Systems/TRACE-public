@@ -4,9 +4,10 @@
  *
  * Pure rules over plain rows, so they can be tested with crafted data and run
  * read-only against any environment (check-invariants.ts). An `error` is data
- * the application should never produce; a `warning` is worth a human look
- * (none are raised today).
+ * the application should never produce; a `warning` is worth a human look:
+ * today, an order or a listing the sweep should have closed and has not.
  */
+import { ORDER_RESPONSE_HOURS } from '@trace/core';
 
 /** Orders that still hold part of a lot (mirrors the API's open statuses). */
 export const OPEN_ORDER_STATUSES = ['pending', 'confirmed', 'disputed'] as const;
@@ -20,6 +21,8 @@ export interface ListingRow {
   quantity: number;
   quantityAvailable: number;
   minOrderQuantity: number;
+  /** Optional, so rows without a date still check. */
+  expiresAt?: Date | null;
 }
 
 export interface OrderRow {
@@ -31,7 +34,16 @@ export interface OrderRow {
   disputeDeadline: Date | null;
   /** Placed before part-of-a-lot ordering: whole lot, one unit's price. */
   legacyWholeLot: boolean;
+  /** When an unanswered order lapses; null on one the previous release placed. */
+  responseDeadline?: Date | null;
+  createdAt?: Date;
 }
+
+/**
+ * How long past a time limit before it is worth a human look. The worker's
+ * sweep runs every minute; anything this late means it is not running.
+ */
+const SWEEP_GRACE_MS = 15 * 60 * 1000;
 
 export interface PassportRow {
   id: string;
@@ -64,11 +76,16 @@ const isOpen = (order: OrderRow) =>
 const takes = (order: OrderRow) =>
   (TAKING_ORDER_STATUSES as readonly string[]).includes(order.status);
 
-export function checkInvariants(data: {
-  listings: ListingRow[];
-  orders: OrderRow[];
-  passports: PassportRow[];
-}): Violation[] {
+export function checkInvariants(
+  data: {
+    listings: ListingRow[];
+    orders: OrderRow[];
+    passports: PassportRow[];
+  },
+  now = new Date(),
+): Violation[] {
+  const late = (limit: Date | null | undefined) =>
+    !!limit && now.getTime() - limit.getTime() > SWEEP_GRACE_MS;
   const violations: Violation[] = [];
   const add = (severity: Violation['severity'], rule: string, subject: string, detail: string) =>
     violations.push({ severity, rule, subject, detail });
@@ -131,6 +148,14 @@ export function checkInvariants(data: {
         `sold with ${listing.quantityAvailable} available and ${open.length} open order(s)`,
       );
     }
+    if (listing.status === 'active' && open.length === 0 && late(listing.expiresAt)) {
+      add(
+        'warning',
+        'overdue-listing',
+        subject,
+        'past its expiry date and still active; is the order sweep running?',
+      );
+    }
     if (['cancelled', 'expired'].includes(listing.status) && open.length > 0) {
       add(
         'error',
@@ -176,6 +201,27 @@ export function checkInvariants(data: {
       add('error', 'orphan-order', subject, `its listing ${order.listingId} does not exist`);
     }
     if (order.quantity < 1) add('error', 'order-quantity', subject, `quantity ${order.quantity}`);
+    const responseDeadline =
+      order.responseDeadline ??
+      (order.createdAt
+        ? new Date(order.createdAt.getTime() + ORDER_RESPONSE_HOURS * 60 * 60 * 1000)
+        : null);
+    if (order.status === 'pending' && late(responseDeadline)) {
+      add(
+        'warning',
+        'overdue-order',
+        subject,
+        'unanswered past its time limit and still pending; is the order sweep running?',
+      );
+    }
+    if (order.status === 'confirmed' && late(order.disputeDeadline)) {
+      add(
+        'warning',
+        'overdue-order',
+        subject,
+        'accepted, past its problem window and still open; is the order sweep running?',
+      );
+    }
     if (order.amountPence < 1) add('error', 'order-amount', subject, `amount ${order.amountPence}`);
     if (
       ['confirmed', 'disputed', 'resolved', 'completed'].includes(order.status) &&

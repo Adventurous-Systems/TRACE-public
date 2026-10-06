@@ -157,3 +157,64 @@ test('a stored fingerprint that no longer matches the data is an error; pending 
   ]);
   assert.deepEqual(check([listing()], [], [passport({ storedHash: null })]), []);
 });
+
+test('an order or a listing the sweep should have closed is a warning, not an error', () => {
+  const now = new Date('2026-10-10T12:00:00Z');
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 60 * 60 * 1000);
+  const run = (listings: ListingRow[], orders: OrderRow[] = []) =>
+    checkInvariants({ listings, orders, passports: [passport()] }, now);
+
+  // An unanswered order past its own deadline, and one the previous release
+  // placed (no deadline) more than 72 hours ago.
+  for (const overdue of [
+    order({ responseDeadline: hoursAgo(1), createdAt: hoursAgo(73) }),
+    order({ responseDeadline: null, createdAt: hoursAgo(73) }),
+  ]) {
+    const violations = run([listing({ quantityAvailable: 8 })], [overdue]);
+    assert.deepEqual(rules(violations), []);
+    assert.deepEqual(rules(violations, 'warning'), ['overdue-order']);
+  }
+  // Within its limit, or only minutes past it (the sweep is on its way): clean.
+  assert.deepEqual(
+    run(
+      [listing({ quantityAvailable: 6 })],
+      [
+        order({
+          id: 'o1',
+          responseDeadline: new Date(now.getTime() + 1000),
+          createdAt: hoursAgo(71),
+        }),
+        order({
+          id: 'o2',
+          responseDeadline: new Date(now.getTime() - 60 * 1000),
+          createdAt: hoursAgo(72),
+        }),
+      ],
+    ),
+    [],
+  );
+
+  // An accepted order past its problem window.
+  assert.deepEqual(
+    rules(
+      run(
+        [listing({ quantityAvailable: 8 })],
+        [order({ status: 'confirmed', disputeDeadline: hoursAgo(1) })],
+      ),
+      'warning',
+    ),
+    ['overdue-order'],
+  );
+
+  // A listing past its date with nothing open; with an open order it waits.
+  assert.deepEqual(rules(run([listing({ expiresAt: hoursAgo(1) })]), 'warning'), [
+    'overdue-listing',
+  ]);
+  assert.deepEqual(
+    run(
+      [listing({ expiresAt: hoursAgo(1), quantityAvailable: 8 })],
+      [order({ responseDeadline: new Date(now.getTime() + 1000) })],
+    ),
+    [],
+  );
+});

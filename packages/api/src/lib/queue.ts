@@ -35,5 +35,14 @@ export const anchorSweepQueue = new Queue('anchor-sweep', {
   },
 });
 
+/** Periodic sweep that applies the order time limits and listing expiry. */
+export const orderSweepQueue = new Queue('order-sweep', {
+  connection: connectionOptions,
+  defaultJobOptions: {
+    removeOnComplete: { count: 20 },
+    removeOnFail: { count: 50 },
+  },
+});
+
 export { Queue, Worker, type Job };
 export { connectionOptions as redisConnection };
