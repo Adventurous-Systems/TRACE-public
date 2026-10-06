@@ -65,6 +65,8 @@ export default function RegisterWizard() {
   const [minVerifyDelayPassed, setMinVerifyDelayPassed] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
+  // How many of them reached the server; with none, the material can't be listed yet.
+  const [uploadedPhotos, setUploadedPhotos] = useState(0);
   const photoInputRef = useRef<HTMLInputElement>(null);
   // J-11: app/(dashboard)/passports/new/page.tsx is a server component and
   // role lives in localStorage, so it cannot be guarded server-side. This is
@@ -321,13 +323,16 @@ export default function RegisterWizard() {
         certified: Boolean(data.ceMarking),
       });
       // Upload any photos staged in the wizard (non-blocking on individual failures).
+      let uploaded = 0;
       for (const file of photos) {
         try {
           await passports.uploadPhoto(passport.id, file, token);
+          uploaded += 1;
         } catch {
           /* a failed photo shouldn't block the flow */
         }
       }
+      setUploadedPhotos(uploaded);
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(STEP_STORAGE_KEY);
       setCreatedPassportId(passport.id);
@@ -963,6 +968,22 @@ export default function RegisterWizard() {
               {verificationError && (
                 <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
                   {verificationError}
+                </div>
+              )}
+
+              {/* O1: registering didn't say a photo is needed before listing. */}
+              {createdPassportId && uploadedPhotos === 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 space-y-1">
+                  <p className="font-medium">Add a photo to list it.</p>
+                  <p>
+                    A material needs at least one photo before it can go on the marketplace.{' '}
+                    <a
+                      href={`/passports/${createdPassportId}#photos`}
+                      className="font-medium text-brand-700 underline"
+                    >
+                      Add a photo
+                    </a>
+                  </p>
                 </div>
               )}
 

@@ -217,7 +217,7 @@ export default function PassportsPage() {
                             </Link>
                           ) : (
                             <Link
-                              href={`/passports/${p.id}`}
+                              href={`/passports/${p.id}#photos`}
                               title="At least one material photo is required before listing"
                             >
                               <Button
@@ -225,7 +225,7 @@ export default function PassportsPage() {
                                 variant="outline"
                                 className="text-amber-600 border-amber-300 hover:bg-amber-50"
                               >
-                                Add a photo to list
+                                Add a photo to list it
                               </Button>
                             </Link>
                           ))}

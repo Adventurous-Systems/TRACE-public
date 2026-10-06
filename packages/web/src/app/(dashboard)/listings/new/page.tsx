@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { BUSINESS_TIME_ZONE, endOfDayInLondon } from '@trace/core';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -21,6 +22,9 @@ export default function NewListingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [availablePassports, setAvailablePassports] = useState<PassportSummary[]>([]);
+  // Active materials that only lack a photo, so the page can say which (O1).
+  const [needPhoto, setNeedPhoto] = useState<PassportSummary[]>([]);
+  const [passportsLoaded, setPassportsLoaded] = useState(false);
   const [passportId, setPassportId] = useState(searchParams.get('passportId') ?? '');
   const [pricePounds, setPricePounds] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -46,10 +50,13 @@ export default function NewListingPage() {
     // Only materials with at least one photo can be listed (enforced server-side too).
     passports
       .list(params, token)
-      .then((res) =>
-        setAvailablePassports(res.data.filter((p) => (p.conditionPhotos?.length ?? 0) > 0)),
-      )
-      .catch(console.error);
+      .then((res) => {
+        const hasPhoto = (p: PassportSummary) => (p.conditionPhotos?.length ?? 0) > 0;
+        setAvailablePassports(res.data.filter(hasPhoto));
+        setNeedPhoto(res.data.filter((p) => !hasPhoto(p)));
+      })
+      .catch(console.error)
+      .finally(() => setPassportsLoaded(true));
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -151,14 +158,41 @@ export default function NewListingPage() {
                     </option>
                   ))}
                 </select>
-                {availablePassports.length === 0 && (
-                  <p className="text-xs text-gray-400">
-                    No active materials with a photo yet. At least one material photo is required
-                    before listing — add one on the material&apos;s passport page, or{' '}
-                    <a href="/passports/new" className="text-brand-600 hover:underline">
-                      register a material first.
-                    </a>
-                  </p>
+                {/* O1: this used to be one line of light-grey text, easy to miss. */}
+                {passportsLoaded && (availablePassports.length === 0 || needPhoto.length > 0) && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+                    <p className="font-medium">
+                      {availablePassports.length === 0
+                        ? 'No material can be listed yet.'
+                        : 'Some materials are missing from this list.'}{' '}
+                      A material needs at least one photo before it can go on the marketplace.
+                    </p>
+                    {needPhoto.length > 0 ? (
+                      <ul className="space-y-1">
+                        {needPhoto.map((p) => (
+                          <li key={p.id}>
+                            {p.productName}:{' '}
+                            <Link
+                              href={`/passports/${p.id}#photos`}
+                              className="font-medium text-brand-700 underline"
+                            >
+                              add a photo to list it
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p>
+                        <Link
+                          href="/passports/new"
+                          className="font-medium text-brand-700 underline"
+                        >
+                          Register a material
+                        </Link>{' '}
+                        and add a photo to it.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </CardContent>

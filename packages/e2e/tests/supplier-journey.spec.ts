@@ -50,8 +50,13 @@ test('supplier creates a passport, adds a photo, and lists it', async ({ page })
       .getByText(/Provenance record prepared|Trust layer prepared|Blockchain certificate is ready/i)
       .first(),
   ).toBeVisible();
+  // Registered without a photo: it says one is needed before listing (O1).
+  await expect(page.getByText('Add a photo to list it.')).toBeVisible();
   await openPassport.click({ force: true });
   await expect(page).toHaveURL(/\/passports\/[0-9a-f-]+$/i);
+  // No "List for sale" yet, which led to an empty choice; the way to a photo instead.
+  await expect(page.getByRole('link', { name: /list for sale/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add a photo to list it' })).toBeVisible();
 
   // Add one photo via the hidden file input; wait for the upload to complete.
   const [uploadRes] = await Promise.all([
@@ -61,6 +66,7 @@ test('supplier creates a passport, adds a photo, and lists it', async ({ page })
       .setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: PNG_1x1 }),
   ]);
   expect(uploadRes.ok()).toBeTruthy();
+  await expect(page.getByRole('link', { name: /list for sale/i })).toBeVisible();
 
   // Back on the list, the material can now be listed (photo present).
   await page.goto('/passports');

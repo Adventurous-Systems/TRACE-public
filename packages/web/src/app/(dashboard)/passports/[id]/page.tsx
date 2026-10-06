@@ -118,12 +118,23 @@ export default function PassportDetailPage() {
                 </Button>
               </Link>
             )}
-            {passport.status === 'active' && (
+            {passport.status === 'active' && passport.conditionPhotos.length > 0 && (
               <Link href={`/listings/new?passportId=${id}`}>
                 <Button size="sm" className="bg-brand-600 hover:bg-brand-700">
                   List for sale
                 </Button>
               </Link>
+            )}
+            {/* O1: listing needs a photo; "List for sale" led to an empty choice. */}
+            {passport.status === 'active' && passport.conditionPhotos.length === 0 && canEdit && (
+              <Button
+                size="sm"
+                className="bg-brand-600 hover:bg-brand-700"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Add a photo to list it
+              </Button>
             )}
             {passport.status === 'listed' && (
               <Link href="/listings">
@@ -167,7 +178,7 @@ export default function PassportDetailPage() {
         )}
 
         {/* Condition photos */}
-        <Card>
+        <Card id="photos">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Condition photos</CardTitle>
@@ -195,7 +206,12 @@ export default function PassportDetailPage() {
           </CardHeader>
           <CardContent>
             {passport.conditionPhotos.length === 0 ? (
-              <p className="text-sm text-gray-500">No photos uploaded yet.</p>
+              <p className="text-sm text-gray-500">
+                No photos uploaded yet.
+                {canEdit &&
+                  passport.status === 'active' &&
+                  ' Add one to list this material for sale.'}
+              </p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {passport.conditionPhotos.map((url, i) => (
