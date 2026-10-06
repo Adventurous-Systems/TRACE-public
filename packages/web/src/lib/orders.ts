@@ -28,6 +28,9 @@ const SIDE: Record<string, string> = {
   platform: 'the platform',
 };
 
+const capitalise = (text: string | undefined) =>
+  text ? text.charAt(0).toUpperCase() + text.slice(1) : undefined;
+
 /** One step of an order's history, as a sentence. */
 export function stepText(step: OrderStep): string {
   const who = SIDE[step.actorSide] ?? 'someone';
@@ -87,6 +90,16 @@ export function orderGuidance(order: OrderForWording): string | null {
   }
   if (last?.action === 'auto_complete') {
     return `Completed by itself: nobody reported a problem within ${ORDER_PROBLEM_WINDOW_HOURS} hours of the seller accepting.`;
+  }
+  // R2: a declined or cancelled order says who closed it, like the others.
+  if (last?.action === 'reject') {
+    return order.viewerSide === 'seller'
+      ? 'You declined this order. Its quantity is back on the marketplace.'
+      : 'The seller declined this order.';
+  }
+  if (last?.action === 'cancel') {
+    const by = last.actorSide === order.viewerSide ? 'You' : capitalise(SIDE[last.actorSide]);
+    return by ? `${by} cancelled this order.` : null;
   }
   if (last?.action === 'resolve_dispute') {
     return last.toStatus === 'cancelled'

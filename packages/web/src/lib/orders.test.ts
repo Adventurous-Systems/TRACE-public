@@ -66,6 +66,20 @@ describe('orderGuidance', () => {
     expect(resolved('cancelled')).toMatch(/the order is cancelled/);
   });
 
+  it('says who declined or cancelled an order (R2)', () => {
+    const closed = (action: string, actorSide: string, viewerSide: 'buyer' | 'seller') =>
+      orderGuidance({
+        status: 'cancelled',
+        viewerSide,
+        steps: [step({}), step({ action, toStatus: 'cancelled', actorSide })],
+      });
+    expect(closed('reject', 'seller', 'buyer')).toBe('The seller declined this order.');
+    expect(closed('reject', 'seller', 'seller')).toMatch(/^You declined this order/);
+    expect(closed('cancel', 'buyer', 'buyer')).toBe('You cancelled this order.');
+    expect(closed('cancel', 'buyer', 'seller')).toBe('The buyer cancelled this order.');
+    expect(closed('cancel', 'seller', 'buyer')).toBe('The seller cancelled this order.');
+  });
+
   it('adds nothing to an order that simply finished', () => {
     expect(
       orderGuidance({
