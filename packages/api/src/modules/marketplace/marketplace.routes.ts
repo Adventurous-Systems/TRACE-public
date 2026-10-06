@@ -134,7 +134,9 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
 
   // ── GET /api/v1/marketplace/listings/:id ──────────────────────────────────
   app.get<{ Params: { id: string } }>('/listings/:id', async (request, reply) => {
-    const listing = await getListingById(request.params.id);
+    const listing = await getListingById(request.params.id, {
+      keepLastCuratedUnit: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
+    });
     return reply.send({ success: true, data: listing });
   });
 
@@ -199,7 +201,9 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const input = MakeOfferSchema.parse(request.body);
-      const tx = await makeOffer(input, viewerOf(request.user));
+      const tx = await makeOffer(input, viewerOf(request.user), {
+        keepLastCuratedUnit: curatedBrowseOnly(env.TRACE_DEPLOYMENT_PROFILE),
+      });
       await recordAuditEvent({
         actor: request.user,
         action: 'marketplace.offer',

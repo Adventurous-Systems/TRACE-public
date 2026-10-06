@@ -150,6 +150,27 @@ export interface ListingWithPassport extends Listing {
     name: string;
     slug: string;
   };
+  /** How much one order may take now; see orderableQuantity. */
+  orderableQuantity?: number;
+}
+
+/**
+ * On the public demo a curated lot keeps its last unit (owner, 2026-10-06):
+ * nobody answers a visitor's order there, so a visitor who ordered a whole
+ * lot used to take the product off the demo marketplace for the 72 hours
+ * the order stays open. Everywhere else, and for anyone's own lots, all that
+ * is left can be ordered.
+ */
+export function orderableQuantity(
+  listing: { quantityAvailable: number },
+  passport: { customAttributes: unknown },
+  options: { keepLastCuratedUnit?: boolean } = {},
+): number {
+  const curated =
+    (passport.customAttributes as Record<string, unknown> | null)?.['seedSource'] === SEED_TAG;
+  return options.keepLastCuratedUnit && curated
+    ? Math.max(0, listing.quantityAvailable - 1)
+    : listing.quantityAvailable;
 }
 
 /**
@@ -167,7 +188,10 @@ export function listingStatusAt(
     : listing.status;
 }
 
-export async function getListingById(listingId: string): Promise<ListingWithPassport> {
+export async function getListingById(
+  listingId: string,
+  options: { keepLastCuratedUnit?: boolean } = {},
+): Promise<ListingWithPassport> {
   const listing = await db.query.listings.findFirst({
     where: eq(listings.id, listingId),
     with: {
@@ -182,6 +206,7 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
           carbonSavingsVsNew: true,
           qrCodeUrl: true,
           conditionPhotos: true,
+          customAttributes: true,
         },
       },
       organisation: {
@@ -194,10 +219,11 @@ export async function getListingById(listingId: string): Promise<ListingWithPass
 
   // Same shape as searchListings: the first condition photo as `photo`, so
   // the listing page can show the product (it showed none before).
-  const { conditionPhotos, ...passport } = listing.passport;
+  const { conditionPhotos, customAttributes, ...passport } = listing.passport;
   return {
     ...listing,
     status: listingStatusAt(listing),
+    orderableQuantity: orderableQuantity(listing, { customAttributes }, options),
     passport: { ...passport, photo: (conditionPhotos as string[] | null)?.[0] ?? null },
   } as unknown as ListingWithPassport;
 }
@@ -616,7 +642,11 @@ function sellsFor(
  * the marketplace while anything is left, and is reserved once every unit is
  * held.
  */
-export async function makeOffer(input: MakeOfferInput, buyer: Viewer): Promise<Transaction> {
+export async function makeOffer(
+  input: MakeOfferInput,
+  buyer: Viewer,
+  options: { keepLastCuratedUnit?: boolean } = {},
+): Promise<Transaction> {
   return db.transaction(async (tx) => {
     // Lock the listing: concurrent offers on one lot queue here, so between
     // them buyers can never take more than is available.
@@ -640,15 +670,30 @@ export async function makeOffer(input: MakeOfferInput, buyer: Viewer): Promise<T
       throw new ConflictError('Listing has expired');
     }
 
+    const [passport] = await tx
+      .select({ customAttributes: materialPassports.customAttributes })
+      .from(materialPassports)
+      .where(eq(materialPassports.id, listing.passportId));
     const available = listing.quantityAvailable;
-    const quantity = input.quantity ?? Math.min(listing.minOrderQuantity, available);
+    const orderable = orderableQuantity(listing, passport ?? { customAttributes: null }, options);
+    if (orderable < available && orderable < 1) {
+      throw new ConflictError(
+        'This is the last one of this lot, and on the demo it stays on the marketplace',
+      );
+    }
+    const quantity = input.quantity ?? Math.min(listing.minOrderQuantity, orderable);
+    if (orderable < available && quantity > orderable) {
+      throw new ConflictError(
+        `On the demo the last one of a lot stays on the marketplace: you can order up to ${orderable}`,
+      );
+    }
     if (quantity > available) {
       throw new ConflictError(
         `Only ${available} of this lot ${available === 1 ? 'is' : 'are'} left`,
       );
     }
-    // Below the minimum only when that is everything that's left.
-    if (quantity < listing.minOrderQuantity && quantity < available) {
+    // Below the minimum only when that is everything that may be ordered.
+    if (quantity < listing.minOrderQuantity && quantity < orderable) {
       throw new ValidationError(`The minimum order for this lot is ${listing.minOrderQuantity}`);
     }
     const amountPence = listing.pricePence * quantity;

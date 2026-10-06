@@ -224,10 +224,25 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       return (await j.page.locator('dl').innerText()).replace(/\s+/g, ' ').slice(0, 260);
     });
     await j.step('order 5 blocks', () => placeOrder(j, blocks.id, 5));
-    await j.step('order both staircases (the whole lot)', () => placeOrder(j, staircase.id, 2));
-    await j.step('a fully ordered lot', async () => {
+    // On the demo a curated lot keeps its last unit (owner, 2026-10-06).
+    await j.step('both staircases: the demo keeps the last one', async () => {
+      await j.goto(`/marketplace/${staircase.id}`);
+      await j.page.getByLabel('Quantity').fill('2');
+      const said = await j.page.locator('#order-quantity ~ p').first().innerText();
+      const disabled = await j.page
+        .getByRole('button', { name: /order at asking price/i })
+        .isDisabled();
+      if (!disabled || !/last one stays/.test(said)) {
+        throw new Error(`ordering both was not stopped: "${said}", button disabled: ${disabled}`);
+      }
+      return `quantity 2 → "${said}", button disabled`;
+    });
+    await j.step('order one staircase', () => placeOrder(j, staircase.id, 1));
+    await j.step('the last staircase stays, and cannot be ordered', async () => {
       await j.page.reload({ waitUntil: 'networkidle' });
-      return (await j.text(/This listing is .*/)) ?? 'the order form is still shown';
+      const said = await j.text(/This is the last one.*/);
+      if (!said) throw new Error('the order form is still shown for the last staircase');
+      return said;
     });
     await j.step(
       'order on a page that has gone stale',
@@ -237,7 +252,8 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
         const rival = await rehearsal.register('stale rival');
         const taken = await rehearsal.api('POST', '/api/v1/marketplace/offers', {
           token: rival.token,
-          body: { listingId: lintels.id, quantity: 14 },
+          // All but the last: the demo keeps a curated lot's last unit.
+          body: { listingId: lintels.id, quantity: 13 },
         });
         await j.page.getByRole('button', { name: /order at asking price/i }).click();
         await j.page.waitForTimeout(2000);
@@ -246,10 +262,11 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       },
       { expectIssues: /409/ },
     );
-    await j.step('marketplace without the staircase', async () => {
+    await j.step('the staircase is still on the marketplace', async () => {
       await j.goto('/marketplace');
       await j.page.waitForTimeout(COUNT_UP_MS);
       const shown = await j.page.getByText(STAIRCASE).count();
+      if (!shown) throw new Error('the staircase left the marketplace');
       return `${await j.text(/Reusing everything/)} · staircase shown: ${shown}`;
     });
     await j.step('orders', () => ordersSummary(j));

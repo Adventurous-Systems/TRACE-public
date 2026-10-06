@@ -15,7 +15,9 @@ import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 import {
   getMarketplaceFacets,
+  getListingById,
   getMarketplaceStats,
+  makeOffer,
   searchListings,
   sweepOrderLifecycle,
 } from './marketplace.service.js';
@@ -858,7 +860,7 @@ describe('order lifecycle', () => {
   }
 
   /** A lot of its own for each test, so they cannot disturb each other's stock. */
-  async function newLot(over: { quantity?: number; expiresAt?: Date } = {}) {
+  async function newLot(over: { quantity?: number; expiresAt?: Date; curated?: boolean } = {}) {
     const [passport] = await db
       .insert(materialPassports)
       .values({
@@ -869,6 +871,7 @@ describe('order lifecycle', () => {
         unitOfMeasure: 'each',
         conditionGrade: 'B',
         status: 'listed',
+        ...(over.curated ? { customAttributes: { seedSource: SEED_TAG } } : {}),
       })
       .returning();
     const quantity = over.quantity ?? 10;
@@ -1164,6 +1167,36 @@ describe('order lifecycle', () => {
     });
     expect(late.statusCode).toBe(409);
     expect(messageOf(late)).toMatch(/48 hours to report a problem ran out/);
+  });
+
+  it('on the demo a curated lot keeps its last unit; elsewhere, and for other lots, all of it can be ordered', async () => {
+    const buyer = (await db.query.users.findFirst({ where: eq(users.role, 'buyer') }))!;
+    const viewer = { userId: buyer.id, role: 'buyer', organisationId: null };
+    const demo = { keepLastCuratedUnit: true };
+    const { listingId } = await newLot({ quantity: 2, curated: true });
+    try {
+      expect((await getListingById(listingId, demo)).orderableQuantity).toBe(1);
+      expect((await getListingById(listingId)).orderableQuantity).toBe(2);
+      await expect(makeOffer({ listingId, quantity: 2 }, viewer, demo)).rejects.toThrow(
+        /you can order up to 1/,
+      );
+      await makeOffer({ listingId, quantity: 1 }, viewer, demo);
+      expect(await lotOf(listingId)).toMatchObject({ status: 'active', quantityAvailable: 1 });
+      expect((await getListingById(listingId, demo)).orderableQuantity).toBe(0);
+      await expect(makeOffer({ listingId, quantity: 1 }, viewer, demo)).rejects.toThrow(
+        /last one of this lot/,
+      );
+      // Outside the demo the same lot sells out.
+      await makeOffer({ listingId, quantity: 1 }, viewer);
+      expect((await lotOf(listingId)).status).toBe('reserved');
+    } finally {
+      // Keep this curated test lot out of other tests' curated counts.
+      await db.update(listings).set({ status: 'cancelled' }).where(eq(listings.id, listingId));
+    }
+    // A lot that isn't curated can be ordered whole on the demo.
+    const { listingId: own } = await newLot({ quantity: 2 });
+    await makeOffer({ listingId: own, quantity: 2 }, viewer, demo);
+    expect((await lotOf(own)).status).toBe('reserved');
   });
 
   it('a listing past its date leaves the marketplace at once, and is marked expired by the sweep', async () => {

@@ -384,6 +384,8 @@ export interface ListingSummary {
   quantity: number;
   /** What open and completed orders have not taken. */
   quantityAvailable: number;
+  /** How much one order may take; less than quantityAvailable when the demo keeps a lot's last unit. */
+  orderableQuantity?: number;
   /** The smallest order a buyer may place, unless less than that is left. */
   minOrderQuantity: number;
   shippingOptions: ListingShippingOption[];
