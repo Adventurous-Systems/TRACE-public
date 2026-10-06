@@ -15,8 +15,11 @@ Run replenishment through the trusted wrapper. It holds the deployment lock and 
     /usr/local/libexec/trace-demo/run-replenish.sh /var/lib/trace-demo/config/active.env
 
 The timer template runs this at 02:15 Africa/Johannesburg with a randomized
-delay. The command holds a PostgreSQL advisory lock, counts active lots only,
-and tops up each of the seven catalogue products to one active listing.
+delay. The command holds a PostgreSQL advisory lock and tops up each of the
+seven catalogue products to one lot. A lot counts as present while it is on
+sale or fully held by open orders: a held lot comes back on sale, or sells,
+when its orders close, so it never gets a duplicate. `demo-verify` (the
+deploy gate) counts the same way.
 New lots are independently numbered, serialized, photographed, and tagged with
 catalogueKey, catalogueName, demoLotNumber, demoBatch, and the curated
 seed-source marker. It never deletes or changes visitor data.
@@ -29,6 +32,27 @@ To converge an older multi-lot deployment, first preview and then run the guarde
 It cancels only surplus active listings whose passports carry the curated seed marker, a known catalogue key, and a valid demo lot number. The lowest-numbered lot remains active. Transaction-linked, reserved, sold, unmarked, and visitor data remain untouched. The trim and replenishment commands share one PostgreSQL advisory lock.
 
 Keep secrets in /var/lib/trace-demo/secrets, mutable non-secret configuration in /var/lib/trace-demo/config, mutable deployment state in /var/lib/trace-demo/state, bind-mounted data in /var/lib/trace-demo/data, immutable releases in /opt/trace-public-demo/releases, and only static nginx/systemd material in /etc.
+
+## Orders on the demo
+
+The same order rules apply as anywhere else, with one addition for this
+profile:
+
+- **A curated lot keeps its last unit.** One order may take a curated lot's
+  stock less one, so a visitor can't take a product off the demo marketplace.
+  With one left, the listing says so and offers no order form. Lots that are
+  not curated, and other profiles, are unaffected.
+- **Time limits.** Nobody answers a visitor's order on the demo, so it lapses
+  after 72 hours and its quantity returns to the lot. An accepted order
+  completes when its 48-hour window to report a problem closes. The sweep runs
+  every minute in the API process, so it needs no worker; the same rule is
+  applied whenever an order is read or acted on.
+- **Reported problems** wait for the platform admin on Flagged orders, who
+  decides whether the sale stands or the order is cancelled (the stock
+  returns), with a reason both sides read.
+- **Expiry.** A listing past its date leaves the marketplace at once and takes
+  no new orders; the sweep marks it expired once its open orders close. An
+  expiry date lasts to the end of that day, UK time.
 
 ## Visitor-facing guidance
 
@@ -133,7 +157,10 @@ without touching visitor data, run:
 
 It changes only the allowlisted fields in
 `scripts/lib/catalogue-corrections.ts`: category, subcategory,
-reclaimed-by and unit of measure. It never changes names, lot numbers, grades, notes or photos.
+reclaimed-by and unit of measure. It never changes names, lot numbers, grades
+or photos. A condition note changes only when it still reads exactly as an
+earlier catalogue seeded it (`SUPERSEDED_CONDITION_NOTES`); a note anyone
+edited stays.
 Anchored passports it corrects are marked pending, and the anchor worker
 re-anchors them within one sweep (about 5 minutes). Unlike `demo:restore`,
 it is safe on the public demo.
