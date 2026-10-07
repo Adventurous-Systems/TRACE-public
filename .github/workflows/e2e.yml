@@ -17,7 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
 
     services:
       postgres:
@@ -46,10 +45,10 @@ jobs:
     env:
       DATABASE_URL: postgresql://trace:trace@localhost:5432/trace_test
       REDIS_URL: redis://localhost:6379
-      MINIO_ENDPOINT: localhost
-      MINIO_PORT: '9000'
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      # Stored files are plain files; with no nginx here, the API serves them.
+      STORAGE_DIR: /tmp/trace-e2e-objects
+      STORAGE_SERVE: 'true'
+      STORAGE_PUBLIC_URL: http://localhost:3001/minio
       JWT_SECRET: test-secret-min-16-chars-long
       JWT_EXPIRY: 1h
       NODE_ENV: development
@@ -94,26 +93,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Authenticate to GitHub Container Registry
-        # The MinIO image is a private mirror (upstream withdrew its public
-        # images); see docs/operations/minio-image-mirror.md.
-        env:
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
-
-      - name: Start MinIO
-        # Buckets are created on demand by the app (storage.ensureBucket).
-        run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            ghcr.io/adventurous-systems/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2 server /data # RELEASE.2025-09-07T16-13-09Z (private mirror)
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:9000/minio/health/live && break || sleep 2
-          done
-
       - name: Migrate + seed the test database
         run: |
+          mkdir -p "$STORAGE_DIR"
           pnpm --filter @trace/db migrate
           pnpm --filter @trace/db seed
           # The curated demo catalogue. Run by no workflow before this, which is
@@ -169,7 +151,7 @@ jobs:
           wait "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)" 2>/dev/null || true
           (
             cd packages/api
-            export TRACE_DEPLOYMENT_PROFILE=public_showcase MINIO_PUBLIC_READ=true
+            export TRACE_DEPLOYMENT_PROFILE=public_showcase
             exec node_modules/.bin/tsx src/index.ts
           ) > /tmp/api-showcase.log 2>&1 &
           echo $! > /tmp/api.pid

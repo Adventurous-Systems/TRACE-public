@@ -14,7 +14,8 @@ sha=0123456789abcdef0123456789abcdef01234567
 ops_id="sha256:$(printf 'a%.0s' {1..64})"
 api_id="sha256:$(printf 'b%.0s' {1..64})"
 releases="$tmpdir/releases"
-mkdir -p "$releases/$sha"
+objects="$tmpdir/objects"
+mkdir -p "$releases/$sha" "$objects"
 cat > "$releases/$sha/images.env" <<ENV
 TRACE_API_IMAGE=trace-demo-api:$sha
 TRACE_API_IMAGE_ID=$api_id
@@ -51,7 +52,7 @@ run_ops() {
   : > "$docker_log"
   env TRACE_DEPLOY_TEST_MODE=1 TRACE_DEPLOY_RELEASE_ROOT="$releases" \
     TRACE_DEPLOY_VERIFY_RELEASE="$tmpdir/verify-release.sh" TRACE_DEPLOY_DOCKER="$tmpdir/docker" \
-    TRACE_TEST_DOCKER_LOG="$docker_log" TRACE_TEST_OPS_ID="${ops_id_actual:-$ops_id}" \
+    TRACE_DEPLOY_OBJECTS_ROOT="${objects_root:-$objects}" TRACE_TEST_DOCKER_LOG="$docker_log" TRACE_TEST_OPS_ID="${ops_id_actual:-$ops_id}" \
     TRACE_TEST_API_ID="$api_id" "$RUN_OPS" "$deploy_env" "$@"
 }
 fail() { echo "FAIL: $*" >&2; cat "$docker_log" >&2 || true; exit 1; }
@@ -70,6 +71,18 @@ run_ops demo-correct-catalogue --env demo --dry-run
 run_ops demo-check-invariants --env demo
 [[ "$(run_line)" == *" trace-demo-ops:$sha dist/scripts/check-invariants.js --env demo" ]] \
   || fail 'demo-check-invariants command line'
+
+run_ops storage-import --env demo --dry-run
+[[ "$(run_line)" == *" trace-demo-ops:$sha dist/scripts/storage-import.js --env demo --dry-run" ]] \
+  || fail 'storage-import command line'
+
+# Every operation gets the object store (R4): seeding, top-ups and the import
+# write files there.
+[[ "$(run_line)" == *" --volume $objects:/var/lib/trace/objects "* ]] || fail 'object store mount'
+if objects_root="$tmpdir/missing" run_ops migrate 2>/dev/null; then
+  fail 'a missing object store directory must be refused'
+fi
+[[ -z "$(run_line)" ]] || fail 'nothing may run without the object store directory'
 
 # Chain operations run the API image, which needs `node` passed explicitly.
 run_ops chain-deploy-registry --force

@@ -57,6 +57,7 @@ export { buildCanonicalJsonLd, computePassportHash } from './passport-hash.js';
 // operations scripts. See ./object-store.ts.
 export {
   createFileObjectStore,
+  contentTypeFor,
   ObjectConflictError,
   type FileObjectStore,
   type StoredFile,

@@ -20,6 +20,9 @@ registry=0x$(printf 'cd%.0s' {1..20})
 cat > "$bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "$TEST_LOG"
+# The upgrade's storage check: no referenced file is missing from the store.
+[[ "$*" == *stored_objects* ]] && echo 0
+exit 0
 FAKE
 cat > "$bin/pnpm" <<'FAKE'
 #!/usr/bin/env bash
@@ -143,6 +146,10 @@ done
 grep -q 'pnpm -s rehearse | .* CURATED=1 ' "$log" || fail 'journeys must run against the stack as the curated-only demo'
 grep -q 'pnpm test | .* DB=trace_test ' "$log" || fail 'tests must use trace_test'
 grep -q 'migrate | .* DB=trace_upgrade ' "$log" || fail 'the upgrade must run in its scratch database'
+[[ $(grep -c 'storage:import -- --env local --yes --origin http://localhost:19000 | .* DB=trace_upgrade ' "$log") == 2 ]] \
+  || fail 'the upgrade must import the old release files, and again after its top-up'
+grep -q 'docker compose .* up -d --wait --wait-timeout 120 minio' "$log" \
+  || fail 'the upgrade must start MinIO for the previous release'
 grep -q 'demo:replenish -- --env local --yes | .* DB=trace_upgrade ' "$log" \
   || fail 'the upgrade must prove the previous release works on the new schema'
 ! grep -q 'demo:restore .* DB=trace_upgrade' "$log" || fail 'the upgrade rehearsal must not restore'

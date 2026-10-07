@@ -85,6 +85,14 @@ describe('POST /api/v1/passports/:id/photos (storage limits)', () => {
     });
     expect(row).toMatchObject({ kind: 'photo', organisationId, passportId });
     expect(row!.bytes).toBeGreaterThan(0);
+
+    // Served at its stored URL's path (STORAGE_SERVE, as on the local stack).
+    const served = await app.inject({ method: 'GET', url: new URL(url).pathname });
+    expect(served.statusCode).toBe(200);
+    expect(served.headers['content-type']).toBe('image/jpeg');
+    expect(served.rawPayload.length).toBe(row!.bytes);
+    const hidden = await app.inject({ method: 'GET', url: '/minio/passports/.incoming/x' });
+    expect(hidden.statusCode).toBe(404);
   });
 
   it('refuses a file over the upload limit with 413 PHOTO_TOO_LARGE', async () => {

@@ -8,20 +8,19 @@ services:
       DATABASE_URL: postgresql://trace:trace@postgres:5432/trace
       REDIS_URL: redis://redis:6379
       VECHAIN_NODE_URL: http://thor-solo:8669
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_PUBLIC_URL: http://localhost:${WEB_HOST_PORT:-3003}/minio
-      MINIO_PUBLIC_READ: ${MINIO_PUBLIC_READ:-false}
+      STORAGE_DIR: /var/lib/trace/objects
+      STORAGE_PUBLIC_URL: http://localhost:${WEB_HOST_PORT:-3003}/minio
       WEB_URL: http://localhost:${WEB_HOST_PORT:-3003}
       API_URL: http://localhost:${WEB_HOST_PORT:-3003}
       TRACE_DEPLOYMENT_PROFILE: ${TRACE_DEPLOYMENT_PROFILE:-self_hosted}
     ports:
       - '127.0.0.1:${API_HOST_PORT:-3004}:3001'
       - '[::1]:${API_HOST_PORT:-3004}:3001'
+    volumes:
+      - objects-data:/var/lib/trace/objects
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-      minio: { condition: service_healthy }
       thor-solo: { condition: service_healthy }
     healthcheck:
       test:
@@ -76,6 +75,7 @@ services:
       - '[::1]:${WEB_HOST_PORT:-3003}:8080'
     volumes:
       - ./deploy/nginx/local-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - objects-data:/var/lib/trace/objects:ro
     depends_on:
       web: { condition: service_healthy }
     restart: unless-stopped
@@ -138,6 +138,8 @@ services:
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
 
+  # Not used by this release (R4: stored files are plain files). Kept for
+  # `pnpm stack upgrade`, where the previous release still stores in MinIO.
   minio:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: server /data --console-address ':9001'
@@ -164,3 +166,4 @@ volumes:
   pg-data:
   redis-data:
   minio-data:
+  objects-data:

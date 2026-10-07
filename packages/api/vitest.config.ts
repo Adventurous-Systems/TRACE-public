@@ -28,6 +28,7 @@ export default defineConfig({
       STORAGE_DIR: storageDir,
       // The disk floor is tested by stubbing free space, not by the runner's disk.
       STORAGE_MIN_FREE_BYTES: '1',
+      STORAGE_SERVE: 'true',
       // Match how the demo deployments actually run. Without this the
       // anchor worker throws (no MATERIAL_REGISTRY_ADDRESS), passports never
       // get a fingerprint, and anything asserting on the trust seal or

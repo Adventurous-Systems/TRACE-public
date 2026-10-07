@@ -6,6 +6,7 @@ import multipart from '@fastify/multipart';
 import { env } from './env.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { healthRoutes } from './modules/health/health.routes.js';
+import { storageRoutes } from './modules/storage/storage.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { accessRequestRoutes } from './modules/access-request/access-request.routes.js';
 import { passportRoutes } from './modules/passport/passport.routes.js';
@@ -67,6 +68,7 @@ export async function buildApp() {
   // ── Routes ─────────────────────────────────────────────────────────────────
 
   await app.register(healthRoutes, { prefix: '/health' });
+  if (env.STORAGE_SERVE) await app.register(storageRoutes, { prefix: '/minio' });
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
   await app.register(accessRequestRoutes, { prefix: '/api/v1/access-requests' });
   await app.register(passportRoutes, { prefix: '/api/v1/passports' });

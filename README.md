@@ -37,7 +37,7 @@ research methods and diagrams. Security reports should follow
 ┌────────────────────────▼────────────────────────────┐
 │  OFF-CHAIN                                          │
 │  Next.js 15 PWA → Fastify API                       │
-│  PostgreSQL · Redis · MinIO                         │
+│  PostgreSQL · Redis · file storage                  │
 └────────────────────────┬────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────┐
@@ -80,7 +80,8 @@ packages/sdk/         → TypeScript SDK for external consumers
 
 **Infrastructure**
 
-- Docker Compose: Thor Solo (VeChain), PostgreSQL, Redis, MinIO
+- Docker Compose: Thor Solo (VeChain), PostgreSQL, Redis; photos are plain files
+  (docs/operations/object-storage.md)
   with Postgres full-text marketplace search; Meilisearch is not required.
 - Full monorepo: pnpm workspaces, TypeScript strict mode throughout
 
@@ -141,7 +142,7 @@ pnpm env:init
 # It prints one random disposable password for all seeded demo personas.
 
 pnpm install --frozen-lockfile
-docker compose up -d postgres redis minio thor-solo
+docker compose up -d postgres redis thor-solo
 pnpm --filter @trace/db migrate
 pnpm --filter @trace/db seed
 
@@ -174,8 +175,8 @@ The web runs on http://localhost:3000 and the API on http://localhost:3001; sign
 in with the personas below. The stack gets its own chain identity (a deployer
 key and genesis, never reused elsewhere), kept in the gitignored `.local-stack/`
 with the generated API environment and the logs. It shares the Compose project
-in `.env`, so `reset` also removes that project's volumes. If this machine can't
-pull the MinIO mirror, set `TRACE_LOCAL_MINIO_IMAGE` to a local MinIO image.
+in `.env`, so `reset` also removes that project's volumes. Stored photos and
+QR codes are files in `.local-stack/objects`, served by the API at `/minio/`.
 
 ### Rehearsing a milestone
 

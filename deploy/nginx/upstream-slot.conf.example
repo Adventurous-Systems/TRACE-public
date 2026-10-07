@@ -4,5 +4,6 @@
 set $trace_api_origin http://127.0.0.1:5004;
 set $trace_web_origin http://127.0.0.1:5003;
 
-# MinIO belongs only to the isolated trace-demo-data Compose project.
+# MinIO belongs only to the isolated trace-demo-data Compose project. Since
+# R4 it is only the fallback for files the previous release stored there.
 set $trace_minio_origin http://127.0.0.1:59000;

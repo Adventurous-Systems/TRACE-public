@@ -19,6 +19,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder --chown=node:node /out/api ./
 
+# Object storage (R4): a deployment mounts its store here; a named volume
+# starts with this owner, so the node user can write to it.
+RUN mkdir -p /var/lib/trace/objects && chown node:node /var/lib/trace/objects
 USER node
 EXPOSE 3001
 CMD ["node", "dist/index.js"]

@@ -27,6 +27,12 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
+    # Photos and QR codes, as plain files (R4). Shared by both slots and the
+    # operations container, owned by the image's node user (uid 1000); nginx
+    # serves the same directory read-only at /minio/. A default rather than a
+    # required setting, so a previous slot's environment still starts.
+    volumes:
+      - ${TRACE_OBJECTS_ROOT:-/var/lib/trace-demo/data/objects}:/var/lib/trace/objects
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     pids_limit: 256
@@ -88,6 +94,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
+    # The anchor worker writes the QR codes.
+    volumes:
+      - ${TRACE_OBJECTS_ROOT:-/var/lib/trace-demo/data/objects}:/var/lib/trace/objects
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     pids_limit: 256

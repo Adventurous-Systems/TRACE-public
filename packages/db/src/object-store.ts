@@ -43,6 +43,19 @@ function checkLocation(bucket: string, key: string): void {
   }
 }
 
+const CONTENT_TYPES: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
+
+/** The type a file is served as, from its extension (as nginx does). */
+export function contentTypeFor(key: string): string {
+  const dot = key.lastIndexOf('.');
+  return (dot >= 0 && CONTENT_TYPES[key.slice(dot).toLowerCase()]) || 'application/octet-stream';
+}
+
 export function sha256Hex(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
 }
