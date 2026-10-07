@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { UNITS_OF_MEASURE } from '@trace/core';
-import { CATALOG, SEED_TAG } from './catalogue.js';
+import { CATALOG, SEED_TAG, lotShippingNote } from './catalogue.js';
 import {
   catalogueCorrections,
   isCatalogueLot,
+  lotCorrections,
   SUPERSEDED_CONDITION_NOTES,
+  SUPERSEDED_LOT_NOTES,
 } from './catalogue-corrections.js';
 
 const studWalling = CATALOG.find((p) => p.key === 'reclaimed-aluminium-stud-walling')!;
@@ -106,4 +108,72 @@ test('no current catalogue note states a grade, and none is listed as superseded
     const superseded = SUPERSEDED_CONDITION_NOTES[product.key] ?? [];
     assert.ok(!superseded.includes(product.passport.conditionNotes ?? ''), product.key);
   }
+});
+
+const kbriq = CATALOG.find((p) => p.key === 'kbriq-medero-dark-grey')!;
+const sisalwool = CATALOG.find((p) => p.key === 'sisalwool-100')!;
+
+function liveLot(overrides: Record<string, unknown> = {}) {
+  return {
+    status: 'active',
+    quantity: 5000,
+    minOrderQuantity: 1,
+    shippingOptions: [
+      { method: 'both', notes: 'From £3.60 each — order quantity by arrangement.' },
+    ],
+    ...overrides,
+  };
+}
+
+test('an older K-BRIQ lot gets the catalogue minimum and loses "by arrangement"', () => {
+  assert.equal(kbriq.listing.minOrderQuantity, 100);
+  assert.deepEqual(lotCorrections(liveLot(), kbriq), {
+    minOrderQuantity: 100,
+    shippingOptions: [{ method: 'both', notes: lotShippingNote(kbriq) }],
+  });
+});
+
+test('every superseded lot note belongs to a catalogue product and says "by arrangement"', () => {
+  for (const [key, notes] of Object.entries(SUPERSEDED_LOT_NOTES)) {
+    assert.ok(
+      CATALOG.some((p) => p.key === key),
+      key,
+    );
+    for (const note of notes) assert.match(note, /by arrangement/);
+  }
+  assert.deepEqual(
+    lotCorrections(
+      liveLot({
+        quantity: 250,
+        shippingOptions: [
+          { method: 'both', notes: 'From £82 per pack — order quantity by arrangement.' },
+        ],
+      }),
+      sisalwool,
+    ),
+    { shippingOptions: [{ method: 'both', notes: lotShippingNote(sisalwool) }] },
+  );
+});
+
+test('a minimum or note someone changed since stays as it is', () => {
+  assert.deepEqual(
+    lotCorrections(
+      liveLot({
+        minOrderQuantity: 50,
+        shippingOptions: [{ method: 'collection', notes: 'Forklift on site' }],
+      }),
+      kbriq,
+    ),
+    {},
+  );
+});
+
+test('closed lots are history and are never corrected', () => {
+  for (const status of ['sold', 'cancelled', 'expired']) {
+    assert.deepEqual(lotCorrections(liveLot({ status }), kbriq), {}, status);
+  }
+});
+
+test('a minimum is never set above the lot size', () => {
+  assert.deepEqual(lotCorrections(liveLot({ quantity: 60, shippingOptions: [] }), kbriq), {});
 });

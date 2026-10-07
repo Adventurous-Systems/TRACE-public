@@ -21,6 +21,7 @@ interface Lot {
   status: string;
   quantity: number;
   quantityAvailable: number;
+  expiresAt?: string | null;
 }
 
 export async function runProbes(rehearsal: Rehearsal): Promise<void> {
@@ -601,6 +602,7 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
   );
 
   // ── What a seller may do under open orders ───────────────────────────────
+  let soldLot: string | null = null;
   const held = await newLot({ quantity: 6 });
   await placed(buyer, held, 4);
   await probe('the seller cancels a listing with an open order', 'HTTP 409', async () =>
@@ -635,10 +637,68 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     'HTTP 200, back on the marketplace',
     async () => {
       const res = await patchLot(held, { quantity: 8 });
-      return { pass: res.status === 200, actual: says(res) };
+      return {
+        pass: res.status === 200 && res.body.data?.status === 'active',
+        actual: `${says(res)}, ${res.body.data?.status}, ${res.body.data?.quantityAvailable} available`,
+      };
     },
-    { severity: 'minor', type: 'caveat', known: 'F6, deferred with lot editing' },
   );
+  await probe(
+    'the seller changes the price under an open order',
+    'HTTP 200; the order keeps its price (4 × £3.00 = £12.00)',
+    async () => {
+      const res = await patchLot(held, { pricePence: 500 });
+      const orders = await rehearsal.api<Array<{ listingId: string; amountPence: number }>>(
+        'GET',
+        '/api/v1/marketplace/transactions',
+        { token: buyer.token },
+      );
+      const amounts = (orders.body.data ?? [])
+        .filter((o) => o.listingId === held)
+        .map((o) => o.amountPence);
+      return {
+        pass: res.status === 200 && amounts.length === 1 && amounts[0] === 1200,
+        actual: `${says(res)}; order amounts ${amounts.join(', ') || 'none'}`,
+      };
+    },
+  );
+  await probe("another organisation's staff edit the seller's lot", 'HTTP 403', async () =>
+    expectStatus(
+      await rehearsal.api('PATCH', `/api/v1/marketplace/listings/${held}`, {
+        token: staff.token,
+        body: { pricePence: 1 },
+      }),
+      403,
+    ),
+  );
+  await probe('a buyer edits a lot', 'HTTP 403', async () =>
+    expectStatus(
+      await rehearsal.api('PATCH', `/api/v1/marketplace/listings/${held}`, {
+        token: buyer.token,
+        body: { pricePence: 1 },
+      }),
+      403,
+    ),
+  );
+  await probe('an edit without signing in', 'HTTP 401', async () =>
+    expectStatus(
+      await rehearsal.api('PATCH', `/api/v1/marketplace/listings/${held}`, {
+        body: { pricePence: 1 },
+      }),
+      401,
+    ),
+  );
+  await probe("the seller clears a lot's expiry date", 'HTTP 200, no end date', async () => {
+    const dated = await newLot({
+      quantity: 3,
+      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+    });
+    const res = await patchLot(dated, { expiresAt: null });
+    return {
+      pass: res.status === 200 && res.body.data?.expiresAt === null,
+      actual: `${says(res)}, expires ${res.body.data?.expiresAt}`,
+    };
+  });
 
   await probe(
     'the seller shrinks a lot to exactly what has been sold and delivered',
@@ -650,11 +710,18 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
       await act(buyer, sale, 'confirm_delivery');
       const res = await patchLot(partSold, { quantity: 2 });
       const now = await lot(partSold);
+      soldLot = partSold;
       return { pass: now.status === 'sold', actual: `${says(res)}; listing is ${now.status}` };
     },
   );
+  await probe('the seller adds stock to a sold lot (D2)', 'HTTP 409', async () =>
+    soldLot
+      ? expectStatus(await patchLot(soldLot, { quantity: 9 }), 409)
+      : { pass: false, actual: 'no sold lot to try' },
+  );
 
   // ── Expiry ───────────────────────────────────────────────────────────────
+  let expiredLot: string | null = null;
   await probe(
     'a listing past its date',
     'an order is refused (HTTP 409), it is out of browse, and within 90 s it reads expired',
@@ -676,9 +743,38 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
         waited += 5;
       }
       const now = await lot(brief);
+      expiredLot = brief;
       return {
         pass: res.status === 409 && !listed && now.status === 'expired',
         actual: `${says(res)}; ${listed ? 'STILL in browse' : 'out of browse'}; listing is ${now.status} after ~${waited} s`,
+      };
+    },
+  );
+
+  await probe(
+    'the seller edits an expired lot without a new date (D3)',
+    'HTTP 409, still expired',
+    async () => {
+      if (!expiredLot) return { pass: false, actual: 'no expired lot to try' };
+      const res = await patchLot(expiredLot, { pricePence: 250 });
+      return {
+        pass: res.status === 409 && (await lot(expiredLot)).status === 'expired',
+        actual: says(res),
+      };
+    },
+  );
+  await probe(
+    'the seller gives an expired lot a new date (D3)',
+    'HTTP 200, back on sale and orderable',
+    async () => {
+      if (!expiredLot) return { pass: false, actual: 'no expired lot to try' };
+      const res = await patchLot(expiredLot, {
+        expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      });
+      const order = await offer(buyer, expiredLot, { quantity: 1 });
+      return {
+        pass: res.status === 200 && res.body.data?.status === 'active' && order.status === 201,
+        actual: `${says(res)}, ${res.body.data?.status}; then an order: HTTP ${order.status}`,
       };
     },
   );

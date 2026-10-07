@@ -12,7 +12,7 @@ import {
   orderQuantityProblem,
 } from '@/lib/order-quantity';
 import { listingStatus } from '@/lib/orders';
-import { clearSession, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { canCreateListing, clearSession, getToken, getUser, type StoredUser } from '@/lib/auth';
 import { AccountNav } from '@/components/marketplace/AccountNav';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -306,9 +306,20 @@ export default function ListingDetailPage() {
                   /* A seller can't order from their own organisation's lot. */
                   <div className="text-sm text-gray-600 bg-gray-50 border rounded-md p-3 space-y-2">
                     <p>This is your organisation&apos;s listing.</p>
-                    <Link href="/listings" className="font-medium text-brand-600 hover:underline">
-                      Manage listings
-                    </Link>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {canCreateListing(user) &&
+                        ['active', 'reserved', 'expired'].includes(listingStatus(listing)) && (
+                          <Link
+                            href={`/listings/${listing.id}/edit`}
+                            className="font-medium text-brand-600 hover:underline"
+                          >
+                            Edit this listing
+                          </Link>
+                        )}
+                      <Link href="/listings" className="font-medium text-brand-600 hover:underline">
+                        Manage listings
+                      </Link>
+                    </div>
                   </div>
                 ) : listingStatus(listing) === 'active' ? (
                   !user ? (

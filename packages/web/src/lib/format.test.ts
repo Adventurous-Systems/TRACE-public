@@ -4,6 +4,7 @@ import {
   deconstructionMethodLabel,
   formatDate,
   formatDateTime,
+  formatUkDay,
   shippingMethodLabel,
 } from './format';
 
@@ -41,5 +42,15 @@ describe('formatPrice', () => {
   it('shows pounds with pence and thousands separators', () => {
     expect(formatPrice(360)).toBe('£3.60');
     expect(formatPrice(1800000)).toBe('£18,000.00');
+  });
+});
+
+describe('formatUkDay', () => {
+  it('gives the UK day, wherever the reader is (R3)', () => {
+    // The end of 5 Nov in the UK is already 6 Nov in South Africa.
+    expect(formatUkDay('2026-11-05T23:59:59.999Z')).toBe('5 Nov 2026');
+    // British Summer Time: the end of 10 Oct in the UK is 22:59 UTC.
+    expect(formatUkDay('2026-10-10T22:59:59.999Z')).toBe('10 Oct 2026');
+    expect(formatUkDay(null)).toBe('');
   });
 });
