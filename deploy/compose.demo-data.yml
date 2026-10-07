@@ -36,7 +36,7 @@ services:
     cpus: 0.5
 
   minio:
-    image: ghcr.io/adventurous-systems/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: server /data
     environment:
       MINIO_ROOT_USER: ${TRACE_MINIO_ROOT_USER:?Set TRACE_MINIO_ROOT_USER}
