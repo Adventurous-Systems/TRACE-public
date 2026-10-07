@@ -11,6 +11,8 @@ import {
   DECONSTRUCTION_METHODS,
   UNITS_OF_MEASURE,
   UNIT_OF_MEASURE_LABELS,
+  PASSPORT_PHOTOS_MAX,
+  PHOTO_UPLOAD_MAX_BYTES,
 } from '@trace/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +27,7 @@ import { NoAccess } from '@/components/ui/load-state';
 import { getErrorMessage } from '@/lib/api-errors';
 import { track } from '@/lib/analytics';
 import { celebrate } from '@/lib/confetti';
+import { formatMegabytes } from '@/lib/format';
 import { toast } from '@/components/ui/use-toast';
 import {
   firstStepWithError,
@@ -67,6 +70,8 @@ export default function RegisterWizard() {
   const [photos, setPhotos] = useState<File[]>([]);
   // How many of them reached the server; with none, the material can't be listed yet.
   const [uploadedPhotos, setUploadedPhotos] = useState(0);
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null);
+  const [photoFailure, setPhotoFailure] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   // J-11: app/(dashboard)/passports/new/page.tsx is a server component and
   // role lives in localStorage, so it cannot be guarded server-side. This is
@@ -84,7 +89,20 @@ export default function RegisterWizard() {
   function addPhotoFiles(files: FileList | null) {
     if (!files) return;
     const images = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    if (images.length) setPhotos((prev) => [...prev, ...images]);
+    const fits = images.filter((f) => f.size <= PHOTO_UPLOAD_MAX_BYTES);
+    const room = PASSPORT_PHOTOS_MAX - photos.length;
+    const notices: string[] = [];
+    if (fits.length < images.length) {
+      notices.push(
+        `Photos can be at most ${formatMegabytes(PHOTO_UPLOAD_MAX_BYTES)}; larger ones were left out.`,
+      );
+    }
+    if (fits.length > room) {
+      notices.push(`A material can have at most ${PASSPORT_PHOTOS_MAX} photos.`);
+    }
+    setPhotoNotice(notices.join(' ') || null);
+    const added = fits.slice(0, Math.max(room, 0));
+    if (added.length) setPhotos((prev) => [...prev, ...added]);
   }
 
   const {
@@ -323,16 +341,22 @@ export default function RegisterWizard() {
         certified: Boolean(data.ceMarking),
       });
       // Upload any photos staged in the wizard (non-blocking on individual failures).
+      // A failed photo doesn't block the flow, but the person hears why.
       let uploaded = 0;
+      let failure: string | null = null;
       for (const file of photos) {
         try {
           await passports.uploadPhoto(passport.id, file, token);
           uploaded += 1;
-        } catch {
-          /* a failed photo shouldn't block the flow */
+        } catch (err) {
+          failure ??= err instanceof Error ? err.message : 'Upload failed';
         }
       }
       setUploadedPhotos(uploaded);
+      setPhotoFailure(
+        failure &&
+          `${photos.length - uploaded} of ${photos.length} photos were not added: ${failure}`,
+      );
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(STEP_STORAGE_KEY);
       setCreatedPassportId(passport.id);
@@ -886,6 +910,7 @@ export default function RegisterWizard() {
                     }}
                   />
                 </div>
+                {photoNotice && <p className="text-xs text-amber-700">{photoNotice}</p>}
                 {photos.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {photos.map((f, i) => (
@@ -968,6 +993,12 @@ export default function RegisterWizard() {
               {verificationError && (
                 <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
                   {verificationError}
+                </div>
+              )}
+
+              {photoFailure && (
+                <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {photoFailure}
                 </div>
               )}
 

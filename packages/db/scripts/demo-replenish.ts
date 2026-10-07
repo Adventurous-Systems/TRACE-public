@@ -10,12 +10,10 @@
  *   pnpm --filter @trace/db demo:replenish -- --env demo --target-active 1 --yes
  */
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, inArray, sql as dsql } from 'drizzle-orm';
-import * as Minio from 'minio';
 import postgres from 'postgres';
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
@@ -28,23 +26,13 @@ import {
   type Product,
 } from './lib/catalogue.js';
 import { resolveTarget } from './lib/guard.js';
+import { scriptObjectStore, storeCatalogueImage } from './lib/catalogue-photos.js';
 
 const PACKAGE_ROOT = process.cwd();
 loadEnv({ path: path.resolve(PACKAGE_ROOT, '../../.env') });
 
 const PRODUCTS_DIR = path.resolve(PACKAGE_ROOT, 'data/products');
 const SELLER_EMAIL = (process.env['SEED_SELLER_EMAIL'] ?? 'admin@stirlingreuse.com').toLowerCase();
-
-interface MinioConfig {
-  client: Minio.Client;
-  bucket: string;
-  publicUrl: string;
-}
-
-interface UploadedObject {
-  bucket: string;
-  key: string;
-}
 
 function parseTargetActive(argv: string[]): number {
   const index = argv.indexOf('--target-active');
@@ -54,50 +42,6 @@ function parseTargetActive(argv: string[]): number {
     throw new Error('--target-active must be an integer from 1 to 10');
   }
   return target;
-}
-
-function makeMinio(): MinioConfig {
-  const bucket = process.env['MINIO_BUCKET_PASSPORTS'] ?? 'passports';
-  const publicUrl =
-    // `||`, not `??`: an empty MINIO_PUBLIC_URL (as in .env.example) means
-    // "not set", exactly as the API's env schema treats it. With `??` an empty
-    // value produced relative photo URLs that the browser resolved against
-    // the web app, so every seeded photo was broken on a stock local setup.
-    process.env['MINIO_PUBLIC_URL'] ||
-    `http://${process.env['MINIO_ENDPOINT'] ?? 'localhost'}:${process.env['MINIO_PORT'] ?? '9000'}`;
-  return {
-    client: new Minio.Client({
-      endPoint: process.env['MINIO_ENDPOINT'] ?? 'localhost',
-      port: Number(process.env['MINIO_PORT'] ?? 9000),
-      useSSL: (process.env['MINIO_USE_SSL'] ?? 'false') === 'true',
-      accessKey: process.env['MINIO_ACCESS_KEY'] ?? 'minioadmin',
-      secretKey: process.env['MINIO_SECRET_KEY'] ?? 'minioadmin',
-    }),
-    bucket,
-    publicUrl,
-  };
-}
-
-async function ensureBucket(minio: MinioConfig): Promise<void> {
-  if (!(await minio.client.bucketExists(minio.bucket))) {
-    await minio.client.makeBucket(minio.bucket);
-  }
-}
-
-async function uploadImage(
-  minio: MinioConfig,
-  passportId: string,
-  imageFile: string,
-): Promise<{ url: string; object: UploadedObject }> {
-  const key = `passports/${passportId}/photos/${Date.now()}.jpg`;
-  const buffer = readFileSync(path.join(PRODUCTS_DIR, imageFile));
-  await minio.client.putObject(minio.bucket, key, buffer, buffer.length, {
-    'Content-Type': 'image/jpeg',
-  });
-  return {
-    url: `${minio.publicUrl}/${minio.bucket}/${key}`,
-    object: { bucket: minio.bucket, key },
-  };
 }
 
 function lotNumber(
@@ -142,7 +86,6 @@ async function main() {
 
   const client = postgres(target.databaseUrl, { max: 1 });
   const db = drizzle(client, { schema });
-  const uploaded: UploadedObject[] = [];
 
   try {
     const seller = await db.query.users.findFirst({
@@ -153,8 +96,9 @@ async function main() {
     }
 
     const sellerOrganisationId = seller.organisationId;
-    if (!dryRun) await ensureBucket(makeMinio());
-    const minio = dryRun ? undefined : makeMinio();
+    const store = dryRun ? undefined : scriptObjectStore();
+    // One stored file per catalogue product, shared by all of its lots.
+    const imageUrls = new Map<string, string>();
     let created = 0;
 
     await db.transaction(async (tx) => {
@@ -196,8 +140,15 @@ async function main() {
           }
 
           const passportId = randomUUID();
-          const image = await uploadImage(minio!, passportId, product.image);
-          uploaded.push(image.object);
+          let imageUrl = imageUrls.get(product.image);
+          if (!imageUrl) {
+            imageUrl = await storeCatalogueImage(
+              tx,
+              store!,
+              path.join(PRODUCTS_DIR, product.image),
+            );
+            imageUrls.set(product.image, imageUrl);
+          }
 
           const [inserted] = await tx
             .insert(schema.materialPassports)
@@ -208,7 +159,7 @@ async function main() {
               serialNumber: serialNumber(product, number),
               organisationId: sellerOrganisationId,
               registeredBy: seller.id,
-              conditionPhotos: [image.url],
+              conditionPhotos: [imageUrl],
               customAttributes: {
                 seedSource: SEED_TAG,
                 catalogueKey: product.key,
@@ -255,14 +206,6 @@ async function main() {
     console.log(
       `${dryRun ? 'Previewed' : 'Created'} ${created} demo lot(s) for ${target.description}.`,
     );
-  } catch (error) {
-    if (uploaded.length > 0) {
-      const minio = makeMinio();
-      await Promise.allSettled(
-        uploaded.map(({ bucket, key }) => minio.client.removeObject(bucket, key)),
-      );
-    }
-    throw error;
   } finally {
     await client.end();
   }

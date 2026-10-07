@@ -152,6 +152,7 @@ export type { Logger } from './logger.js';
 
 // Dates
 export { BUSINESS_TIME_ZONE, endOfDayInLondon } from './constants/dates.js';
+export { PHOTO_UPLOAD_MAX_BYTES, PASSPORT_PHOTOS_MAX } from './constants/uploads.js';
 
 // Errors
 export {

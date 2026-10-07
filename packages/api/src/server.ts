@@ -5,7 +5,6 @@ import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { env } from './env.js';
 import { errorHandler } from './middleware/error-handler.js';
-import { ensureBucket } from './lib/storage.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { accessRequestRoutes } from './modules/access-request/access-request.routes.js';
@@ -53,17 +52,12 @@ export async function buildApp() {
 
   await app.register(multipart, {
     limits: {
-      fileSize: 20 * 1024 * 1024, // 20 MB — modern phone photos can exceed 10 MB
+      // 10 MB (owner, 2026-10-07). Photos are re-encoded to a JPEG of at most
+      // 2000px, so this bounds memory per request, not what is stored.
+      fileSize: env.UPLOAD_MAX_BYTES,
       files: 10,
     },
   });
-
-  // ── Storage ────────────────────────────────────────────────────────────────
-  // Pre-create buckets at startup to avoid lazy-init race conditions
-  if (env.NODE_ENV !== 'test') {
-    await ensureBucket(env.MINIO_BUCKET_PASSPORTS, { publicRead: env.MINIO_PUBLIC_READ });
-    await ensureBucket(env.MINIO_BUCKET_REPORTS);
-  }
 
   // ── Error handler ──────────────────────────────────────────────────────────
 

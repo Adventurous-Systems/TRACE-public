@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PASSPORT_PHOTOS_MAX, PHOTO_UPLOAD_MAX_BYTES } from '@trace/core';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -97,25 +98,32 @@ const envSchema = z.object({
   VTHO_WARNING_THRESHOLD_WEI: z.string().default('10000000000000000000'),
   VTHO_CRITICAL_THRESHOLD_WEI: z.string().default('1000000000000000000'),
 
-  // MinIO
-  MINIO_ENDPOINT: z.string().default('localhost'),
-  MINIO_PORT: z.coerce.number().int().default(9000),
-  MINIO_USE_SSL: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('false'),
-  MINIO_PUBLIC_READ: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('false'),
-  MINIO_ACCESS_KEY: z.string().default('minioadmin'),
-  MINIO_SECRET_KEY: z.string().default('minioadmin'),
-  MINIO_BUCKET_PASSPORTS: z.string().default('passports'),
-  MINIO_BUCKET_REPORTS: z.string().default('reports'),
+  // Object storage: plain files under STORAGE_DIR, served by nginx at
+  // STORAGE_PUBLIC_URL/<bucket>/<key>. MINIO_PUBLIC_URL is the setting it
+  // replaced, still read so an existing environment file keeps working.
+  STORAGE_DIR: z.string().default('/var/lib/trace/objects'),
+  STORAGE_PUBLIC_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().url().optional(),
+  ),
   MINIO_PUBLIC_URL: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.string().url().optional(),
   ),
+  // Upload limits (owner, 2026-10-07): per file, photos per passport, bytes
+  // stored per organisation, and the free disk below which uploads stop.
+  UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(PHOTO_UPLOAD_MAX_BYTES),
+  PASSPORT_PHOTOS_MAX: z.coerce.number().int().positive().default(PASSPORT_PHOTOS_MAX),
+  ORG_STORAGE_QUOTA_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(100 * 1024 * 1024),
+  STORAGE_MIN_FREE_BYTES: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(5 * 1024 * 1024 * 1024),
 });
 
 function parseEnv() {
