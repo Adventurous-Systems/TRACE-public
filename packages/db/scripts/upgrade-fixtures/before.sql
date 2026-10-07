@@ -26,7 +26,7 @@ CREATE TEMP TABLE fixture_source AS
 -- more than the new limit), all the same file.
 UPDATE material_passports p
   SET qr_code_url = s.photo,
-      condition_photos = (SELECT jsonb_agg(s.photo) FROM generate_series(1, 9))
+      condition_photos = to_jsonb(array_fill(s.photo, ARRAY[9]))
   FROM (SELECT * FROM fixture_source ORDER BY id LIMIT 1) s
   WHERE p.id = s.id;
 
@@ -41,6 +41,16 @@ INSERT INTO quality_reports (passport_id, inspector_id, overall_grade, report_no
   SELECT s.id, (SELECT id FROM users ORDER BY created_at LIMIT 1), 'B',
          'upgrade fixture: report with a photo', jsonb_build_array(s.photo)
   FROM (SELECT * FROM fixture_source ORDER BY id OFFSET 1 LIMIT 1) s;
+
+-- A lot the seller cancelled, so the previous release's top-up creates a new
+-- one, storing its photo in MinIO as it would during a rollback window; the
+-- second import must pick it up.
+UPDATE listings l SET status = 'cancelled'
+  FROM material_passports p
+  WHERE l.passport_id = p.id AND p.product_name LIKE 'Reclaimed Facing Bricks%'
+    AND p.custom_attributes->>'seedSource' IS NOT NULL AND l.status = 'active';
+UPDATE material_passports p SET status = 'active'
+  FROM listings l WHERE l.passport_id = p.id AND l.status = 'cancelled';
 
 SELECT 'passports with photos: ' || count(*) FILTER (WHERE jsonb_array_length(condition_photos) > 0)
        || '; most photos on one: ' || max(jsonb_array_length(condition_photos))
