@@ -441,24 +441,37 @@ describe('inspector journey: finding materials, and who stands behind a report',
   });
 
   it('dashboard counts cover every passport of the organisation, not the latest five', async () => {
-    const stats = await app.inject({
-      method: 'GET',
-      url: '/api/v1/passports/stats',
-      headers: hubAdminAuth,
-    });
-    expect(stats.statusCode).toBe(200);
-    const data = stats.json().data as {
+    type Stats = {
       total: number;
       byStatus: Record<string, number>;
       anchored: number;
       awaitingAnchor: number;
     };
-    const list = await app.inject({
-      method: 'GET',
-      url: '/api/v1/passports?limit=1',
-      headers: hubAdminAuth,
-    });
-    expect(data.total).toBe(list.json().data.total);
+    const listTotal = async () =>
+      (
+        await app.inject({ method: 'GET', url: '/api/v1/passports?limit=1', headers: hubAdminAuth })
+      ).json().data.total as number;
+    // Other test files create hub passports in parallel, so the two reads are
+    // compared only when the list count was the same before and after the
+    // stats (rehearsal R-F2: this failed now and then with 20 against 21).
+    let data: Stats | undefined;
+    let total = -1;
+    for (let attempt = 0; attempt < 10 && data === undefined; attempt += 1) {
+      const before = await listTotal();
+      const stats = await app.inject({
+        method: 'GET',
+        url: '/api/v1/passports/stats',
+        headers: hubAdminAuth,
+      });
+      expect(stats.statusCode).toBe(200);
+      const after = await listTotal();
+      if (before === after) {
+        data = stats.json().data as Stats;
+        total = after;
+      }
+    }
+    if (!data) throw new Error('the hub passport count never held still for two reads');
+    expect(data.total).toBe(total);
     expect(Object.values(data.byStatus).reduce((a, b) => a + b, 0)).toBe(data.total);
     expect(data.byStatus['draft']).toBeGreaterThanOrEqual(1);
 
