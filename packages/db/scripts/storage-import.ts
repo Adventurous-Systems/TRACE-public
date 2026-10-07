@@ -101,12 +101,14 @@ async function main() {
       recorded = inserted.length;
     }
 
+    const line = (label: string, value: string | number) =>
+      console.log(`  ${`${label}:`.padEnd(17)} ${value}`);
     console.log(`storage-import ${dryRun ? '(dry run) ' : ''}for ${target.description}`);
-    console.log(`  store:          ${store.root}`);
-    console.log(`  referenced:     ${report.referenced} file(s)`);
-    console.log(`  already on disk: ${report.alreadyOnDisk}`);
-    console.log(`  ${dryRun ? 'would copy' : 'copied'}:         ${report.fetched}`);
-    if (!dryRun) console.log(`  newly recorded: ${recorded}`);
+    line('store', store.root);
+    line('referenced', `${report.referenced} file(s)`);
+    line('already on disk', report.alreadyOnDisk);
+    line(dryRun ? 'would copy' : 'copied', report.fetched);
+    if (!dryRun) line('newly recorded', recorded);
     if (report.foreign.length > 0) {
       console.log(`  not ours (left as they are): ${report.foreign.length}`);
       for (const url of report.foreign) console.log(`    ${url}`);
