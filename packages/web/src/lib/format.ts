@@ -8,7 +8,7 @@
  * "both", "active") were also leaking into the UI; these helpers give them
  * human labels. Found in the 2026-09-29 browser rehearsal.
  */
-import type { DeconstructionMethod } from '@trace/core';
+import { BUSINESS_TIME_ZONE, type DeconstructionMethod } from '@trace/core';
 
 type DateInput = string | number | Date | null | undefined;
 
@@ -16,6 +16,23 @@ function toDate(value: DateInput): Date | null {
   if (value === null || value === undefined || value === '') return null;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const UK_DAY = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: BUSINESS_TIME_ZONE,
+});
+
+/**
+ * The day a moment falls on in the UK: "5 Nov 2026". For dates that mean a UK
+ * day, such as a listing's expiry (the end of that day, UK time), so a reader
+ * elsewhere sees the same day the seller chose, not the next one (R3).
+ */
+export function formatUkDay(value: DateInput): string {
+  const date = toDate(value);
+  return date ? UK_DAY.format(date) : '';
 }
 
 /** "1 Jun 2026", or an empty string for a missing/invalid date. */

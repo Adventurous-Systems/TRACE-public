@@ -141,7 +141,7 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── PATCH /api/v1/marketplace/listings/:id ────────────────────────────────
-  // Hub staff: update price/quantity/shipping, or cancel
+  // The lot's own organisation: edit price, quantity, minimum, shipping, expiry; or cancel
   app.patch<{ Params: { id: string } }>(
     '/listings/:id',
     {
@@ -176,14 +176,14 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const input = UpdateListingSchema.parse(request.body);
-      const listing = await updateListing(request.params.id, input, organisationId);
+      const { listing, changes } = await updateListing(request.params.id, input, organisationId);
       await recordAuditEvent({
         actor: request.user,
         action: 'listing.update',
         resourceType: 'listing',
         resourceId: listing.id,
         status: 'succeeded',
-        metadata: { passportId: listing.passportId },
+        metadata: { passportId: listing.passportId, changes },
       });
       return reply.send({ success: true, data: listing });
     },

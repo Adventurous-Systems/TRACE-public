@@ -547,6 +547,14 @@ export const marketplace = {
       token,
     }),
 
+  /** Change a lot's terms; send only the fields that changed. */
+  updateListing: (id: string, data: Record<string, unknown>, token: string) =>
+    request<ListingSummary>(`/api/v1/marketplace/listings/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+      token,
+    }),
+
   cancelListing: (id: string, token: string) =>
     request<ListingSummary>(`/api/v1/marketplace/listings/${id}`, {
       method: 'PATCH',

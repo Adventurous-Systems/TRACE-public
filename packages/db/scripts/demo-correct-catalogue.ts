@@ -6,7 +6,9 @@
  * and transactions and is banned on the public demo. This command changes only
  * the allowlisted fields in lib/catalogue-corrections.ts (category,
  * subcategory, reclaimed-by, unit of measure, and a condition note still exactly
- * as an earlier catalogue seeded it). A corrected passport's fingerprint changes, so:
+ * as an earlier catalogue seeded it), and on lots still on sale or fully
+ * ordered, a minimum order or shipping note still exactly as seeded. A lot's
+ * terms are not in the passport's fingerprint. A corrected passport's fingerprint changes, so:
  *   - an anchored passport is marked pending (anchor columns cleared) and the
  *     anchor worker's sweep re-anchors it on chain (repairing ownership where
  *     needed); nothing is ever left with a stale anchor;
@@ -25,7 +27,11 @@ import postgres from 'postgres';
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
 import { CATALOG, CATALOGUE_LOCK_NAME, SEED_TAG } from './lib/catalogue.js';
-import { catalogueCorrections, isCatalogueLot } from './lib/catalogue-corrections.js';
+import {
+  catalogueCorrections,
+  isCatalogueLot,
+  lotCorrections,
+} from './lib/catalogue-corrections.js';
 import { resolveTarget } from './lib/guard.js';
 
 loadEnv({ path: path.resolve(process.cwd(), '../../.env') });
@@ -42,6 +48,7 @@ async function main() {
   const db = drizzle(client, { schema });
   let corrected = 0;
   let reanchor = 0;
+  let correctedLots = 0;
 
   try {
     await db.transaction(async (tx) => {
@@ -53,6 +60,25 @@ async function main() {
 
       for (const product of CATALOG) {
         for (const passport of curated.filter((p) => isCatalogueLot(p, product))) {
+          const lots = await tx
+            .select()
+            .from(schema.listings)
+            .where(eq(schema.listings.passportId, passport.id));
+          for (const lot of lots) {
+            const lotFixes = lotCorrections(lot, product);
+            const lotFields = Object.keys(lotFixes);
+            if (lotFields.length === 0) continue;
+            console.log(
+              `  ${dryRun ? 'would correct' : 'corrected'} lot of ${passport.productName} (${lot.status}): ` +
+                lotFields
+                  .map((f) => `${f} → ${JSON.stringify(lotFixes[f as keyof typeof lotFixes])}`)
+                  .join(', '),
+            );
+            correctedLots += 1;
+            if (dryRun) continue;
+            await tx.update(schema.listings).set(lotFixes).where(eq(schema.listings.id, lot.id));
+          }
+
           const corrections = catalogueCorrections(passport, product);
           const fields = Object.keys(corrections);
           if (fields.length === 0) continue;
@@ -100,7 +126,7 @@ async function main() {
     });
 
     console.log(
-      `${dryRun ? 'Would correct' : 'Corrected'} ${corrected} passport(s) for ${target.env}` +
+      `${dryRun ? 'Would correct' : 'Corrected'} ${corrected} passport(s) and ${correctedLots} lot(s) for ${target.env}` +
         (reanchor
           ? `; ${reanchor} anchored passport(s) ${dryRun ? 'would be' : 'are'} queued for re-anchoring by the worker's sweep.`
           : '.'),

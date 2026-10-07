@@ -12,7 +12,7 @@ import { marketplace, type ListingSummary } from '@/lib/api-client';
 import { getToken, getUser, canCreateListing, hasOrganisation, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
-import { formatDate, formatPrice } from '@/lib/format';
+import { formatDate, formatPrice, formatUkDay } from '@/lib/format';
 import { listingStatus } from '@/lib/orders';
 import { formatQuantity, perUnit } from '@trace/core';
 
@@ -32,6 +32,9 @@ const STATUS_LABELS: Record<string, string> = {
   expired: 'Expired',
   cancelled: 'Cancelled',
 };
+
+/** Lots a seller can still change; a sold or cancelled one stays closed. */
+const EDITABLE = ['active', 'reserved', 'expired'];
 
 /** How much of a lot is left, and how much orders have taken. */
 function stockLine(l: ListingSummary): string {
@@ -161,11 +164,11 @@ export default function ListingsPage() {
                         {l.passport.conditionGrade ? ` · Grade ${l.passport.conditionGrade}` : ''}
                         {' · Listed '}
                         {formatDate(l.createdAt)}
-                        {l.expiresAt ? ` · Expires ${formatDate(l.expiresAt)}` : ''}
+                        {l.expiresAt ? ` · Expires ${formatUkDay(l.expiresAt)}` : ''}
                       </p>
                       <p className="text-xs text-gray-700 mt-0.5">{stockLine(l)}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 shrink-0">
+                    <div className="flex flex-wrap items-center gap-3 sm:shrink-0">
                       <span className="font-semibold text-sm">
                         {formatPrice(l.pricePence)}
                         {l.passport.unitOfMeasure && (
@@ -183,6 +186,13 @@ export default function ListingsPage() {
                           View
                         </Button>
                       </Link>
+                      {EDITABLE.includes(listingStatus(l)) && (
+                        <Link href={`/listings/${l.id}/edit`}>
+                          <Button variant="outline" size="sm">
+                            Edit
+                          </Button>
+                        </Link>
+                      )}
                       {listingStatus(l) === 'active' && (
                         <Button
                           variant="outline"

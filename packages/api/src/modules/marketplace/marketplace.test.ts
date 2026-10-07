@@ -1314,3 +1314,280 @@ describe('order lifecycle', () => {
     );
   });
 });
+
+describe('listing management', () => {
+  type Auth = { authorization: string };
+  let app: TestApp;
+  let sellerAuth: Auth;
+  let buyerAuth: Auth;
+  let otherOrgAuth: Auth;
+  let organisationId: string;
+  let sellerId: string;
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** A lot of its own for each test, so they cannot disturb each other's stock. */
+  async function newLot(over: { quantity?: number; expiresAt?: Date | null } = {}) {
+    const [passport] = await db
+      .insert(materialPassports)
+      .values({
+        organisationId,
+        registeredBy: sellerId,
+        productName: `Edit Lot ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        categoryL1: 'masonry',
+        unitOfMeasure: 'each',
+        conditionGrade: 'B',
+        status: 'listed',
+      })
+      .returning();
+    const quantity = over.quantity ?? 10;
+    const [listing] = await db
+      .insert(listings)
+      .values({
+        passportId: passport!.id,
+        organisationId,
+        sellerId,
+        pricePence: 300,
+        currency: 'GBP',
+        quantity,
+        quantityAvailable: quantity,
+        minOrderQuantity: 1,
+        shippingOptions: [{ method: 'both', notes: 'order quantity by arrangement' }],
+        status: 'active',
+        expiresAt: over.expiresAt ?? null,
+      })
+      .returning();
+    return { listingId: listing!.id, passportId: passport!.id };
+  }
+  const lotOf = async (listingId: string) =>
+    (await db.query.listings.findFirst({ where: eq(listings.id, listingId) }))!;
+  const passportStatusOf = async (passportId: string) =>
+    (await db.query.materialPassports.findFirst({ where: eq(materialPassports.id, passportId) }))!
+      .status;
+  const edit = (listingId: string, payload: Record<string, unknown>, auth: Auth = sellerAuth) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/listings/${listingId}`,
+      headers: auth,
+      payload,
+    });
+  const order = async (listingId: string, quantity: number) => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marketplace/offers',
+      headers: buyerAuth,
+      payload: { listingId, quantity },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json<{ data: { id: string; amountPence: number } }>().data;
+  };
+  const act = (auth: Auth, id: string, action: string) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/transactions/${id}`,
+      headers: auth,
+      payload: { action },
+    });
+  const codeOf = (res: { json: <T>() => T }) => res.json<{ error: { code: string } }>().error.code;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    const org = await db.query.organisations.findFirst({
+      where: eq(organisations.slug, 'stirling'),
+    });
+    const seller = await db.query.users.findFirst({
+      where: eq(users.email, 'staff@stirlingreuse.com'),
+    });
+    organisationId = org!.id;
+    sellerId = seller!.id;
+    sellerAuth = await getAuthHeader(app, HUB_STAFF.email, HUB_STAFF.password);
+
+    const email = `edit-buyer-${Date.now()}@example.com`;
+    await db.insert(users).values({
+      email,
+      passwordHash: await bcrypt.hash('EditTest1234!', 10),
+      name: 'Edit Buyer',
+      role: 'buyer',
+      organisationId: null,
+    });
+    buyerAuth = await getAuthHeader(app, email, 'EditTest1234!');
+
+    // A supplier in an organisation of its own: a seller, but not of these lots.
+    const [otherOrg] = await db
+      .insert(organisations)
+      .values({
+        name: 'Other Seller Ltd',
+        slug: `other-seller-${Date.now()}`,
+        type: 'manufacturer',
+      })
+      .returning();
+    const otherEmail = `edit-other-${Date.now()}@example.com`;
+    await db.insert(users).values({
+      email: otherEmail,
+      passwordHash: await bcrypt.hash('EditTest1234!', 10),
+      name: 'Other Seller',
+      role: 'supplier',
+      organisationId: otherOrg!.id,
+    });
+    otherOrgAuth = await getAuthHeader(app, otherEmail, 'EditTest1234!');
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('changes price, minimum, shipping and expiry, and records each change before and after', async () => {
+    const { listingId } = await newLot();
+    const expiresAt = new Date(Date.now() + 30 * DAY);
+    const res = await edit(listingId, {
+      pricePence: 250,
+      minOrderQuantity: 4,
+      shippingOptions: [{ method: 'collection' }],
+      expiresAt: expiresAt.toISOString(),
+    });
+    expect(res.statusCode).toBe(200);
+    const now = await lotOf(listingId);
+    expect(now.pricePence).toBe(250);
+    expect(now.minOrderQuantity).toBe(4);
+    expect(now.shippingOptions).toEqual([{ method: 'collection' }]);
+    expect(now.expiresAt?.toISOString()).toBe(expiresAt.toISOString());
+
+    const [event] = await db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.resourceId, listingId));
+    const changes = (event!.metadata as { changes: Record<string, { from: unknown; to: unknown }> })
+      .changes;
+    expect(Object.keys(changes).sort()).toEqual([
+      'expiresAt',
+      'minOrderQuantity',
+      'pricePence',
+      'shippingOptions',
+    ]);
+    expect(changes['pricePence']).toEqual({ from: 300, to: 250 });
+    expect(changes['expiresAt']!.from).toBeNull();
+  });
+
+  it('records nothing for a field sent unchanged', async () => {
+    const { listingId } = await newLot();
+    expect((await edit(listingId, { pricePence: 300, quantity: 12 })).statusCode).toBe(200);
+    const [event] = await db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.resourceId, listingId));
+    expect(Object.keys((event!.metadata as { changes: object }).changes)).toEqual(['quantity']);
+  });
+
+  it('clears an expiry date with null', async () => {
+    const { listingId } = await newLot({ expiresAt: new Date(Date.now() + 10 * DAY) });
+    expect((await edit(listingId, { expiresAt: null })).statusCode).toBe(200);
+    expect((await lotOf(listingId)).expiresAt).toBeNull();
+  });
+
+  it('refuses another organisation, a buyer, and an anonymous caller', async () => {
+    const { listingId } = await newLot();
+    expect((await edit(listingId, { pricePence: 1 }, otherOrgAuth)).statusCode).toBe(403);
+    expect((await edit(listingId, { pricePence: 1 }, buyerAuth)).statusCode).toBe(403);
+    const anonymous = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/marketplace/listings/${listingId}`,
+      payload: { pricePence: 1 },
+    });
+    expect(anonymous.statusCode).toBe(401);
+    expect((await lotOf(listingId)).pricePence).toBe(300);
+  });
+
+  it('D1: adds stock to a fully-ordered lot and puts it back on the marketplace (F6)', async () => {
+    const { listingId, passportId } = await newLot({ quantity: 4 });
+    await order(listingId, 4);
+    expect((await lotOf(listingId)).status).toBe('reserved');
+    expect(await passportStatusOf(passportId)).toBe('reserved');
+
+    const res = await edit(listingId, { quantity: 9, pricePence: 280, minOrderQuantity: 2 });
+    expect(res.statusCode).toBe(200);
+    const now = await lotOf(listingId);
+    expect(now).toMatchObject({ status: 'active', quantity: 9, quantityAvailable: 5 });
+    expect(await passportStatusOf(passportId)).toBe('listed');
+  });
+
+  it('keeps an open order its price when the seller changes the price', async () => {
+    const { listingId } = await newLot();
+    const placed = await order(listingId, 2);
+    expect(placed.amountPence).toBe(600);
+    expect((await edit(listingId, { pricePence: 500 })).statusCode).toBe(200);
+    const [tx] = await db.select().from(transactions).where(eq(transactions.id, placed.id));
+    expect(tx!.amountPence).toBe(600);
+  });
+
+  it('refuses a quantity below what orders hold, and a minimum above the quantity', async () => {
+    const { listingId } = await newLot();
+    await order(listingId, 6);
+    expect((await edit(listingId, { quantity: 5 })).statusCode).toBe(409);
+    expect((await edit(listingId, { quantity: 8, minOrderQuantity: 9 })).statusCode).toBe(400);
+    expect(await lotOf(listingId)).toMatchObject({ quantity: 10, quantityAvailable: 4 });
+  });
+
+  it('D2: a sold lot and a cancelled lot stay closed', async () => {
+    const sold = await newLot({ quantity: 2 });
+    const sale = await order(sold.listingId, 2);
+    expect((await act(sellerAuth, sale.id, 'accept')).statusCode).toBe(200);
+    expect((await act(buyerAuth, sale.id, 'confirm_delivery')).statusCode).toBe(200);
+    expect((await lotOf(sold.listingId)).status).toBe('sold');
+    expect((await edit(sold.listingId, { quantity: 5 })).statusCode).toBe(409);
+
+    const cancelled = await newLot();
+    expect((await edit(cancelled.listingId, { action: 'cancel' })).statusCode).toBe(200);
+    expect((await edit(cancelled.listingId, { quantity: 5 })).statusCode).toBe(409);
+  });
+
+  it('D3: a new date or no date puts an expired lot back on sale', async () => {
+    const { listingId, passportId } = await newLot({ expiresAt: new Date(Date.now() - DAY) });
+    await sweepOrderLifecycle();
+    expect((await lotOf(listingId)).status).toBe('expired');
+    expect(await passportStatusOf(passportId)).toBe('active');
+
+    // Changing something else leaves it expired, so it is refused.
+    expect((await edit(listingId, { pricePence: 200 })).statusCode).toBe(409);
+
+    const res = await edit(listingId, { expiresAt: new Date(Date.now() + 7 * DAY).toISOString() });
+    expect(res.statusCode).toBe(200);
+    expect((await lotOf(listingId)).status).toBe('active');
+    expect(await passportStatusOf(passportId)).toBe('listed');
+
+    const other = await newLot({ expiresAt: new Date(Date.now() - DAY) });
+    await sweepOrderLifecycle();
+    expect((await edit(other.listingId, { expiresAt: null })).statusCode).toBe(200);
+    expect((await lotOf(other.listingId)).status).toBe('active');
+  });
+
+  it('D3: a lot past its date that the sweep has not yet marked revives with a new date', async () => {
+    const { listingId } = await newLot({ expiresAt: new Date(Date.now() - DAY) });
+    // R1: the same rule as a marked lot: without a new date it stays expired.
+    expect((await edit(listingId, { pricePence: 200 })).statusCode).toBe(409);
+    expect((await lotOf(listingId)).pricePence).toBe(300);
+    const later = new Date(Date.now() + 3 * DAY);
+    expect((await edit(listingId, { expiresAt: later.toISOString() })).statusCode).toBe(200);
+    const now = await lotOf(listingId);
+    expect(now.status).toBe('active');
+    expect(now.expiresAt?.toISOString()).toBe(later.toISOString());
+  });
+
+  it('refuses to revive an expired lot whose material has been listed again', async () => {
+    const { listingId, passportId } = await newLot({ expiresAt: new Date(Date.now() - DAY) });
+    await sweepOrderLifecycle();
+    // The material went on sale again in a new listing.
+    await db
+      .update(materialPassports)
+      .set({ status: 'listed' })
+      .where(eq(materialPassports.id, passportId));
+    const res = await edit(listingId, { expiresAt: null });
+    expect(res.statusCode).toBe(409);
+    expect(codeOf(res)).toBe('MATERIAL_RELISTED');
+    expect((await lotOf(listingId)).status).toBe('expired');
+  });
+
+  it('refuses an expiry date already passed', async () => {
+    const { listingId } = await newLot();
+    const res = await edit(listingId, { expiresAt: new Date(Date.now() - DAY).toISOString() });
+    expect(res.statusCode).toBe(400);
+  });
+});

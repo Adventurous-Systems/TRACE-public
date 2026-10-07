@@ -24,6 +24,7 @@ import {
   CATALOGUE_LOCK_NAME,
   LIVE_LOT_STATUSES,
   SEED_TAG,
+  lotShippingNote,
   type Product,
 } from './lib/catalogue.js';
 import { resolveTarget } from './lib/guard.js';
@@ -242,9 +243,7 @@ async function main() {
             quantityAvailable: product.listing.quantity,
             minOrderQuantity: product.listing.minOrderQuantity ?? 1,
             status: 'active',
-            shippingOptions: [
-              { method: 'both', notes: product.listing.note ?? 'Delivery from FK7 or collection' },
-            ],
+            shippingOptions: [{ method: 'both', notes: lotShippingNote(product) }],
             expiresAt: null,
           });
           created += 1;

@@ -10,9 +10,11 @@
  * One narrow exception: a condition note that still reads exactly as an
  * earlier catalogue wrote it (SUPERSEDED_CONDITION_NOTES) nobody has edited,
  * so it is brought up to the catalogue's current text. Any other note stays.
+ * Lots follow the same rule (lotCorrections): a minimum order or shipping
+ * note is corrected only while it still holds what an earlier catalogue seeded.
  */
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
-import type { Product } from './catalogue.js';
+import { lotShippingNote, type Product } from './catalogue.js';
 
 export const CORRECTABLE_FIELDS = [
   'categoryL1',
@@ -89,4 +91,56 @@ export function catalogueCorrections(
     corrections['conditionNotes'] = currentNotes;
   }
   return corrections as CatalogueCorrections;
+}
+
+/**
+ * Shipping notes earlier catalogues seeded on lots, by product key. Buyers
+ * have chosen their quantity online since 2026-09-30, so "by arrangement"
+ * is no longer true; new lots stopped carrying it then, older ones kept it.
+ */
+export const SUPERSEDED_LOT_NOTES: Record<string, readonly string[]> = {
+  'kbriq-medero-dark-grey': ['From £3.60 each — order quantity by arrangement.'],
+  'sisalwool-100': ['From £82 per pack — order quantity by arrangement.'],
+};
+
+/** Lots whose terms may be corrected: still on sale or fully ordered, never closed history. */
+const CORRECTABLE_LOT_STATUSES = ['active', 'reserved'];
+
+interface LotLike {
+  status: string;
+  quantity: number;
+  minOrderQuantity: number;
+  shippingOptions: Array<{ method: string; notes?: string; [key: string]: unknown }> | null;
+}
+
+export interface LotCorrections {
+  minOrderQuantity?: number;
+  shippingOptions?: LotLike['shippingOptions'];
+}
+
+/**
+ * A curated lot's terms, brought up to the catalogue only where they still
+ * hold what an earlier catalogue seeded: a minimum order of 1 from before
+ * minimums existed, and a superseded shipping note. A minimum or note anyone
+ * has changed since stays as it is (D4, listing management).
+ */
+export function lotCorrections(lot: LotLike, product: Product): LotCorrections {
+  const corrections: LotCorrections = {};
+  if (!CORRECTABLE_LOT_STATUSES.includes(lot.status)) return corrections;
+
+  const minimum = product.listing.minOrderQuantity ?? 1;
+  if (lot.minOrderQuantity === 1 && minimum > 1 && minimum <= lot.quantity) {
+    corrections.minOrderQuantity = minimum;
+  }
+
+  const superseded = SUPERSEDED_LOT_NOTES[product.key] ?? [];
+  const options = lot.shippingOptions ?? [];
+  if (options.some((o) => o.notes !== undefined && superseded.includes(o.notes))) {
+    corrections.shippingOptions = options.map((o) =>
+      o.notes !== undefined && superseded.includes(o.notes)
+        ? { ...o, notes: lotShippingNote(product) }
+        : o,
+    );
+  }
+  return corrections;
 }

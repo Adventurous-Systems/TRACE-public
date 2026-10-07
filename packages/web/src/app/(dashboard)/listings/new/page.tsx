@@ -2,11 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { BUSINESS_TIME_ZONE, endOfDayInLondon } from '@trace/core';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { marketplace, passports, type PassportSummary } from '@/lib/api-client';
@@ -17,6 +15,15 @@ import { toast } from '@/components/ui/use-toast';
 import { celebrate } from '@/lib/confetti';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
+import {
+  EMPTY_TERMS,
+  ListingTermsFields,
+  expiryOf,
+  pricePence,
+  shippingOptionOf,
+  termsError,
+  type ListingTerms,
+} from '@/components/marketplace/ListingTermsFields';
 
 export default function NewListingPage() {
   const router = useRouter();
@@ -26,16 +33,7 @@ export default function NewListingPage() {
   const [needPhoto, setNeedPhoto] = useState<PassportSummary[]>([]);
   const [passportsLoaded, setPassportsLoaded] = useState(false);
   const [passportId, setPassportId] = useState(searchParams.get('passportId') ?? '');
-  const [pricePounds, setPricePounds] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [minOrderQuantity, setMinOrderQuantity] = useState('1');
-  const [shippingMethod, setShippingMethod] = useState<'collection' | 'delivery' | 'both'>(
-    'collection',
-  );
-  const [deliveryCostPounds, setDeliveryCostPounds] = useState('');
-  const [deliveryRadiusMiles, setDeliveryRadiusMiles] = useState('');
-  const [shippingNotes, setShippingNotes] = useState('');
-  const [expiresAt, setExpiresAt] = useState('');
+  const [terms, setTerms] = useState<ListingTerms>(EMPTY_TERMS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -68,32 +66,20 @@ export default function NewListingPage() {
       setError('Select a passport');
       return;
     }
-    if (!pricePounds || isNaN(parseFloat(pricePounds)) || parseFloat(pricePounds) <= 0) {
-      setError('Enter a valid price');
+    const invalid = termsError(terms);
+    if (invalid) {
+      setError(invalid);
       return;
-    }
-
-    const pricePence = Math.round(parseFloat(pricePounds) * 100);
-    const shippingOption: Record<string, unknown> = { method: shippingMethod };
-    if (shippingNotes) shippingOption['notes'] = shippingNotes;
-    if (shippingMethod === 'delivery' || shippingMethod === 'both') {
-      if (deliveryCostPounds) {
-        shippingOption['deliveryCostPence'] = Math.round(parseFloat(deliveryCostPounds) * 100);
-      }
-      if (deliveryRadiusMiles) {
-        shippingOption['deliveryRadiusMiles'] = parseInt(deliveryRadiusMiles, 10);
-      }
     }
 
     const payload = {
       passportId,
-      pricePence,
+      pricePence: pricePence(terms),
       currency: 'GBP',
-      quantity: parseInt(quantity, 10) || 1,
-      minOrderQuantity: parseInt(minOrderQuantity, 10) || 1,
-      shippingOptions: [shippingOption],
-      // The end of the chosen day in the UK, not midnight UTC at its start (R5).
-      expiresAt: expiresAt ? endOfDayInLondon(expiresAt).toISOString() : undefined,
+      quantity: parseInt(terms.quantity, 10) || 1,
+      minOrderQuantity: parseInt(terms.minOrderQuantity, 10) || 1,
+      shippingOptions: [shippingOptionOf(terms)],
+      expiresAt: expiryOf(terms) ?? undefined,
     };
 
     setLoading(true);
@@ -104,7 +90,7 @@ export default function NewListingPage() {
         materialCategory:
           availablePassports.find((p) => p.id === passportId)?.categoryL1 ?? 'unknown',
         quantity: payload.quantity,
-        shippingMethod,
+        shippingMethod: terms.shippingMethod,
       });
       toast({
         title: 'Listed on the marketplace',
@@ -198,128 +184,11 @@ export default function NewListingPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-5 space-y-4">
-              <h2 className="font-semibold text-sm text-gray-700">Pricing</h2>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="price">Price per unit (£) *</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={pricePounds}
-                    onChange={(e) => setPricePounds(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="quantity">Quantity in this lot</Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    min="1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="min-order">Minimum order</Label>
-                  <Input
-                    id="min-order"
-                    type="number"
-                    min="1"
-                    value={minOrderQuantity}
-                    onChange={(e) => setMinOrderQuantity(e.target.value)}
-                  />
-                  <p className="text-xs text-gray-500">
-                    Buyers order any amount from this up to what is left. Price and quantity use the
-                    passport&apos;s unit of measure.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="expires">Listing expires (optional)</Label>
-                <Input
-                  id="expires"
-                  type="date"
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
-                  // Today in the UK ('en-CA' formats as YYYY-MM-DD).
-                  min={new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TIME_ZONE }).format(
-                    new Date(),
-                  )}
-                />
-                <p className="text-xs text-gray-500">On sale until the end of that day, UK time.</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-5 space-y-4">
-              <h2 className="font-semibold text-sm text-gray-700">Shipping / collection *</h2>
-
-              <div className="space-y-1.5">
-                <Label>Method</Label>
-                <div className="flex gap-3">
-                  {(['collection', 'delivery', 'both'] as const).map((m) => (
-                    <label key={m} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                      <input
-                        type="radio"
-                        name="shipping"
-                        value={m}
-                        checked={shippingMethod === m}
-                        onChange={() => setShippingMethod(m)}
-                      />
-                      <span className="capitalize">{m}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {(shippingMethod === 'delivery' || shippingMethod === 'both') && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="deliveryCost">Delivery cost (£)</Label>
-                    <Input
-                      id="deliveryCost"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00 = free"
-                      value={deliveryCostPounds}
-                      onChange={(e) => setDeliveryCostPounds(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="radius">Delivery radius (miles)</Label>
-                    <Input
-                      id="radius"
-                      type="number"
-                      min="1"
-                      placeholder="e.g. 50"
-                      value={deliveryRadiusMiles}
-                      onChange={(e) => setDeliveryRadiusMiles(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <Label htmlFor="shippingNotes">Notes (optional)</Label>
-                <Input
-                  id="shippingNotes"
-                  placeholder="e.g. forklift required for collection"
-                  value={shippingNotes}
-                  onChange={(e) => setShippingNotes(e.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <ListingTermsFields
+            terms={terms}
+            onChange={setTerms}
+            unit={availablePassports.find((p) => p.id === passportId)?.unitOfMeasure}
+          />
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">

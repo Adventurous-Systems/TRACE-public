@@ -37,6 +37,11 @@ export interface Product {
   listing: { pricePence: number; quantity: number; minOrderQuantity?: number; note?: string };
 }
 
+/** The shipping note a catalogue lot is seeded with. */
+export function lotShippingNote(product: Product): string {
+  return product.listing.note ?? 'Delivery from FK7 or collection';
+}
+
 const RECLAIMED = {
   deconstructionMethod: 'selective',
   // The hub's name everywhere else is "Stirling Reuse Hub" (owner, 2026-09-29).

@@ -21,12 +21,16 @@ import {
   NotFoundError,
   ForbiddenError,
   ConflictError,
+  TraceError,
   ValidationError,
   MAX_AMOUNT_PENCE,
   ORDER_RESPONSE_HOURS,
   ORDER_PROBLEM_WINDOW_HOURS,
 } from '@trace/core';
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
+
+/** Lots a seller can still edit: on sale, fully ordered, or expired with stock (D1, D3). */
+const EDITABLE_LOT_STATUSES = ['active', 'reserved', 'expired'];
 
 /** Orders that still hold part of a lot: not yet completed, resolved or cancelled. */
 const OPEN_TRANSACTION_STATUSES = ['pending', 'confirmed', 'disputed'] as const;
@@ -465,6 +469,7 @@ async function settleLot(
   listing: Pick<Listing, 'id' | 'passportId' | 'status'>,
   quantityAvailable: number,
   changes: Partial<Listing> = {},
+  options: { reopen?: boolean } = {},
 ): Promise<Listing> {
   const [open] = await tx
     .select({ count: sql<number>`cast(count(*) as int)` })
@@ -475,8 +480,10 @@ async function settleLot(
         inArray(transactions.status, [...OPEN_TRANSACTION_STATUSES]),
       ),
     );
-  // A cancelled or expired listing keeps its status; only its stock is kept true.
-  const live = ['active', 'reserved', 'sold'].includes(listing.status);
+  // A cancelled or expired listing keeps its status; only its stock is kept
+  // true. Reopening an expired one (the seller gave it a new date) makes it live.
+  const reopen = options.reopen === true;
+  const live = reopen || ['active', 'reserved', 'sold'].includes(listing.status);
   const status = live ? lotStatus(quantityAvailable, open?.count ?? 0) : listing.status;
 
   const [updated] = await tx
@@ -486,7 +493,7 @@ async function settleLot(
     .returning();
   if (!updated) throw new Error('Listing update failed');
 
-  if (live && status !== listing.status) {
+  if (live && (reopen || status !== listing.status)) {
     await tx
       .update(materialPassports)
       .set({
@@ -500,11 +507,47 @@ async function settleLot(
 
 // ─── Listing: Update / Cancel ────────────────────────────────────────────────
 
+/** The listing fields a seller can change, as the audit record names them. */
+const EDITABLE_FIELDS = [
+  'pricePence',
+  'quantity',
+  'minOrderQuantity',
+  'shippingOptions',
+  'expiresAt',
+] as const;
+
+export type ListingChanges = Partial<
+  Record<(typeof EDITABLE_FIELDS)[number], { from: unknown; to: unknown }>
+>;
+
+function comparable(value: unknown): string {
+  return JSON.stringify(value instanceof Date ? value.toISOString() : (value ?? null));
+}
+
+/** What an edit changed, field by field, before and after. */
+function listingChanges(before: Listing, after: Listing): ListingChanges {
+  const changed: ListingChanges = {};
+  for (const field of EDITABLE_FIELDS) {
+    if (comparable(before[field]) !== comparable(after[field])) {
+      changed[field] = { from: before[field] ?? null, to: after[field] ?? null };
+    }
+  }
+  return changed;
+}
+
+/**
+ * A seller edits their own lot: price, quantity, minimum order, shipping and
+ * expiry. A lot on sale or fully ordered can change (D1). An expired lot can
+ * go back on sale with a new date or none, while it has stock and its
+ * material hasn't been listed again since (D3). A sold or cancelled lot stays
+ * closed (D2): new stock is a new listing.
+ */
 export async function updateListing(
   listingId: string,
   input: UpdateListingInput,
   organisationId: string,
-): Promise<Listing> {
+  now = new Date(),
+): Promise<{ listing: Listing; changes: ListingChanges }> {
   const listing = await db.query.listings.findFirst({
     where: eq(listings.id, listingId),
   });
@@ -512,9 +555,6 @@ export async function updateListing(
   if (!listing) throw new NotFoundError('Listing', listingId);
   if (listing.organisationId !== organisationId) {
     throw new ForbiddenError('Listing does not belong to your organisation');
-  }
-  if (listing.status !== 'active') {
-    throw new ConflictError(`Cannot update listing with status '${listing.status}'`);
   }
 
   return db.transaction(async (tx) => {
@@ -524,10 +564,14 @@ export async function updateListing(
       .from(listings)
       .where(eq(listings.id, listingId))
       .for('update');
-    if (!current || current.status !== 'active') {
+    if (!current) throw new NotFoundError('Listing', listingId);
+    if (current.status === 'sold') {
       throw new ConflictError(
-        `Cannot update listing with status '${current?.status ?? 'missing'}'`,
+        'This lot is sold and can no longer be changed. List new stock as a new listing.',
       );
+    }
+    if (!EDITABLE_LOT_STATUSES.includes(current.status)) {
+      throw new ConflictError(`Cannot update listing with status '${current.status}'`);
     }
 
     const changes: Partial<Listing> = {};
@@ -553,10 +597,47 @@ export async function updateListing(
     if (input.shippingOptions !== undefined) {
       changes.shippingOptions = input.shippingOptions as Listing['shippingOptions'];
     }
+    // null clears the date: the lot no longer expires.
     if (input.expiresAt !== undefined) changes.expiresAt = input.expiresAt;
 
+    // A lot that reads expired, whether or not the sweep has marked it yet
+    // (R1), only goes back on sale: an edit that leaves it expired would
+    // change nothing anyone can see.
+    if (listingStatusAt(current, now) === 'expired' || current.status === 'expired') {
+      const expiresAt = changes.expiresAt !== undefined ? changes.expiresAt : current.expiresAt;
+      if (expiresAt && expiresAt <= now) {
+        throw new ConflictError(
+          'This listing has expired. Give it a new date, or clear the date, to put it back on sale.',
+        );
+      }
+    }
+    // Marked expired by the sweep: off the marketplace, its material released.
+    const reopen = current.status === 'expired';
+    if (reopen) {
+      if (quantityAvailable < 1) {
+        throw new ConflictError('Nothing is left of this lot to put back on sale');
+      }
+      // When the listing expired its material became free to list again.
+      const [passport] = await tx
+        .select({ status: materialPassports.status })
+        .from(materialPassports)
+        .where(eq(materialPassports.id, current.passportId))
+        .for('update');
+      if (passport?.status === 'decommissioned') {
+        throw new ConflictError('Decommissioned materials cannot be listed');
+      }
+      if (passport?.status !== 'active') {
+        throw new TraceError(
+          'This material has been listed again since this listing expired. Edit that listing instead.',
+          'MATERIAL_RELISTED',
+          409,
+        );
+      }
+    }
+
     // Shrinking a lot to what is ordered reserves it; to what is sold, sells it.
-    return settleLot(tx, current, quantityAvailable, changes);
+    const updated = await settleLot(tx, current, quantityAvailable, changes, { reopen });
+    return { listing: updated, changes: listingChanges(current, updated) };
   });
 }
 
