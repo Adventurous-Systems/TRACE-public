@@ -600,16 +600,20 @@ export async function updateListing(
     // null clears the date: the lot no longer expires.
     if (input.expiresAt !== undefined) changes.expiresAt = input.expiresAt;
 
-    // An expired lot only goes back on sale; an edit that leaves it expired
-    // would change nothing anyone can see.
-    const reopen = current.status === 'expired';
-    if (reopen) {
+    // A lot that reads expired, whether or not the sweep has marked it yet
+    // (R1), only goes back on sale: an edit that leaves it expired would
+    // change nothing anyone can see.
+    if (listingStatusAt(current, now) === 'expired' || current.status === 'expired') {
       const expiresAt = changes.expiresAt !== undefined ? changes.expiresAt : current.expiresAt;
       if (expiresAt && expiresAt <= now) {
         throw new ConflictError(
           'This listing has expired. Give it a new date, or clear the date, to put it back on sale.',
         );
       }
+    }
+    // Marked expired by the sweep: off the marketplace, its material released.
+    const reopen = current.status === 'expired';
+    if (reopen) {
       if (quantityAvailable < 1) {
         throw new ConflictError('Nothing is left of this lot to put back on sale');
       }

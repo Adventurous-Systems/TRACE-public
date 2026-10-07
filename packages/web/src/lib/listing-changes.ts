@@ -1,15 +1,6 @@
-import { BUSINESS_TIME_ZONE } from '@trace/core';
-import { formatPrice, shippingMethodLabel } from './format';
+import { formatPrice, formatUkDay, shippingMethodLabel } from './format';
 
 type Change = { from: unknown; to: unknown };
-
-// An expiry is the end of a day in the UK; show that day wherever the reader is.
-const UK_DAY = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: BUSINESS_TIME_ZONE,
-});
 
 const FIELD_LABELS: Record<string, string> = {
   pricePence: 'Price',
@@ -31,7 +22,7 @@ function shippingText(value: unknown): string {
 function valueText(field: string, value: unknown): string {
   if (value === null || value === undefined) return field === 'expiresAt' ? 'no end date' : 'none';
   if (field === 'pricePence' && typeof value === 'number') return formatPrice(value);
-  if (field === 'expiresAt') return UK_DAY.format(new Date(String(value)));
+  if (field === 'expiresAt') return formatUkDay(String(value));
   if (field === 'shippingOptions') return shippingText(value);
   return String(value);
 }

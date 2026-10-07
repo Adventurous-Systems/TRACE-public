@@ -1561,6 +1561,9 @@ describe('listing management', () => {
 
   it('D3: a lot past its date that the sweep has not yet marked revives with a new date', async () => {
     const { listingId } = await newLot({ expiresAt: new Date(Date.now() - DAY) });
+    // R1: the same rule as a marked lot: without a new date it stays expired.
+    expect((await edit(listingId, { pricePence: 200 })).statusCode).toBe(409);
+    expect((await lotOf(listingId)).pricePence).toBe(300);
     const later = new Date(Date.now() + 3 * DAY);
     expect((await edit(listingId, { expiresAt: later.toISOString() })).statusCode).toBe(200);
     const now = await lotOf(listingId);
