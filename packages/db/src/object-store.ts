@@ -60,6 +60,23 @@ export function sha256Hex(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+/**
+ * mkdir -p, with every directory it creates set to 755 whatever the process
+ * umask: nginx serves these files as another user, and must be able to
+ * traverse every directory on the way (rehearsal R-F1: under umask 077 new
+ * passport directories were 700).
+ */
+async function makeDirs(dir: string): Promise<void> {
+  const first = await mkdir(dir, { recursive: true });
+  if (first === undefined) return;
+  const created: string[] = [];
+  for (let at = dir; ; at = path.dirname(at)) {
+    created.push(at);
+    if (at === first || at === path.dirname(at)) break;
+  }
+  for (const each of created.reverse()) await chmod(each, 0o755);
+}
+
 export interface FileObjectStore {
   readonly root: string;
   /** Store a buffer under bucket/key, write-once. */
@@ -112,8 +129,8 @@ export function createFileObjectStore(options: {
       };
 
       const incoming = path.join(root, INCOMING);
-      await mkdir(incoming, { recursive: true });
-      await mkdir(path.dirname(target), { recursive: true, mode: 0o755 });
+      await makeDirs(incoming);
+      await makeDirs(path.dirname(target));
       const temp = path.join(incoming, randomUUID());
       await writeFile(temp, buffer, { flag: 'wx', mode: 0o644 });
       // The umask may have narrowed the mode; nginx reads these as another user.

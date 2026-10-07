@@ -33,6 +33,25 @@ test('put stores the file at bucket/key and returns the MinIO-shaped URL', () =>
     assert.deepEqual(await readdir(path.join(root, '.incoming')), []);
   }));
 
+test('directories it creates are 755 even under a strict umask (R-F1)', () =>
+  withStore(async (store, root) => {
+    const previous = process.umask(0o077);
+    try {
+      await store.put('passports', 'passports/p9/photos/1.jpg', Buffer.from('a'), 'image/jpeg');
+    } finally {
+      process.umask(previous);
+    }
+    for (const dir of [
+      'passports',
+      'passports/passports',
+      'passports/passports/p9',
+      'passports/passports/p9/photos',
+      '.incoming',
+    ]) {
+      assert.equal((await stat(path.join(root, dir))).mode & 0o777, 0o755, dir);
+    }
+  }));
+
 test('the same bytes again are accepted; different bytes are refused', () =>
   withStore(async (store) => {
     await store.put('passports', 'k/qr.png', Buffer.from('one'), 'image/png');

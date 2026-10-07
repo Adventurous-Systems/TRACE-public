@@ -72,6 +72,7 @@ export default function RegisterWizard() {
   const [uploadedPhotos, setUploadedPhotos] = useState(0);
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [photoFailure, setPhotoFailure] = useState<string | null>(null);
+  const previewPhotoCount = createdPassportId ? uploadedPhotos : photos.length;
   const photoInputRef = useRef<HTMLInputElement>(null);
   // J-11: app/(dashboard)/passports/new/page.tsx is a server component and
   // role lives in localStorage, so it cannot be guarded server-side. This is
@@ -400,9 +401,11 @@ export default function RegisterWizard() {
               <Leaf className="h-3 w-3" /> {formValues.carbonSavingsVsNew} kgCO₂e
             </span>
           ) : null}
-          {photos.length > 0 && (
+          {/* Once registered, the photos that were actually added (R-F9: a
+              photo refused by the quota still counted here). */}
+          {previewPhotoCount > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-              <Camera className="h-3 w-3" /> {photos.length}
+              <Camera className="h-3 w-3" /> {previewPhotoCount}
             </span>
           )}
         </div>

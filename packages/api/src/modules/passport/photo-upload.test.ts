@@ -8,7 +8,9 @@ import { env } from '../../env.js';
 import { objectStore } from '../../lib/storage.js';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
-const SEEDED_ADMIN = getTestPersona('hubAdmin');
+// The supplier, not the hub: quality.test.ts compares two counts of the
+// hub's passports, and uploads here run in parallel with it (rehearsal R-F2).
+const SUPPLIER = getTestPersona('supplier');
 
 async function multipart(buffer: Buffer, filename = 'photo.png', type = 'image/png') {
   const form = new FormData();
@@ -43,8 +45,8 @@ describe('POST /api/v1/passports/:id/photos (storage limits)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
-    authHeader = await getAuthHeader(app, SEEDED_ADMIN.email, SEEDED_ADMIN.password);
-    const user = await db.query.users.findFirst({ where: eq(users.email, SEEDED_ADMIN.email) });
+    authHeader = await getAuthHeader(app, SUPPLIER.email, SUPPLIER.password);
+    const user = await db.query.users.findFirst({ where: eq(users.email, SUPPLIER.email) });
     organisationId = user!.organisationId!;
     const res = await app.inject({
       method: 'POST',
