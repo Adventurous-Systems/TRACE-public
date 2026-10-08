@@ -80,6 +80,11 @@ export function shippingMethodLabel(method: string | null | undefined): string {
   return SHIPPING_LABELS[method] ?? method;
 }
 
+/** A byte count in whole megabytes: "10 MB". */
+export function formatMegabytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
 /** An amount in pence as pounds: "£3.60", "£18,000.00". */
 export function formatPrice(pence: number): string {
   return `£${(pence / 100).toLocaleString('en-GB', {

@@ -15,6 +15,7 @@ export {
   qualityReports,
   sensorReadings,
   feedbackSubmissions,
+  storedObjects,
 } from '../drizzle/schema.js';
 
 export type {
@@ -43,9 +44,21 @@ export type {
   NewSensorReading,
   FeedbackSubmission,
   NewFeedbackSubmission,
+  StoredObject,
+  NewStoredObject,
 } from '../drizzle/schema.js';
 
 // Canonical passport fingerprinting — shared by the API (anchoring + the public
 // verify-integrity endpoint) and the seed/restore scripts, so the two can never
 // drift apart. See ./passport-hash.ts before changing the document shape.
 export { buildCanonicalJsonLd, computePassportHash } from './passport-hash.js';
+
+// Object storage: plain files under one root, shared by the API and the
+// operations scripts. See ./object-store.ts.
+export {
+  createFileObjectStore,
+  contentTypeFor,
+  ObjectConflictError,
+  type FileObjectStore,
+  type StoredFile,
+} from './object-store.js';

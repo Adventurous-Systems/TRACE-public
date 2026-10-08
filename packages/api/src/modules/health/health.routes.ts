@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { env } from '../../env.js';
 import { getChainAdapter } from '../../lib/chain/index.js';
-import { minioClient } from '../../lib/storage.js';
+import { checkStorage } from '../../lib/storage.js';
 
 async function checkDatabase(): Promise<boolean> {
   try {
@@ -34,18 +34,6 @@ async function checkRedis(): Promise<boolean> {
   }
 }
 
-async function checkMinio(): Promise<boolean> {
-  try {
-    const results = await Promise.all([
-      minioClient.bucketExists(env.MINIO_BUCKET_PASSPORTS),
-      minioClient.bucketExists(env.MINIO_BUCKET_REPORTS),
-    ]);
-    return results.every(Boolean);
-  } catch {
-    return false;
-  }
-}
-
 function checkChain(): Promise<boolean> {
   return getChainAdapter().ping(1500);
 }
@@ -68,10 +56,10 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.get('/ready', async (_request, reply) => {
-    const [database, redis, minio, thor] = await Promise.all([
+    const [database, redis, storage, thor] = await Promise.all([
       checkDatabase(),
       checkRedis(),
-      checkMinio(),
+      checkStorage(),
       checkChain(),
     ]);
     // The chain is reported but does not gate readiness. The site serves
@@ -80,13 +68,19 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
     // show "pending", and "Check on chain now" says the chain couldn't be
     // reached). Gating on it made a chain outage mark the API unhealthy and
     // block every deploy (rehearsal finding F6, 2026-09-29).
-    const ready = database && redis && minio;
+    const ready = database && redis && storage.writable;
 
     return reply.status(ready ? 200 : 503).send({
       success: ready,
       data: {
         status: ready ? 'ready' : 'degraded',
-        checks: { database, redis, minio, thor },
+        checks: {
+          database,
+          redis,
+          storage: storage.writable,
+          storageHasRoom: storage.hasRoom,
+          thor,
+        },
         timestamp: new Date().toISOString(),
       },
     });

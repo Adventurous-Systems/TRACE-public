@@ -92,6 +92,13 @@
       "when": 1791100000000,
       "tag": "0012_order_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791200000000,
+      "tag": "0013_stored_objects",
+      "breakpoints": true
     }
   ]
 }

@@ -13,13 +13,14 @@ server {
 
     include /var/lib/trace-demo/config/nginx/active.conf;
 
-    client_max_body_size 20m;
+    # Photos are at most 10 MB (UPLOAD_MAX_BYTES); a little room for the form.
+    client_max_body_size 11m;
     client_body_timeout 10s;
     client_header_timeout 10s;
     keepalive_timeout 30s;
     send_timeout 30s;
 
-    limit_conn trace_demo_conn 20;
+    limit_conn trace_demo_conn 60;
     limit_req zone=trace_demo_read burst=40 nodelay;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
@@ -56,8 +57,20 @@ server {
         proxy_pass $trace_api_origin;
     }
 
+    # Photos and QR codes (R4): plain files, served from disk. A file that is
+    # not there falls back to MinIO while the previous release, the rollback
+    # target, still stores its uploads there; remove the fallback when MinIO
+    # is retired. `expires`, not add_header, so the server's headers still apply.
     location /minio/ {
         limit_except GET HEAD OPTIONS { deny all; }
+        alias /var/lib/trace-demo/data/objects/;
+        try_files $uri @trace_minio;
+        expires 7d;
+        # Partly written files (.incoming) and any other hidden path.
+        location ~ /\. { return 404; }
+    }
+
+    location @trace_minio {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto https;

@@ -13,14 +13,20 @@ import {
   type PassportDetail,
   type QualityReportSummary,
 } from '@/lib/api-client';
-import { unitLabel, perUnit, INSPECTION_SOURCE_LABELS } from '@trace/core';
+import {
+  unitLabel,
+  perUnit,
+  INSPECTION_SOURCE_LABELS,
+  PASSPORT_PHOTOS_MAX,
+  PHOTO_UPLOAD_MAX_BYTES,
+} from '@trace/core';
 import { reportedBy } from '@/lib/inspection';
 import { getToken, isHubStaff, isSupplier, getUser } from '@/lib/auth';
 import { categoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
 import { toast } from '@/components/ui/use-toast';
 import CertificatePanel from '@/components/passport/CertificatePanel';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatMegabytes } from '@/lib/format';
 
 const GRADE_COLORS: Record<string, string> = {
   A: 'bg-green-100 text-green-800',
@@ -83,6 +89,11 @@ export default function PassportDetailPage() {
     if (!file) return;
     const token = getToken();
     if (!token) return;
+    if (file.size > PHOTO_UPLOAD_MAX_BYTES) {
+      setUploadError(`Photos can be at most ${formatMegabytes(PHOTO_UPLOAD_MAX_BYTES)}`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setUploading(true);
     setUploadError(null);
     try {
@@ -192,14 +203,20 @@ export default function PassportDetailPage() {
                     className="hidden"
                     onChange={handlePhotoUpload}
                   />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={uploading}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {uploading ? 'Uploading…' : '+ Add photo'}
-                  </Button>
+                  {passport.conditionPhotos.length >= PASSPORT_PHOTOS_MAX ? (
+                    <span className="text-xs text-gray-500">
+                      {PASSPORT_PHOTOS_MAX} photos, the most a material can have
+                    </span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={uploading}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {uploading ? 'Uploading…' : '+ Add photo'}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

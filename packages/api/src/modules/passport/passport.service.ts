@@ -15,10 +15,11 @@ import {
   ConflictError,
   ValidationError,
 } from '@trace/core';
+import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { anchorQueue } from '../../lib/queue.js';
 import { hasIndependentInspection } from '../quality/quality.service.js';
-import { uploadBuffer } from '../../lib/storage.js';
+import { assertDiskHasRoom, assertWithinQuota, storeObject } from '../../lib/storage.js';
 import { computePassportHash } from '../../lib/passport-hash.js';
 import { simulatePassportAnchor } from '../../lib/anchor.js';
 import { getChainAdapter } from '../../lib/chain/index.js';
@@ -584,6 +585,13 @@ function buildUpdateValues(input: UpdatePassportInput): InsertRow {
 
 // ─── Upload photo ─────────────────────────────────────────────────────────────
 
+function assertRoomForPhoto(passport: { conditionPhotos: unknown }): void {
+  const count = ((passport.conditionPhotos ?? []) as string[]).length;
+  if (count >= env.PASSPORT_PHOTOS_MAX) {
+    throw new ConflictError(`A passport can have at most ${env.PASSPORT_PHOTOS_MAX} photos`);
+  }
+}
+
 export async function uploadPassportPhoto(
   passportId: string,
   buffer: Buffer,
@@ -596,6 +604,8 @@ export async function uploadPassportPhoto(
 
   if (!passport) throw new NotFoundError('Passport', passportId);
   if (passport.organisationId !== organisationId) throw new ForbiddenError('Access denied');
+  assertRoomForPhoto(passport);
+  await assertDiskHasRoom();
 
   // Normalise to JPEG: sharp decodes HEIC/HEIF + other formats, applies EXIF
   // orientation, and downscales large camera photos — so any phone/laptop image
@@ -613,19 +623,39 @@ export async function uploadPassportPhoto(
     );
   }
 
-  const key = `passports/${passportId}/photos/${Date.now()}.jpg`;
-  const photoUrl = await uploadBuffer(env.MINIO_BUCKET_PASSPORTS, key, normalised, 'image/jpeg');
+  const key = `passports/${passportId}/photos/${Date.now()}-${randomUUID().slice(0, 8)}.jpg`;
 
-  const existing = (passport.conditionPhotos ?? []) as string[];
+  // One transaction per organisation at a time (assertWithinQuota locks), so
+  // neither the quota nor the photo count can be overrun by uploads in parallel.
+  const updated = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ conditionPhotos: materialPassports.conditionPhotos })
+      .from(materialPassports)
+      .where(eq(materialPassports.id, passportId))
+      .for('update');
+    if (!current) throw new NotFoundError('Passport', passportId);
+    assertRoomForPhoto(current);
+    await assertWithinQuota(tx, organisationId, normalised.length);
 
-  const [updated] = await db
-    .update(materialPassports)
-    .set({
-      conditionPhotos: [...existing, photoUrl] as string[],
-      updatedAt: new Date(),
-    })
-    .where(eq(materialPassports.id, passportId))
-    .returning();
+    const photoUrl = await storeObject(
+      {
+        key,
+        buffer: normalised,
+        contentType: 'image/jpeg',
+        kind: 'photo',
+        organisationId,
+        passportId,
+      },
+      tx,
+    );
+    const existing = (current.conditionPhotos ?? []) as string[];
+    const [row] = await tx
+      .update(materialPassports)
+      .set({ conditionPhotos: [...existing, photoUrl] as string[], updatedAt: new Date() })
+      .where(eq(materialPassports.id, passportId))
+      .returning();
+    return row;
+  });
 
   if (!updated) throw new Error('Failed to update passport photos');
   return updated;

@@ -1,0 +1,11 @@
+[Unit]
+Description=TRACE public-demo stored files snapshot (hard links)
+ConditionPathIsDirectory=/var/lib/trace-demo/data/objects
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+Environment=TRACE_BACKUP_RETENTION_DAYS=14
+ExecStart=/usr/local/libexec/trace-demo/backup_objects.sh /var/lib/trace-demo/data/objects /var/lib/trace-demo/backups/objects

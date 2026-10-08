@@ -6,61 +6,56 @@
 -- has, and hold whatever the new migrations will touch. `after.sql` then
 -- checks what they did with it.
 --
--- Written for: listing management (no new migration). The live release is the
--- order lifecycle (0012): orders carry their deadlines and steps, and a lot
--- can be fully ordered or expired. This milestone lets a seller change exactly
--- those lots, so the fixture holds one of each. Earlier fixtures are in this
--- file's history.
+-- Written for: object storage (R4, migration 0013). The live release is
+-- listing management (#82, migrations to 0012), which stores files in MinIO
+-- and records only their URLs. This milestone adds stored_objects and copies
+-- the files out of MinIO with storage-import (run by `pnpm stack upgrade`
+-- after `after.sql`). So the fixture holds the URL shapes an import meets: a
+-- QR code, a quality report's copy of a photo, more photos than the new limit
+-- of 8, the same file twice, and a URL that is not ours. Earlier fixtures are
+-- in this file's history.
 
--- Open orders in every state, placed an hour ago with the deadlines the live
--- release gives them, so no time limit has passed.
-CREATE TEMP TABLE fixture_plan (
-  product text, quantity int, order_status text, answer_by interval, problem_window interval
-);
-INSERT INTO fixture_plan VALUES
-  ('K-BRIQ%',                            250, 'pending',   '71 hours', NULL),
-  ('Sisalwool 100%',                     3,   'confirmed', NULL,       '40 hours'),
-  ('Reclaimed Concrete Lintels%',        2,   'disputed',  NULL,       '-2 hours'),
-  ('Reclaimed Facing Bricks%',           10,  'completed', NULL,       '-2 hours'),
-  -- The whole lot: fully ordered, off the marketplace.
-  ('Reclaimed Prefabricated Staircase%', 2,   'pending',   '71 hours', NULL);
-
-CREATE TEMP TABLE fixture_lots AS
-  SELECT l.id AS listing_id, l.passport_id, l.seller_id, l.price_pence, plan.*
-  FROM fixture_plan plan
-  JOIN material_passports p ON p.product_name LIKE plan.product
-    AND p.custom_attributes->>'seedSource' IS NOT NULL
-  JOIN listings l ON l.passport_id = p.id AND l.status = 'active';
-
-INSERT INTO transactions (listing_id, buyer_id, seller_id, amount_pence, quantity, status,
-                          response_deadline, dispute_deadline, notes, created_at)
-  SELECT lot.listing_id, buyer.id, lot.seller_id, lot.price_pence * lot.quantity, lot.quantity,
-         lot.order_status, now() + lot.answer_by, now() + lot.problem_window,
-         'upgrade fixture: ' || lot.order_status || ' ' || split_part(lot.product, '%', 1),
-         now() - interval '1 hour'
-  FROM fixture_lots lot, users buyer
-  WHERE buyer.email = 'buyer@example.com';
-INSERT INTO order_events (transaction_id, action, from_status, to_status, actor_id, actor_side, created_at)
-  SELECT t.id, 'placed', NULL, 'pending', t.buyer_id, 'buyer', t.created_at
-  FROM transactions t WHERE t.notes LIKE 'upgrade fixture:%';
-UPDATE listings l SET quantity_available = l.quantity_available - lot.quantity
-  FROM fixture_lots lot WHERE l.id = lot.listing_id;
-UPDATE listings l SET status = 'reserved'
-  FROM fixture_lots lot WHERE l.id = lot.listing_id AND l.quantity_available = 0;
-UPDATE material_passports p SET status = 'reserved'
-  FROM listings l WHERE l.passport_id = p.id AND l.status = 'reserved';
-
--- An expired lot, as the live sweep leaves it: off the marketplace, and its
--- material free to list again.
-UPDATE listings l SET status = 'expired', expires_at = now() - interval '2 days'
+CREATE TEMP TABLE fixture_source AS
+  SELECT p.id, p.condition_photos->>0 AS photo
   FROM material_passports p
-  WHERE l.passport_id = p.id AND p.product_name LIKE 'Reclaimed Aluminium Stud Walling%'
+  WHERE p.custom_attributes->>'seedSource' IS NOT NULL
+  ORDER BY p.product_name
+  LIMIT 2;
+
+-- The first seeded lot: its photo as its QR code too, and nine photos (one
+-- more than the new limit), all the same file.
+UPDATE material_passports p
+  SET qr_code_url = s.photo,
+      condition_photos = to_jsonb(array_fill(s.photo, ARRAY[9]))
+  FROM (SELECT * FROM fixture_source ORDER BY id LIMIT 1) s
+  WHERE p.id = s.id;
+
+-- The second: a photo hosted elsewhere, which the import must leave alone.
+UPDATE material_passports p
+  SET condition_photos = p.condition_photos || '["https://images.example.org/upgrade-fixture.jpg"]'::jsonb
+  FROM (SELECT * FROM fixture_source ORDER BY id OFFSET 1 LIMIT 1) s
+  WHERE p.id = s.id;
+
+-- A quality report that copied its passport's photo, as reports do.
+INSERT INTO quality_reports (passport_id, inspector_id, overall_grade, report_notes, photo_urls)
+  SELECT s.id, (SELECT id FROM users ORDER BY created_at LIMIT 1), 'B',
+         'upgrade fixture: report with a photo', jsonb_build_array(s.photo)
+  FROM (SELECT * FROM fixture_source ORDER BY id OFFSET 1 LIMIT 1) s;
+
+-- A lot the seller cancelled, so the previous release's top-up creates a new
+-- one, storing its photo in MinIO as it would during a rollback window; the
+-- second import must pick it up.
+UPDATE listings l SET status = 'cancelled'
+  FROM material_passports p
+  WHERE l.passport_id = p.id AND p.product_name LIKE 'Reclaimed Facing Bricks%'
     AND p.custom_attributes->>'seedSource' IS NOT NULL AND l.status = 'active';
 UPDATE material_passports p SET status = 'active'
-  FROM listings l WHERE l.passport_id = p.id AND l.status = 'expired';
+  FROM listings l WHERE l.passport_id = p.id AND l.status = 'cancelled';
 
-SELECT (SELECT count(*) FROM transactions WHERE notes LIKE 'upgrade fixture:%') || ' order(s): '
-       || (SELECT string_agg(status, ', ' ORDER BY status) FROM transactions
-           WHERE notes LIKE 'upgrade fixture:%')
-       || '; lots: ' || (SELECT string_agg(status, ', ' ORDER BY status) FROM listings
-                         WHERE status IN ('reserved', 'expired'));
+SELECT 'passports with photos: ' || count(*) FILTER (WHERE jsonb_array_length(condition_photos) > 0)
+       || '; most photos on one: ' || max(jsonb_array_length(condition_photos))
+       || '; QR codes: ' || count(qr_code_url)
+       || '; photo URLs under /minio/: '
+       || (SELECT count(*) FROM material_passports, jsonb_array_elements_text(condition_photos) u
+           WHERE u LIKE '%/minio/%')
+  FROM material_passports;

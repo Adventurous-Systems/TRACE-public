@@ -1,7 +1,14 @@
 import type { FastifyInstance } from 'fastify';
-import { CreatePassportSchema, UpdatePassportSchema, PassportQuerySchema } from '@trace/core';
+import {
+  CreatePassportSchema,
+  UpdatePassportSchema,
+  PassportQuerySchema,
+  TraceError,
+} from '@trace/core';
+import { env } from '../../env.js';
 import { authenticate, authorize } from '../../middleware/auth.js';
 import { recordAuditEvent } from '../../lib/audit.js';
+import { formatMb } from '../../lib/storage.js';
 import {
   createPassport,
   getPassportById,
@@ -205,7 +212,19 @@ export async function passportRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const buffer = await file.toBuffer();
+      let buffer: Buffer;
+      try {
+        buffer = await file.toBuffer();
+      } catch (error) {
+        if ((error as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
+          throw new TraceError(
+            `Photos can be at most ${formatMb(env.UPLOAD_MAX_BYTES)}`,
+            'PHOTO_TOO_LARGE',
+            413,
+          );
+        }
+        throw error;
+      }
       const passport = await uploadPassportPhoto(
         request.params.id,
         buffer,

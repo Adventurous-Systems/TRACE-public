@@ -493,6 +493,44 @@ export const feedbackSubmissions = pgTable(
 export type FeedbackSubmission = typeof feedbackSubmissions.$inferSelect;
 export type NewFeedbackSubmission = typeof feedbackSubmissions.$inferInsert;
 
+// ── Stored Objects ───────────────────────────────────────────────────────────
+
+/**
+ * Every file in object storage: photos, QR codes and catalogue images. The
+ * passport and report columns hold the public URLs; this holds what each file
+ * costs, so an organisation's usage can be summed for its quota. Files are
+ * write-once: a key is never overwritten.
+ */
+export const storedObjects = pgTable(
+  'stored_objects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bucket: text('bucket').notNull(),
+    key: text('key').notNull(),
+    // photo | qr | catalogue. Only photos count towards a quota.
+    kind: text('kind').notNull(),
+    // Null for a catalogue image shared by several lots.
+    organisationId: uuid('organisation_id').references(() => organisations.id, {
+      onDelete: 'set null',
+    }),
+    passportId: uuid('passport_id').references(() => materialPassports.id, {
+      onDelete: 'set null',
+    }),
+    bytes: integer('bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    contentType: text('content_type').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('uq_stored_objects_bucket_key').on(table.bucket, table.key),
+    index('idx_stored_objects_org').on(table.organisationId),
+    index('idx_stored_objects_passport').on(table.passportId),
+  ],
+);
+
+export type StoredObject = typeof storedObjects.$inferSelect;
+export type NewStoredObject = typeof storedObjects.$inferInsert;
+
 // ── Relations ────────────────────────────────────────────────────────────────
 
 export const organisationsRelations = relations(organisations, ({ many }) => ({
