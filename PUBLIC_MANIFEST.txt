@@ -34,6 +34,8 @@ deploy/nginx/demo.conf.example
 deploy/nginx/local-gateway.conf
 deploy/nginx/maintenance.html
 deploy/nginx/upstream-slot.conf.example
+deploy/systemd/trace-demo-backup-objects.service
+deploy/systemd/trace-demo-backup-objects.timer
 deploy/systemd/trace-demo-replenish.service
 deploy/systemd/trace-demo-replenish.timer
 docker-compose.yml
@@ -42,7 +44,7 @@ docs/maintainers/parity-manifest.md
 docs/maintainers/public-release.md
 docs/nginx/trace-web.same-origin-api.conf.example
 docs/operations/deployment.md
-docs/operations/minio-image-mirror.md
+docs/operations/object-storage.md
 docs/operations/public-buyer-demo.md
 docs/operations/self-service-sandbox.md
 docs/research/README.md
@@ -53,6 +55,7 @@ docs/research/methods.md
 eslint.config.mjs
 genesis.json
 ops/backup_db.sh
+ops/backup_objects.sh
 ops/deploy/deploy-main.sh
 ops/deploy/preflight.sh
 ops/deploy/prune-releases.sh
@@ -74,6 +77,7 @@ ops/release/test-release-tooling.sh
 ops/release/test-scan-image.sh
 ops/release/verify-release.sh
 ops/restore_db.sh
+ops/test-backup-objects.sh
 package.json
 packages/api/package.json
 packages/api/src/env.ts
@@ -122,9 +126,11 @@ packages/api/src/modules/marketplace/marketplace.test.ts
 packages/api/src/modules/passport/passport.routes.ts
 packages/api/src/modules/passport/passport.service.ts
 packages/api/src/modules/passport/passport.test.ts
+packages/api/src/modules/passport/photo-upload.test.ts
 packages/api/src/modules/quality/quality.routes.ts
 packages/api/src/modules/quality/quality.service.ts
 packages/api/src/modules/quality/quality.test.ts
+packages/api/src/modules/storage/storage.routes.ts
 packages/api/src/scripts/chain-deploy-registry.ts
 packages/api/src/scripts/solo-genesis.ts
 packages/api/src/server.ts
@@ -158,6 +164,7 @@ packages/core/src/constants/dates.test.ts
 packages/core/src/constants/dates.ts
 packages/core/src/constants/demo-catalogue.ts
 packages/core/src/constants/demo-personas.ts
+packages/core/src/constants/uploads.ts
 packages/core/src/errors.ts
 packages/core/src/index.ts
 packages/core/src/logger.ts
@@ -196,6 +203,7 @@ packages/db/migrations/0009_legacy_orders.sql
 packages/db/migrations/0010_release_safety.sql
 packages/db/migrations/0011_inspection_role.sql
 packages/db/migrations/0012_order_lifecycle.sql
+packages/db/migrations/0013_stored_objects.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
@@ -208,6 +216,7 @@ packages/db/scripts/demo-restore.ts
 packages/db/scripts/demo-trim-active.ts
 packages/db/scripts/lib/catalogue-corrections.test.ts
 packages/db/scripts/lib/catalogue-corrections.ts
+packages/db/scripts/lib/catalogue-photos.ts
 packages/db/scripts/lib/catalogue.ts
 packages/db/scripts/lib/demo-content.ts
 packages/db/scripts/lib/demo-trim-policy.test.ts
@@ -215,16 +224,21 @@ packages/db/scripts/lib/demo-trim-policy.ts
 packages/db/scripts/lib/guard.ts
 packages/db/scripts/lib/invariants.test.ts
 packages/db/scripts/lib/invariants.ts
+packages/db/scripts/lib/storage-import.test.ts
+packages/db/scripts/lib/storage-import.ts
 packages/db/scripts/migrate.ts
 packages/db/scripts/rehash-passports.ts
 packages/db/scripts/reset-marketplace.ts
 packages/db/scripts/rotate-published-credentials.ts
 packages/db/scripts/seed-products.ts
 packages/db/scripts/seed.ts
+packages/db/scripts/storage-import.ts
 packages/db/scripts/upgrade-fixtures/after.sql
 packages/db/scripts/upgrade-fixtures/before.sql
 packages/db/src/client.ts
 packages/db/src/index.ts
+packages/db/src/object-store.test.ts
+packages/db/src/object-store.ts
 packages/db/src/passport-hash.ts
 packages/db/tsconfig.build.json
 packages/db/tsconfig.json

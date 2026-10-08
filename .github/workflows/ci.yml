@@ -34,6 +34,7 @@ jobs:
           bash ops/deploy/test-deploy-main.sh
           bash ops/deploy/test-prune-releases.sh
           bash ops/deploy/test-run-ops.sh
+          bash ops/test-backup-objects.sh
           bash scripts/test-local-stack.sh
 
   build-and-test:
@@ -131,7 +132,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -204,25 +204,16 @@ jobs:
             /tmp/trivy-*.cdx.json
           retention-days: 30
 
-      - name: Authenticate to GitHub Container Registry
-        # The MinIO image is a private mirror (upstream withdrew its public
-        # images); see docs/operations/minio-image-mirror.md.
-        env:
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
-
       - name: Start isolated data services and migrate
         shell: bash
         run: |
           set -euo pipefail
           COMPOSE_PROJECT_NAME=trace-ci docker compose up -d --wait --wait-timeout 120 \
-            postgres redis minio thor-solo
+            postgres redis thor-solo
           docker run --rm --network trace-ci_default --env-file .env \
             -e DATABASE_URL=postgresql://trace:trace@postgres:5432/trace \
             -e REDIS_URL=redis://redis:6379 \
             -e VECHAIN_NODE_URL=http://thor-solo:8669 \
-            -e MINIO_ENDPOINT=minio -e MINIO_PORT=9000 \
             trace-ops:ci dist/scripts/migrate.js
 
       - name: Start built API and web images in public-showcase mode

@@ -30,11 +30,11 @@
         "DEPLOYER_PRIVATE_KEY",
         "JWT_EXPIRY",
         "JWT_SECRET",
-        "MINIO_ENDPOINT",
-        "MINIO_PORT",
         "MINIO_PUBLIC_URL",
         "NODE_ENV",
         "REDIS_URL",
+        "STORAGE_DIR",
+        "STORAGE_PUBLIC_URL",
         "TRACE_DEPLOYMENT_PROFILE",
         "WEB_URL"
       ]

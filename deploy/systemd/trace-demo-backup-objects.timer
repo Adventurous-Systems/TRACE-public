@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly TRACE public-demo stored files snapshot
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Africa/Johannesburg
+RandomizedDelaySec=10m
+Persistent=true
+Unit=trace-demo-backup-objects.service
+
+[Install]
+WantedBy=timers.target

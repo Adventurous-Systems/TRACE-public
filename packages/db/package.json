@@ -28,7 +28,8 @@
     "demo:verify": "tsx scripts/demo-restore.ts --verify",
     "demo:replenish": "tsx scripts/demo-replenish.ts",
     "demo:trim-active": "tsx scripts/demo-trim-active.ts",
-    "test": "tsx --test scripts/lib/*.test.ts",
+    "storage:import": "tsx scripts/storage-import.ts",
+    "test": "tsx --test src/*.test.ts scripts/lib/*.test.ts",
     "rotate:credentials": "tsx scripts/rotate-published-credentials.ts",
     "studio": "drizzle-kit studio"
   },
@@ -38,7 +39,6 @@
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.2",
     "js-sha3": "^0.9.3",
-    "minio": "^8.0.7",
     "postgres": "^3.4.4",
     "sharp": "^0.35.5"
   },

@@ -14,7 +14,7 @@ import QRCode from 'qrcode';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { db, materialPassports, type MaterialPassport } from '@trace/db';
 import { env } from '../env.js';
-import { uploadBuffer } from './storage.js';
+import { storeObject } from './storage.js';
 
 export function passportPublicUrl(passportId: string): string {
   return `${env.WEB_URL}/passport/${passportId}`;
@@ -36,12 +36,14 @@ export async function issuePassportIdentifiers(passportId: string): Promise<Mate
       margin: 2,
       errorCorrectionLevel: 'H',
     });
-    qrCodeUrl = await uploadBuffer(
-      env.MINIO_BUCKET_PASSPORTS,
-      `passports/${passportId}/qr.png`,
-      qrBuffer,
-      'image/png',
-    );
+    qrCodeUrl = await storeObject({
+      key: `passports/${passportId}/qr.png`,
+      buffer: qrBuffer,
+      contentType: 'image/png',
+      kind: 'qr',
+      organisationId: null,
+      passportId,
+    });
   }
 
   const [updated] = await db

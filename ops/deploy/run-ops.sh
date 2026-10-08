@@ -5,17 +5,21 @@ DEPLOY_ENV="${1:-}"
 OPERATION="${2:-}"
 shift 2 || true
 
-[[ -f "$DEPLOY_ENV" ]] || { echo "Usage: $0 <candidate-deploy.env> <migrate|seed|seed-products|demo-restore|demo-verify|demo-replenish|demo-trim-active|demo-correct-catalogue|demo-check-invariants|chain-deploy-registry> [args]" >&2; exit 2; }
+[[ -f "$DEPLOY_ENV" ]] || { echo "Usage: $0 <candidate-deploy.env> <migrate|seed|seed-products|demo-restore|demo-verify|demo-replenish|demo-trim-active|demo-correct-catalogue|demo-check-invariants|storage-import|chain-deploy-registry> [args]" >&2; exit 2; }
 value() { awk -F= -v key="$2" '$1 == key {print substr($0, index($0, "=") + 1)}' "$1" | tail -1; }
 # Host paths are fixed; test-run-ops.sh may override them only as a non-root
 # user (the same guard deploy-main.sh uses), never in the installed root path.
 RELEASE_ROOT='/opt/trace-public-demo/releases'
 release_verifier='/usr/local/libexec/trace-demo/verify-release.sh'
 DOCKER_BIN=docker
+# Stored files (R4): the seed, top-up and import operations write here, the
+# same directory compose.app.yml gives the API.
+OBJECTS_ROOT='/var/lib/trace-demo/data/objects'
 if [[ "${TRACE_DEPLOY_TEST_MODE:-0}" == 1 && "$EUID" != 0 ]]; then
   RELEASE_ROOT="${TRACE_DEPLOY_RELEASE_ROOT:?required in test mode}"
   release_verifier="${TRACE_DEPLOY_VERIFY_RELEASE:?required in test mode}"
   DOCKER_BIN="${TRACE_DEPLOY_DOCKER:?required in test mode}"
+  OBJECTS_ROOT="${TRACE_DEPLOY_OBJECTS_ROOT:?required in test mode}"
 fi
 # Database operations run in the release's operations image. Chain operations
 # need the chain SDK, which only the API image carries; its entrypoint is not
@@ -32,6 +36,7 @@ case "$OPERATION" in
   demo-trim-active) script=dist/scripts/demo-trim-active.js ;;
   demo-correct-catalogue) script=dist/scripts/demo-correct-catalogue.js ;;
   demo-check-invariants) script=dist/scripts/check-invariants.js ;;
+  storage-import) script=dist/scripts/storage-import.js ;;
   chain-deploy-registry) script=dist/scripts/chain-deploy-registry.js; image_kind=API; interpreter=(node) ;;
   *) echo "Unsupported operation: $OPERATION" >&2; exit 2 ;;
 esac
@@ -57,7 +62,10 @@ image_name="trace-demo-$(tr '[:upper:]' '[:lower:]' <<<"$image_kind")"
 [[ "$("$DOCKER_BIN" image inspect "$image" --format '{{.Id}}')" == "$expected_id" ]] \
   || { echo 'Operations image ID does not match the trusted release record' >&2; exit 1; }
 
+[[ -d "$OBJECTS_ROOT" ]] || { echo "Object storage directory is missing: $OBJECTS_ROOT" >&2; exit 1; }
+
 exec "$DOCKER_BIN" run --rm --init --network "$network" --env-file "$api_env" \
   --read-only --tmpfs /tmp:size=64m,mode=1777 --cap-drop ALL \
+  --volume "$OBJECTS_ROOT:/var/lib/trace/objects" \
   --security-opt no-new-privileges:true --pids-limit 256 --memory 768m --cpus 1 \
   "$image" "${interpreter[@]}" "$script" "$@"

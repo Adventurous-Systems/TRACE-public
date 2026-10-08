@@ -2,7 +2,7 @@
  * Curated product catalogue seeder for the TRACE Workshop showcase.
  *
  * Seeds a fixed set of material passports + active marketplace listings (with
- * real product photos uploaded to MinIO) so the marketplace, passport pages and
+ * real product photos in object storage) so the marketplace, passport pages and
  * impact counter demo against authentic data. Each seeded passport is tagged
  * `customAttributes.seedSource = SEED_TAG` so the whole set can be removed again
  * with `--unseed` (the catalogue data lives here — not in the app — so it can be
@@ -14,23 +14,23 @@
  *
  * Seller: the org of SELLER_EMAIL (default admin@stirlingreuse.com).
  *
- * Usage (env: DATABASE_URL + MINIO_* must point at the target stack):
+ * Usage (env: DATABASE_URL and STORAGE_DIR must point at the target stack):
  *   pnpm --filter @trace/db seed:products -- [--dry-run]
  *   pnpm --filter @trace/db seed:products -- --unseed --yes
  *
- * Images are read from packages/db/data/products/<image>.
+ * Images are read from packages/db/data/products/<image> and stored once each
+ * (scripts/lib/catalogue-photos.ts), however many lots use them.
  */
 import { config as loadEnv } from 'dotenv';
 import path from 'path';
-import { readFileSync } from 'fs';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql as dsql } from 'drizzle-orm';
-import * as Minio from 'minio';
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
 import { resolveTarget } from './lib/guard.js';
 import { CATALOG, SEED_TAG, lotShippingNote } from './lib/catalogue.js';
+import { scriptObjectStore, storeCatalogueImage } from './lib/catalogue-photos.js';
 
 const PACKAGE_ROOT = process.cwd();
 loadEnv({ path: path.resolve(PACKAGE_ROOT, '../../.env') });
@@ -57,70 +57,6 @@ const listingTtlDays: number | null = (() => {
 // This script used to keep its own byte-identical copy; any drift between the
 // two silently turned the demo's "Untampered" result into "Mismatch".
 const computeHash = computePassportHash;
-
-// ── MinIO ─────────────────────────────────────────────────────────────────────
-function makeMinio() {
-  const bucket = process.env['MINIO_BUCKET_PASSPORTS'] ?? 'passports';
-  const publicUrl =
-    // `||`, not `??`: an empty MINIO_PUBLIC_URL (as in .env.example) means
-    // "not set", exactly as the API's env schema treats it. With `??` an empty
-    // value produced relative photo URLs that the browser resolved against
-    // the web app, so every seeded photo was broken on a stock local setup.
-    process.env['MINIO_PUBLIC_URL'] ||
-    `http://${process.env['MINIO_ENDPOINT'] ?? 'localhost'}:${process.env['MINIO_PORT'] ?? '9000'}`;
-  const client = new Minio.Client({
-    endPoint: process.env['MINIO_ENDPOINT'] ?? 'localhost',
-    port: Number(process.env['MINIO_PORT'] ?? 9000),
-    useSSL: (process.env['MINIO_USE_SSL'] ?? 'false') === 'true',
-    accessKey: process.env['MINIO_ACCESS_KEY'] ?? 'minioadmin',
-    secretKey: process.env['MINIO_SECRET_KEY'] ?? 'minioadmin',
-  });
-  return { client, bucket, publicUrl };
-}
-
-/**
- * Create the passports bucket if it is missing, mirroring the API's
- * ensureBucket (packages/api/src/lib/storage.ts:15).
- *
- * Without this the seeder only worked because the API happened to have started
- * first and created the bucket as a side effect. In CI the seed runs BEFORE the
- * API, so the first putObject failed with NoSuchBucket — which is what blocked
- * the demo-integrity gate. It also makes the documented recovery path
- * (unseed + re-seed after a MinIO volume reset) self-sufficient.
- */
-async function ensureBucket(minio: ReturnType<typeof makeMinio>): Promise<void> {
-  const exists = await minio.client.bucketExists(minio.bucket);
-  if (!exists) await minio.client.makeBucket(minio.bucket);
-  if ((process.env['MINIO_PUBLIC_READ'] ?? 'false') === 'true')
-    await minio.client.setBucketPolicy(
-      minio.bucket,
-      JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Effect: 'Allow',
-            Principal: '*',
-            Action: ['s3:GetObject'],
-            Resource: [`arn:aws:s3:::${minio.bucket}/*`],
-          },
-        ],
-      }),
-    );
-  if (!exists) console.log(`  created MinIO bucket "${minio.bucket}"`);
-}
-
-async function uploadImage(
-  minio: ReturnType<typeof makeMinio>,
-  passportId: string,
-  imageFile: string,
-): Promise<string> {
-  const buffer = readFileSync(path.join(PRODUCTS_DIR, imageFile));
-  const key = `passports/${passportId}/photos/${Date.now()}.jpg`;
-  await minio.client.putObject(minio.bucket, key, buffer, buffer.length, {
-    'Content-Type': 'image/jpeg',
-  });
-  return `${minio.publicUrl}/${minio.bucket}/${key}`;
-}
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -185,8 +121,7 @@ async function main() {
       if (!dryRun) return;
     }
 
-    const minio = dryRun ? null : makeMinio();
-    if (minio) await ensureBucket(minio);
+    const store = dryRun ? null : scriptObjectStore();
 
     for (const product of CATALOG) {
       if (dryRun) {
@@ -208,7 +143,11 @@ async function main() {
         .returning();
 
       // Upload photo (excluded from the fingerprint, so order vs hashing is irrelevant).
-      const photoUrl = await uploadImage(minio!, inserted!.id, product.image);
+      const photoUrl = await storeCatalogueImage(
+        db,
+        store!,
+        path.join(PRODUCTS_DIR, product.image),
+      );
       await db
         .update(schema.materialPassports)
         .set({ conditionPhotos: [photoUrl] })

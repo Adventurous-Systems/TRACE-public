@@ -6,7 +6,7 @@ inventories, backup locations, and recovery contacts belong in a private
 operator runbook.
 
 The public demo is independent of every private TRACE environment. It has its
-own PostgreSQL, Redis, MinIO, Thor Solo, Docker network, bind-mounted data directories, credentials,
+own PostgreSQL, Redis, Thor Solo, stored files, Docker network, bind-mounted data directories, credentials,
 backups, and application slots. Never attach it to a private network or copy
 private data into it.
 
@@ -71,8 +71,8 @@ configuration directory:
 
 - the app Compose file and deploy scripts;
 - a mode-600 API environment file containing database, JWT, storage, and Thor
-  configuration; set `MINIO_PUBLIC_READ=true` only for this isolated showcase so
-  passport images can be served through its nginx object route;
+  configuration (stored files: docs/operations/object-storage.md, served by
+  nginx from the store directory at `/minio/`);
 - a mode-600 web environment file containing only `TRACE_ENV`,
   `TRACE_DEPLOYMENT_PROFILE`, and approved `NEXT_PUBLIC_*` values;
 - a mode-600 data-plane environment file;
@@ -130,7 +130,10 @@ modifications. The receipt is root-owned, mode 400, and records the exact local 
 2. Review `deploy/demo-data.env.example`, then start only
    `deploy/compose.demo-data.yml` under the `trace-demo-data` project.
 3. Confirm the PostgreSQL, Redis, MinIO, and Thor health checks pass. Nothing
-   except the MinIO object endpoint binds to a host port.
+   except the MinIO object endpoint binds to a host port. (MinIO stays only as
+   the fallback for files the previous release stored, until it is retired.)
+   Create the store directory `/var/lib/trace-demo/data/objects`, owned by
+   uid 1000.
 4. Run the installed preparation command for the exact reviewed main commit.
    It creates the immutable release directory, builds API, web, and operations images sequentially, rejects all HIGH/CRITICAL runtime findings, and binds image IDs, SBOMs, reports, scanner version, and vulnerability-database timestamp into the receipt.
 5. Run migrations and the base seed, then run `demo-replenish --env demo`
@@ -162,7 +165,8 @@ nginx edit in any private TRACE environment.
 1. Test the reviewed public `main` SHA in CI and a clean-room clone.
 2. Run the installed source-release preparation command. Verify the immutable
    source and local image receipt, then scan the three exact image IDs.
-3. Create and validate PostgreSQL and MinIO recovery points. Restore the
+3. Create and validate PostgreSQL and stored-file recovery points (a snapshot
+   by `ops/backup_objects.sh`). Restore the
    PostgreSQL backup into a disposable database; merely listing it is not a
    restore test.
 4. Run only expand/contract-compatible migrations through the operations image.
@@ -259,15 +263,17 @@ is ineligible for this procedure.
 
 Use `ops/backup_db.sh` with explicit Compose, environment, and backup paths. It
 creates mode-private custom-format dumps, validates them, applies retention, and
-can notify a dead-man's-switch monitor. Back up MinIO objects and configuration
-at the same release boundary.
+can notify a dead-man's-switch monitor. `ops/backup_objects.sh` snapshots the
+stored files as hard links, nightly through
+`deploy/systemd/trace-demo-backup-objects.timer`; take one at the same release
+boundary.
 
 Use `ops/restore_db.sh` only against the intended isolated target. It refuses to
 run without `--yes` and creates a validated safety dump in an explicit durable
 directory before modifying data. After restore, run migrations and catalogue
 verification through the operations image before routing traffic.
 
-Maintain encrypted off-host PostgreSQL and MinIO copies. Schedule disposable
+Maintain encrypted off-host PostgreSQL and stored-file copies. Schedule disposable
 restore drills and record recovery point and recovery time results.
 
 ## Monitoring

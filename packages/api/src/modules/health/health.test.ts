@@ -63,7 +63,8 @@ describe('GET /health', () => {
     expect(body.data.checks).toEqual({
       database: expect.any(Boolean),
       redis: expect.any(Boolean),
-      minio: expect.any(Boolean),
+      storage: expect.any(Boolean),
+      storageHasRoom: expect.any(Boolean),
       thor: expect.any(Boolean),
     });
   });
@@ -73,7 +74,7 @@ describe('GET /health', () => {
   it('does not gate readiness on the chain', async () => {
     const res = await app.inject({ method: 'GET', url: '/health/ready' });
     const { checks } = res.json<{ data: { checks: Record<string, boolean> } }>().data;
-    const coreUp = checks['database'] && checks['redis'] && checks['minio'];
+    const coreUp = checks['database'] && checks['redis'] && checks['storage'];
     expect(res.statusCode).toBe(coreUp ? 200 : 503);
   });
 });

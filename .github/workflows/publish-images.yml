@@ -161,7 +161,6 @@ jobs:
         run: |
           set -euo pipefail
           network="trace-release-$VERIFY_SUFFIX"
-          minio="trace-release-minio-$VERIFY_SUFFIX"
           api="trace-release-api-$VERIFY_SUFFIX"
           web="trace-release-web-$VERIFY_SUFFIX"
           api_image="$(sed -n 's/^API_IMAGE=//p' /tmp/trace-release-images.txt)"
@@ -169,24 +168,6 @@ jobs:
           ops_image="$(sed -n 's/^OPS_IMAGE=//p' /tmp/trace-release-images.txt)"
 
           docker network create "$network"
-          docker run --detach --name "$minio" --network "$network" \
-            --read-only --tmpfs /tmp:size=64m --tmpfs /data:size=128m \
-            --cap-drop ALL --security-opt no-new-privileges \
-            --env MINIO_ROOT_USER=traceverify \
-            --env MINIO_ROOT_PASSWORD=trace-verify-disposable-password \
-            ghcr.io/adventurous-systems/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2 \
-            server /data
-          for attempt in $(seq 1 30); do
-            if docker exec "$minio" curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
-              break
-            fi
-            if test "$attempt" = 30; then
-              docker logs "$minio"
-              exit 1
-            fi
-            sleep 2
-          done
-
           docker run --detach --name "$api" --network "$network" \
             --read-only --tmpfs /tmp:size=64m,uid=1000,gid=1000,mode=0700 \
             --cap-drop ALL --security-opt no-new-privileges \
@@ -196,9 +177,6 @@ jobs:
             --env JWT_SECRET=trace-release-verification-only \
             --env DATABASE_URL=postgresql://trace:trace@unused:5432/trace \
             --env REDIS_URL=redis://unused:6379 \
-            --env MINIO_ENDPOINT="$minio" --env MINIO_PORT=9000 \
-            --env MINIO_ACCESS_KEY=traceverify \
-            --env MINIO_SECRET_KEY=trace-verify-disposable-password \
             --env WEB_URL=http://localhost:3000 --env API_URL=http://localhost:3001 \
             "$api_image"
           for attempt in $(seq 1 30); do
@@ -255,8 +233,7 @@ jobs:
         run: |
           docker rm --force \
             "trace-release-web-$VERIFY_SUFFIX" \
-            "trace-release-api-$VERIFY_SUFFIX" \
-            "trace-release-minio-$VERIFY_SUFFIX" 2>/dev/null || true
+            "trace-release-api-$VERIFY_SUFFIX" 2>/dev/null || true
           docker network rm "trace-release-$VERIFY_SUFFIX" 2>/dev/null || true
 
       - name: Remove registry credentials

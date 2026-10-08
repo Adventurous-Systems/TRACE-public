@@ -54,11 +54,6 @@ ensure_chain_identity() {
   fi
   {
     echo 'services:'
-    if [[ -n "${TRACE_LOCAL_MINIO_IMAGE:-}" ]]; then
-      # For hosts that cannot pull the pinned MinIO mirror.
-      echo '  minio:'
-      echo "    image: $TRACE_LOCAL_MINIO_IMAGE"
-    fi
     echo '  thor-solo:'
     echo '    volumes:'
     echo '      - thor-data:/home/thor'
@@ -87,7 +82,11 @@ write_api_env() {
     "FEE_DELEGATION_REQUIRED=true"
     "DEPLOYER_PRIVATE_KEY=$key"
     "FEE_DELEGATOR_PRIVATE_KEY=$key"
-    "MINIO_PUBLIC_READ=true"
+    # Stored files live in the stack's own directory; with no nginx in front,
+    # the API serves them at /minio/, the path a deployment's nginx uses.
+    "STORAGE_DIR=$STATE/objects"
+    "STORAGE_SERVE=true"
+    "STORAGE_PUBLIC_URL=http://localhost:$API_PORT/minio"
     # One rehearsal makes more requests in a minute than a visitor's limit.
     "RATE_LIMIT_MAX=5000"
     "API_PORT=$API_PORT"
@@ -171,6 +170,7 @@ start_one() {
 
 start() {
   write_api_env
+  mkdir -p "$STATE/objects"
   start_one api "$repo_root/packages/api" node dist/index.js
   start_one worker "$repo_root/packages/api" node dist/worker.js
   start_one web "$repo_root/packages/web" node node_modules/next/dist/bin/next start -p "$WEB_PORT"
@@ -242,6 +242,32 @@ check_invariants() {
   (load_api_env; cd "$repo_root" && pnpm -s --filter @trace/db check:invariants -- --env local "$@")
 }
 
+# storage-import into the upgrade rehearsal's own store, from MinIO directly.
+upgrade_storage_import() {
+  local url=$1 objects=$2 minio_port=$3
+  (set -a; # shellcheck disable=SC1090
+   source "$ENV_FILE"; set +a
+   export DATABASE_URL="$url" TRACE_ENV=local STORAGE_DIR="$objects" \
+     STORAGE_PUBLIC_URL="http://localhost:$API_PORT/minio"
+   cd "$repo_root" && pnpm -s --filter @trace/db storage:import -- --env local --yes \
+     --origin "http://localhost:${minio_port:-19000}") 2>&1 | sed 's/^/    /'
+}
+
+# Every file a passport refers to has a ledger row (and so a file on disk).
+upgrade_storage_check() {
+  local db=$1 missing
+  missing=$(compose exec -T postgres psql -U trace -d "$db" -tA -c "
+    with refs as (
+      select qr_code_url as u from material_passports where qr_code_url is not null
+      union
+      select jsonb_array_elements_text(coalesce(condition_photos, '[]'::jsonb)) from material_passports
+    )
+    select count(*) from refs where refs.u like '%/minio/%' and not exists (
+      select 1 from stored_objects s where refs.u like '%/minio/' || s.bucket || '/' || s.key)")
+  echo "    /minio/ files referenced but not in the file store: $missing"
+  [[ "$missing" == 0 ]]
+}
+
 # Build the given release in a scratch worktree and database, give it orders
 # in every state the old model could leave, then apply this checkout's
 # migrations to it and check the result. Nothing here touches the stack's own
@@ -256,6 +282,17 @@ upgrade_rehearsal() {
   local failed=0
 
   say "upgrade rehearsal: $base → $(current_sha)"
+  # The previous release stores its files in MinIO (R4), with URLs shaped as
+  # a deployment's: <origin>/minio/<bucket>/<key>.
+  compose up -d --wait --wait-timeout 120 minio >>"$STATE/compose.log" 2>&1 \
+    || die "MinIO did not become healthy; see $STATE/compose.log"
+  local minio_port objects="$STATE/upgrade-objects"
+  minio_port=$(env_value MINIO_HOST_PORT)
+  local -a old_release_env=(
+    "MINIO_PUBLIC_URL=http://localhost:$API_PORT/minio" "MINIO_PUBLIC_READ=true"
+  )
+  rm -rf -- "${objects:?}"
+  mkdir -p "$objects"
   "${psql[@]}" -d trace -c "drop database if exists $db" >/dev/null
   "${psql[@]}" -d trace -c "create database $db" >/dev/null
   git -C "$repo_root" worktree remove --force "$work" >/dev/null 2>&1 || true
@@ -266,7 +303,7 @@ upgrade_rehearsal() {
   say "building and seeding $base"
   (set -a; # shellcheck disable=SC1090
    source "$ENV_FILE"; set +a
-   export DATABASE_URL="$url" TRACE_ENV=local
+   export DATABASE_URL="$url" TRACE_ENV=local "${old_release_env[@]}"
    cd "$work"
    pnpm install --frozen-lockfile --prefer-offline \
      && pnpm --filter @trace/core --filter @trace/db build \
@@ -292,19 +329,30 @@ upgrade_rehearsal() {
   say 'checking what the migrations did with that data'
   "${psql[@]}" -d "$db" -tA < "$fixtures/after.sql" | sed 's/^/    /' || failed=1
 
+  # What a deployment runs once after the deploy: copy the old release's files
+  # out of MinIO into the file store, recording each.
+  say "copying the $base release's files out of MinIO (storage-import)"
+  upgrade_storage_import "$url" "$objects" "$minio_port" || failed=1
+  upgrade_storage_check "$db" || failed=1
+
   # The previous release serves traffic while a deploy migrates, and is the
   # rollback target afterwards, so it must still work on the new schema.
   # Replenishment makes it create lots, the write most likely to break.
   say "the $base release creating lots on the new schema"
   if (set -a; # shellcheck disable=SC1090
       source "$ENV_FILE"; set +a
-      export DATABASE_URL="$url" TRACE_ENV=local
+      export DATABASE_URL="$url" TRACE_ENV=local "${old_release_env[@]}"
       cd "$work" && pnpm --filter @trace/db demo:replenish -- --env local --yes) \
       >"$STATE/upgrade-old-release.log" 2>&1; then
     (set -a; # shellcheck disable=SC1090
      source "$ENV_FILE"; set +a
      export DATABASE_URL="$url" TRACE_ENV=local
      cd "$repo_root" && pnpm -s --filter @trace/db check:invariants -- --env local) || failed=1
+    # A rollback window: what the old release stored in MinIO is picked up by
+    # running the import again.
+    say 'storage-import again, for the files the old release just stored'
+    upgrade_storage_import "$url" "$objects" "$minio_port" || failed=1
+    upgrade_storage_check "$db" || failed=1
   else
     echo "    the $base release failed on the new schema; see $STATE/upgrade-old-release.log"
     failed=1
@@ -315,6 +363,7 @@ upgrade_rehearsal() {
 
   git -C "$repo_root" worktree remove --force "$work" >/dev/null 2>&1 || true
   "${psql[@]}" -d trace -c "drop database if exists $db" >/dev/null
+  rm -rf -- "${objects:?}"
   return "$failed"
 }
 
@@ -382,12 +431,9 @@ case "$command" in
     need_env_file
     build
     ensure_chain_identity
-    say 'starting postgres, redis, minio and thor-solo'
-    if ! compose up -d --wait --wait-timeout 180 postgres redis minio thor-solo >"$STATE/compose.log" 2>&1; then
-      grep -q unauthorized "$STATE/compose.log" \
-        && echo 'The MinIO mirror needs a registry login (docs/operations/minio-image-mirror.md), or set TRACE_LOCAL_MINIO_IMAGE to a local MinIO image.' >&2
-      die "containers did not become healthy; see $STATE/compose.log"
-    fi
+    say 'starting postgres, redis and thor-solo'
+    compose up -d --wait --wait-timeout 180 postgres redis thor-solo >"$STATE/compose.log" 2>&1 \
+      || die "containers did not become healthy; see $STATE/compose.log"
     write_api_env
     deploy_registry
     migrate
