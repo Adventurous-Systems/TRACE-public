@@ -374,6 +374,8 @@ packages/web/src/lib/order-quantity.test.ts
 packages/web/src/lib/order-quantity.ts
 packages/web/src/lib/orders.test.ts
 packages/web/src/lib/orders.ts
+packages/web/src/lib/passport-details.test.ts
+packages/web/src/lib/passport-details.ts
 packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
 packages/web/src/lib/register-wizard.test.ts

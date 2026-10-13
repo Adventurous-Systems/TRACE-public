@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { quality, type InspectionMaterial, type QualityReportSummary } from '@/lib/api-client';
 import { categoryLabel } from '@/lib/categories';
 import { formatDate } from '@/lib/format';
+import { dimensionsLine } from '@/lib/passport-details';
 import { reportedBy } from '@/lib/inspection';
 import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 import { inspectionStatus } from './MaterialPicker';
@@ -20,16 +21,6 @@ const STATUS_LABELS: Record<string, string> = {
   installed: 'Installed',
   decommissioned: 'Decommissioned',
 };
-
-function dimensionsLine(d: InspectionMaterial['dimensions']): string | null {
-  if (!d) return null;
-  const size = [d.length, d.width, d.height].filter((n) => n !== undefined && n !== null);
-  const parts = [
-    size.length ? `${size.join(' × ')} ${d.unit ?? ''}`.trim() : null,
-    d.weight ? `${d.weight} ${d.weightUnit ?? 'kg'}` : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(' · ') : null;
-}
 
 /**
  * The material a report is being written about, kept in view while the

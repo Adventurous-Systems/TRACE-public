@@ -35,26 +35,29 @@ export function formatUkDay(value: DateInput): string {
   return date ? UK_DAY.format(date) : '';
 }
 
-/** "1 Jun 2026", or an empty string for a missing/invalid date. */
+/**
+ * "1 Jun 2026", or an empty string for a missing/invalid date. The UK day, as
+ * formatUkDay: a server renders in UTC and a browser in its own zone, so a
+ * date without a zone could differ between the two (React's hydration error
+ * #418 on the public passport, 2026-10-13 audit), and between readers.
+ */
 export function formatDate(value: DateInput): string {
-  const date = toDate(value);
-  return date
-    ? date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '';
+  return formatUkDay(value);
 }
 
-/** "29 Sep 2026, 15:41", or an empty string for a missing/invalid date. */
+const UK_DATE_TIME = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: BUSINESS_TIME_ZONE,
+});
+
+/** "29 Sep 2026, 15:41" in UK time, or an empty string for a missing/invalid date. */
 export function formatDateTime(value: DateInput): string {
   const date = toDate(value);
-  return date
-    ? date.toLocaleString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : '';
+  return date ? UK_DATE_TIME.format(date) : '';
 }
 
 const DECONSTRUCTION_LABELS: Record<DeconstructionMethod, string> = {
