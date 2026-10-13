@@ -97,6 +97,18 @@ export const INSPECTOR_ROLE_LABELS: Record<InspectionSource, string> = {
 
 export const DECONSTRUCTION_METHODS = ['selective', 'mechanical', 'manual', 'mixed'] as const;
 
+// Where a material comes from (owner decision, 2026-10-13): reclaimed from a
+// building, unused surplus stock, or a new product made for reuse or from
+// recycled material. Declared by the seller; not in the fingerprint.
+export const PASSPORT_ORIGINS = ['reclaimed', 'surplus', 'new'] as const;
+export type PassportOrigin = (typeof PASSPORT_ORIGINS)[number];
+
+export const PASSPORT_ORIGIN_LABELS: Record<PassportOrigin, string> = {
+  reclaimed: 'Reclaimed',
+  surplus: 'Surplus (unused stock)',
+  new: 'New circular product',
+};
+
 export const USER_ROLES = [
   'platform_admin',
   'hub_admin',

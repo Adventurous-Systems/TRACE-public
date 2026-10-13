@@ -507,6 +507,7 @@ function buildInsertValues(input: CreatePassportInput): InsertRow {
     ceMarking: input.ceMarking ?? false,
     declarationOfPerformance: input.declarationOfPerformance ?? null,
     harmonisedStandard: input.harmonisedStandard ?? null,
+    origin: input.origin ?? null,
     previousBuildingId: input.previousBuildingId ?? null,
     deconstructionDate: input.deconstructionDate ?? null,
     deconstructionMethod: input.deconstructionMethod ?? null,
@@ -559,6 +560,7 @@ function buildUpdateValues(input: UpdatePassportInput): InsertRow {
   if (input.declarationOfPerformance !== undefined)
     set['declarationOfPerformance'] = input.declarationOfPerformance;
   if (input.harmonisedStandard !== undefined) set['harmonisedStandard'] = input.harmonisedStandard;
+  if (input.origin !== undefined) set['origin'] = input.origin;
   if (input.previousBuildingId !== undefined) set['previousBuildingId'] = input.previousBuildingId;
   if (input.deconstructionDate !== undefined) set['deconstructionDate'] = input.deconstructionDate;
   if (input.deconstructionMethod !== undefined)
