@@ -144,16 +144,22 @@ export function canCreateListing(user: StoredUser | null): boolean {
 }
 
 // Mirrors GET /api/v1/quality/reports/mine — .../quality.routes.ts:53
-// (authorize inspector|hub_admin|platform_admin — note hub_staff is NOT
-// included, even though it shares the dashboard nav's "else" branch with
-// this set; that nav/API mismatch predates this predicate and is unrelated
-// to it).
+// (authorize inspector|hub_admin|platform_admin; hub_staff is not included,
+// so the nav gives hub staff no Quality link).
 export function canViewQuality(user: StoredUser | null): boolean {
   return !!user && ['inspector', 'hub_admin', 'platform_admin'].includes(user.role);
 }
 
-// Mirrors the platform-admin-only audit routes — .../audit.routes.ts:70,80
-// — and matches DashboardLayout's existing admin-nav condition.
+// Mirrors the platform-admin-only audit and access-request routes —
+// .../audit.routes.ts and .../access-request.routes.ts. It let hub admins in
+// too, whose Activity page then showed nothing but two 403s (audit,
+// 2026-10-13).
 export function canViewAdmin(user: StoredUser | null): boolean {
+  return isPlatformAdmin(user);
+}
+
+// Mirrors GET /api/v1/feedback — .../feedback.routes.ts (authorize
+// platform_admin|hub_admin).
+export function canViewFeedback(user: StoredUser | null): boolean {
   return !!user && (user.role === 'platform_admin' || user.role === 'hub_admin');
 }

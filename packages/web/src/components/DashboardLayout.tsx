@@ -4,19 +4,11 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { getUser, clearSession, type StoredUser } from '@/lib/auth';
+import { navBreakpoint, navLinksFor, type NavLink } from '@/lib/nav';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/Logo';
 import FeedbackWidget from '@/components/FeedbackWidget';
 import { useOrdersSummary } from '@/lib/use-orders-summary';
-
-interface NavLink {
-  href: string;
-  label: string;
-  /** How many things here wait for this person. */
-  count?: number;
-  /** Something here changed since they last looked. */
-  changed?: boolean;
-}
 
 /** A link's label, with what waits behind it. */
 function NavLabel({ link }: { link: NavLink }) {
@@ -69,52 +61,7 @@ export default function DashboardLayout({ children }: Props) {
 
   if (!user) return null;
 
-  let navLinks: NavLink[];
-  if (user.role === 'buyer') {
-    navLinks = [
-      { href: '/marketplace', label: 'Marketplace' },
-      { href: '/transactions', label: 'Orders' },
-      { href: '/access-request', label: 'Seller access' },
-      { href: '/scan', label: 'Scan QR' },
-    ];
-  } else if (user.role === 'supplier') {
-    // Workshop sellers: create + sell materials. No hub-admin or quality tooling.
-    navLinks = [
-      { href: '/passports', label: 'Passports' },
-      { href: '/listings', label: 'Listings' },
-      { href: '/transactions', label: 'Orders' },
-      { href: '/marketplace', label: 'Marketplace' },
-      { href: '/scan', label: 'Scan QR' },
-    ];
-  } else if (user.role === 'inspector') {
-    // An inspector audits other organisations' materials and holds none: no
-    // passports, listings or orders of their own to show.
-    navLinks = [
-      { href: '/dashboard', label: 'Dashboard' },
-      { href: '/quality', label: 'Quality reports' },
-      { href: '/marketplace', label: 'Marketplace' },
-      { href: '/scan', label: 'Scan QR' },
-    ];
-  } else {
-    navLinks = [
-      { href: '/dashboard', label: 'Dashboard' },
-      { href: '/passports', label: 'Passports' },
-      { href: '/listings', label: 'Listings' },
-      { href: '/transactions', label: 'Orders' },
-      { href: '/quality', label: 'Quality' },
-      { href: '/scan', label: 'Scan QR' },
-    ];
-  }
-
-  if (user.role === 'platform_admin') {
-    // The platform admin resolves orders with a reported problem.
-    navLinks.push({ href: '/admin/flagged-orders', label: 'Flagged orders' });
-  }
-  if (user.role === 'platform_admin' || user.role === 'hub_admin') {
-    navLinks.push({ href: '/admin/access-requests', label: 'Access Requests' });
-    navLinks.push({ href: '/admin/feedback', label: 'Feedback' });
-    navLinks.push({ href: '/admin/activity', label: 'Activity & VTHO' });
-  }
+  let navLinks = navLinksFor(user);
 
   if (orders) {
     navLinks = navLinks.map((link) =>
@@ -126,13 +73,14 @@ export default function DashboardLayout({ children }: Props) {
     );
   }
 
-  // Nine or more links do not fit the bar below 1280px, so an account with
-  // that many keeps the menu button up to there. Its email never fits beside
-  // them (the bar is at most 1280px wide), so it moves to Sign out's tooltip.
-  // (It was ten links, with the email from 1536px: the hub admin's nine links
-  // ran into the email at 1366px, and the platform admin's at 1536px; owner's
-  // test O3.)
-  const manyLinks = navLinks.length > 8;
+  // Where the links fit in the bar (lib/nav.ts). With nine or more, the
+  // email never fits beside them (the bar is at most 1280px wide), so it
+  // moves to Sign out's tooltip.
+  const breakpoint = navBreakpoint(navLinks.length);
+  const manyLinks = breakpoint === 'xl';
+  // Whole class names, so Tailwind finds them.
+  const menuHidden = { md: 'md:hidden', lg: 'lg:hidden', xl: 'xl:hidden' }[breakpoint];
+  const barShown = { md: 'md:flex', lg: 'lg:flex', xl: 'xl:flex' }[breakpoint];
 
   const homeHref =
     user.role === 'buyer' ? '/marketplace' : user.role === 'supplier' ? '/passports' : '/dashboard';
@@ -148,7 +96,7 @@ export default function DashboardLayout({ children }: Props) {
               aria-expanded={mobileNavOpen}
               data-testid="mobile-nav-toggle"
               onClick={() => setMobileNavOpen((open) => !open)}
-              className={`${manyLinks ? 'xl:hidden' : 'md:hidden'} -ml-1 p-2 rounded-md text-gray-600 hover:bg-gray-100`}
+              className={`${menuHidden} -ml-1 p-2 rounded-md text-gray-600 hover:bg-gray-100`}
             >
               <svg
                 width="20"
@@ -176,7 +124,7 @@ export default function DashboardLayout({ children }: Props) {
             <Link href={homeHref} className="flex shrink-0 items-center" aria-label="TRACE home">
               <Logo className="h-7" />
             </Link>
-            <nav className={`hidden ${manyLinks ? 'xl:flex' : 'md:flex'} items-center gap-1`}>
+            <nav className={`hidden ${barShown} items-center gap-1`}>
               {navLinks.map((l) => (
                 <Link
                   key={l.href}
@@ -213,7 +161,7 @@ export default function DashboardLayout({ children }: Props) {
         {mobileNavOpen && (
           <nav
             data-testid="mobile-nav"
-            className={`${manyLinks ? 'xl:hidden' : 'md:hidden'} border-t bg-white px-2 py-2 space-y-0.5`}
+            className={`${menuHidden} border-t bg-white px-2 py-2 space-y-0.5`}
           >
             {navLinks.map((l) => (
               <Link

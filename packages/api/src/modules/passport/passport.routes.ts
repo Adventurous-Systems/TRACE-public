@@ -6,7 +6,7 @@ import {
   TraceError,
 } from '@trace/core';
 import { env } from '../../env.js';
-import { authenticate, authorize } from '../../middleware/auth.js';
+import { authenticate, authorize, optionalUser } from '../../middleware/auth.js';
 import { recordAuditEvent } from '../../lib/audit.js';
 import { formatMb } from '../../lib/storage.js';
 import {
@@ -15,7 +15,7 @@ import {
   listPassports,
   getPassportStats,
   updatePassport,
-  verifyPassport,
+  getPassportVerification,
   verifyPassportIntegrity,
   getPassportHistory,
   uploadPassportPhoto,
@@ -88,18 +88,11 @@ export async function passportRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── GET /api/v1/passports/:id ─────────────────────────────────────────────
-  // Public — anyone can view an active passport (drafts require org membership)
+  // Public: anyone reads the public fields of a passport that is not a draft;
+  // its organisation and the platform read the whole record. A draft is "not
+  // found" to anyone outside its organisation, on every public route below.
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    // Optionally extract user if authenticated
-    let requestingOrgId: string | undefined;
-    try {
-      await request.jwtVerify();
-      requestingOrgId = request.user.organisationId;
-    } catch {
-      // unauthenticated — that's fine for public passports
-    }
-
-    const passport = await getPassportById(request.params.id, requestingOrgId);
+    const passport = await getPassportById(request.params.id, await optionalUser(request));
     return reply.send({ success: true, data: passport });
   });
 
@@ -139,28 +132,31 @@ export async function passportRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /api/v1/passports/:id/verify ─────────────────────────────────────
   // Public — returns passport with blockchain verification status
   app.get<{ Params: { id: string } }>('/:id/verify', async (request, reply) => {
-    const passport = await verifyPassport(request.params.id);
+    const passport = await getPassportVerification(request.params.id, await optionalUser(request));
     return reply.send({ success: true, data: passport });
   });
 
   // ── GET /api/v1/passports/:id/verify-integrity ────────────────────────────
   // Public — recompute the canonical fingerprint and compare to the stored one
   app.get<{ Params: { id: string } }>('/:id/verify-integrity', async (request, reply) => {
-    const result = await verifyPassportIntegrity(request.params.id);
+    const result = await verifyPassportIntegrity(request.params.id, await optionalUser(request));
     return reply.send({ success: true, data: result });
   });
 
   // ── GET /api/v1/passports/:id/certificate ────────────────────────────────
   // Public — certificate-oriented blockchain verification metadata
   app.get<{ Params: { id: string } }>('/:id/certificate', async (request, reply) => {
-    const certificate = await getPassportCertificate(request.params.id);
+    const certificate = await getPassportCertificate(
+      request.params.id,
+      await optionalUser(request),
+    );
     return reply.send({ success: true, data: certificate });
   });
 
   // ── GET /api/v1/passports/:id/history ────────────────────────────────────
-  // EPCIS event history for a passport
+  // EPCIS event history for a passport (public view: no actors, buyers or amounts)
   app.get<{ Params: { id: string } }>('/:id/history', async (request, reply) => {
-    const events = await getPassportHistory(request.params.id);
+    const events = await getPassportHistory(request.params.id, await optionalUser(request));
     return reply.send({ success: true, data: events });
   });
 

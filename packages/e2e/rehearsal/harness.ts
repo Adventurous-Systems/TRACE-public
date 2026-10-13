@@ -198,7 +198,8 @@ export class Rehearsal {
     name: string,
     who: DemoPersonaKey | { email: string; password: string } | null,
     run: (journey: Journey) => Promise<void>,
-    options: { mobile?: boolean } = {},
+    /** timezoneId: a reader far from the UK, so a date formatted without a zone shows up. */
+    options: { mobile?: boolean; timezoneId?: string } = {},
   ): Promise<void> {
     this.browser ??= await chromium.launch();
     console.log(`\n── ${name}`);
@@ -213,6 +214,7 @@ export class Rehearsal {
     const context = await this.browser.newContext({
       viewport: options.mobile ? { width: 375, height: 812 } : { width: 1366, height: 900 },
       storageState,
+      ...(options.timezoneId ? { timezoneId: options.timezoneId } : {}),
     });
     const journey = new Journey(this, name, context, await context.newPage());
     try {

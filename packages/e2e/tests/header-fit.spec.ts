@@ -2,12 +2,13 @@ import { test, expect, type Page } from '@playwright/test';
 import { statePath, type Role } from '../fixtures/accounts';
 
 /**
- * The accounts with the most navigation links: at common laptop widths the
- * header's parts must not run into each other (owner's test O3: at 1366px
- * the hub admin's email ran into "Activity & VTHO").
+ * The accounts with the most navigation links: at tablet and laptop widths
+ * the header's parts must not run into each other (owner's test O3: at
+ * 1366px the hub admin's email ran into "Activity & VTHO"). The links move
+ * into the bar from md, lg or xl, by how many there are (lib/nav.ts).
  */
-const WIDTHS = [1280, 1366, 1536];
-const ROLES: Role[] = ['hubAdmin', 'platformAdmin'];
+const WIDTHS = [768, 1024, 1280, 1366, 1536];
+const ROLES: Role[] = ['hubStaff', 'hubAdmin', 'platformAdmin'];
 
 async function visibleBox(page: Page, selector: string) {
   const el = page.locator(selector).first();

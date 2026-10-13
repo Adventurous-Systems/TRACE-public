@@ -45,6 +45,7 @@ const FIXTURE: MaterialPassport = {
   ceMarking: false,
   declarationOfPerformance: null,
   harmonisedStandard: null,
+  origin: null,
   previousBuildingId: null,
   deconstructionDate: null,
   deconstructionMethod: null,
@@ -147,6 +148,13 @@ describe('canonical passport fingerprint', () => {
       conditionPhotos: ['https://example.test/passports/x/photos/1.jpg'],
     };
     expect(computePassportHash(withPhoto)).toBe(computePassportHash(FIXTURE));
+  });
+
+  it('excludes origin, so declaring where a material comes from does not break the fingerprint', () => {
+    // Migration 0014 added it without a rehash; the catalogue correction that
+    // sets it on live passports relies on this (no re-anchor).
+    const declared: MaterialPassport = { ...FIXTURE, origin: 'new' };
+    expect(computePassportHash(declared)).toBe(computePassportHash(FIXTURE));
   });
 
   it('excludes updatedAt, so touching a row does not break the fingerprint', () => {

@@ -10,7 +10,7 @@ import {
   type AccessRequestOrganisation,
   type AccessRequestReview,
 } from '@/lib/api-client';
-import { getSession, type StoredUser } from '@/lib/auth';
+import { getSession, isPlatformAdmin, type StoredUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { formatDateTime } from '@/lib/format';
 
@@ -74,7 +74,7 @@ export default function AdminAccessRequestsPage() {
   }, []);
 
   const loadData = useCallback(async () => {
-    if (!token || !user || user.role !== 'platform_admin' || loadingRef.current) {
+    if (!token || !isPlatformAdmin(user) || loadingRef.current) {
       return;
     }
 
@@ -117,7 +117,7 @@ export default function AdminAccessRequestsPage() {
       return;
     }
 
-    if (user.role !== 'platform_admin') {
+    if (!isPlatformAdmin(user)) {
       setLoading(false);
       return;
     }
@@ -411,7 +411,7 @@ export default function AdminAccessRequestsPage() {
     }
   }
 
-  if (!user || user.role !== 'platform_admin') {
+  if (!isPlatformAdmin(user)) {
     if (!sessionReady) {
       return null;
     }

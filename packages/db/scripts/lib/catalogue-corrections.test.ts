@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { UNITS_OF_MEASURE } from '@trace/core';
 import { CATALOG, SEED_TAG, lotShippingNote } from './catalogue.js';
+import type { MaterialPassport } from '../../drizzle/schema.js';
 import {
   catalogueCorrections,
+  fingerprintChanges,
   isCatalogueLot,
   lotCorrections,
   SUPERSEDED_CONDITION_NOTES,
@@ -21,6 +23,9 @@ function lot(overrides: Record<string, unknown> = {}) {
     categoryL2: 'channels',
     reclaimedBy: 'Reconditioning partners',
     unitOfMeasure: 'each',
+    origin: 'surplus',
+    deconstructionMethod: null,
+    deconstructionDate: null,
     ...overrides,
   };
 }
@@ -85,6 +90,9 @@ function brickLot(conditionNotes: string | null) {
     categoryL2: bricks.passport.categoryL2 ?? null,
     reclaimedBy: bricks.passport.reclaimedBy ?? null,
     unitOfMeasure: bricks.passport.unitOfMeasure ?? null,
+    origin: 'reclaimed',
+    deconstructionMethod: 'selective',
+    deconstructionDate: new Date('2026-06-01T00:00:00.000Z'),
     conditionNotes,
   };
 }
@@ -176,4 +184,130 @@ test('closed lots are history and are never corrected', () => {
 
 test('a minimum is never set above the lot size', () => {
   assert.deepEqual(lotCorrections(liveLot({ quantity: 60, shippingOptions: [] }), kbriq), {});
+});
+
+// ── Origin, the surplus aluminium lot, and fingerprints (owner, 2026-10-13) ──
+
+test('every catalogue product says where it comes from', () => {
+  const origins = Object.fromEntries(CATALOG.map((p) => [p.key, p.passport.origin]));
+  assert.deepEqual(origins, {
+    'kbriq-medero-dark-grey': 'new',
+    'sisalwool-100': 'new',
+    'reclaimed-aerated-concrete-blocks': 'reclaimed',
+    'reclaimed-concrete-lintels': 'reclaimed',
+    'reclaimed-facing-bricks': 'reclaimed',
+    'reclaimed-prefabricated-staircase': 'reclaimed',
+    'reclaimed-aluminium-stud-walling': 'surplus',
+  });
+});
+
+test('surplus stock was never deconstructed, and is not named "Reclaimed"', () => {
+  assert.equal(studWalling.passport.productName, 'Surplus Aluminium Stud Walling');
+  assert.equal(studWalling.passport.deconstructionMethod, null);
+  assert.equal(studWalling.passport.deconstructionDate, null);
+});
+
+test('an aluminium lot seeded as reclaimed is renamed, keeps its lot number, and loses its deconstruction', () => {
+  const old = lot({
+    productName: 'Reclaimed Aluminium Stud Walling — Demo Lot 003',
+    categoryL1: 'partitions-linings',
+    categoryL2: 'metal-stud-framing',
+    origin: null,
+    deconstructionMethod: 'selective',
+    deconstructionDate: new Date('2026-06-01T00:00:00.000Z'),
+  });
+  assert.deepEqual(catalogueCorrections(old, studWalling), {
+    productName: 'Surplus Aluminium Stud Walling — Demo Lot 003',
+    origin: 'surplus',
+    deconstructionMethod: null,
+    deconstructionDate: null,
+  });
+});
+
+test('the original aluminium passport, seeded under the old name, is still the product, and renamed', () => {
+  const original = lot({
+    productName: 'Reclaimed Aluminium Stud Walling',
+    customAttributes: { seedSource: SEED_TAG },
+    categoryL1: 'partitions-linings',
+    categoryL2: 'metal-stud-framing',
+  });
+  assert.equal(isCatalogueLot(original, studWalling), true);
+  assert.deepEqual(catalogueCorrections(original, studWalling), {
+    productName: 'Surplus Aluminium Stud Walling',
+    // So a release from before the rename still finds it by key.
+    customAttributes: { seedSource: SEED_TAG, catalogueKey: studWalling.key },
+  });
+  // A visitor's passport of that name is not the catalogue's.
+  assert.equal(isCatalogueLot({ ...original, customAttributes: {} }, studWalling), false);
+});
+
+test('a name nobody superseded is never changed', () => {
+  const current = lot({
+    productName: 'Surplus Aluminium Stud Walling — Demo Lot 004',
+    categoryL1: 'partitions-linings',
+    categoryL2: 'metal-stud-framing',
+  });
+  assert.deepEqual(catalogueCorrections(current, studWalling), {});
+});
+
+test('a reclaimed lot gets its origin, and its deconstruction date is never touched', () => {
+  const before = { ...brickLot(bricks.passport.conditionNotes!), origin: null };
+  assert.deepEqual(catalogueCorrections(before, bricks), { origin: 'reclaimed' });
+  const later = { ...before, deconstructionDate: new Date('2025-01-01T00:00:00.000Z') };
+  assert.deepEqual(catalogueCorrections(later, bricks), { origin: 'reclaimed' });
+});
+
+function row(overrides: Partial<MaterialPassport> = {}): MaterialPassport {
+  return {
+    id: '00000000-0000-4000-8000-000000000010',
+    organisationId: '00000000-0000-4000-8000-000000000020',
+    productName: 'Reclaimed Aluminium Stud Walling — Demo Lot 003',
+    categoryL1: 'partitions-linings',
+    categoryL2: 'metal-stud-framing',
+    gtin: null,
+    serialNumber: 'TRACE-DEMO-RECLAIMED-ALUMINIUM-STUD-WALLING-003',
+    materialComposition: [{ material: 'Aluminium', percentage: 100, recycled: true }],
+    dimensions: null,
+    technicalSpecs: {},
+    manufacturerName: null,
+    countryOfOrigin: 'GB',
+    productionDate: null,
+    gwpTotal: null,
+    embodiedCarbon: null,
+    recycledContent: null,
+    epdReference: null,
+    ceMarking: false,
+    conditionGrade: 'B',
+    conditionNotes: null,
+    deconstructionDate: new Date('2026-06-01T00:00:00.000Z'),
+    deconstructionMethod: 'selective',
+    reclaimedBy: 'Reconditioning partners',
+    remainingLifeEstimate: 30,
+    carbonSavingsVsNew: '12',
+    hazardousSubstances: [],
+    origin: null,
+    unitOfMeasure: 'each',
+    createdAt: new Date('2026-09-15T00:00:00.000Z'),
+    ...overrides,
+  } as MaterialPassport;
+}
+
+test('an origin-only correction leaves the fingerprint, so the anchor stays valid', () => {
+  assert.equal(fingerprintChanges(row(), { origin: 'reclaimed' }), false);
+  assert.equal(
+    fingerprintChanges(row(), { customAttributes: { seedSource: SEED_TAG, catalogueKey: 'x' } }),
+    false,
+  );
+  assert.equal(fingerprintChanges(row(), { unitOfMeasure: 'm' }), false);
+});
+
+test('renaming or clearing the deconstruction changes the fingerprint, so it is re-anchored', () => {
+  assert.equal(
+    fingerprintChanges(row(), { productName: 'Surplus Aluminium Stud Walling — Demo Lot 003' }),
+    true,
+  );
+  assert.equal(
+    fingerprintChanges(row(), { deconstructionMethod: null, deconstructionDate: null }),
+    true,
+  );
 });

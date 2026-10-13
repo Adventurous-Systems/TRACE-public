@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatQuantity, perUnit } from './config.js';
+import { PASSPORT_ORIGIN_LABELS, PASSPORT_ORIGINS, formatQuantity, perUnit } from './config.js';
 
 describe('perUnit', () => {
   it('quotes "each" without "per", and other units with it', () => {
@@ -26,5 +26,13 @@ describe('formatQuantity', () => {
   it('keeps measured units as symbols', () => {
     expect(formatQuantity(120, 'm2')).toBe('120 m²');
     expect(formatQuantity(18, 'm')).toBe('18 linear m');
+  });
+});
+
+describe('passport origins', () => {
+  it('names every origin, and only those (migration 0014 allows the same three)', () => {
+    expect([...PASSPORT_ORIGINS]).toEqual(['reclaimed', 'surplus', 'new']);
+    expect(Object.keys(PASSPORT_ORIGIN_LABELS).sort()).toEqual([...PASSPORT_ORIGINS].sort());
+    expect(PASSPORT_ORIGIN_LABELS.new).toBe('New circular product');
   });
 });
