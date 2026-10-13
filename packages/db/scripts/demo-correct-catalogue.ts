@@ -1,6 +1,7 @@
 /**
- * Apply catalogue corrections (e.g. a category or name fix) to the curated
- * passports and lots that already exist, without touching visitor data.
+ * Apply catalogue corrections (e.g. a category, origin or superseded name) to
+ * the curated passports and lots that already exist, without touching visitor
+ * data.
  *
  * demo:restore also converges catalogue fields, but it rewrites names, grades
  * and transactions and is banned on the public demo. This command changes only
@@ -8,7 +9,9 @@
  * subcategory, reclaimed-by, unit of measure, and a condition note still exactly
  * as an earlier catalogue seeded it), and on lots still on sale or fully
  * ordered, a minimum order or shipping note still exactly as seeded. A lot's
- * terms are not in the passport's fingerprint. A corrected passport's fingerprint changes, so:
+ * terms are not in the passport's fingerprint. Some corrected fields are in a
+ * passport's fingerprint (category, name, deconstruction) and some are not
+ * (origin, unit of measure). Where the fingerprint changes:
  *   - an anchored passport is marked pending (anchor columns cleared) and the
  *     anchor worker's sweep re-anchors it on chain (repairing ownership where
  *     needed); nothing is ever left with a stale anchor;
@@ -29,6 +32,7 @@ import { computePassportHash } from '../src/passport-hash.js';
 import { CATALOG, CATALOGUE_LOCK_NAME, SEED_TAG } from './lib/catalogue.js';
 import {
   catalogueCorrections,
+  fingerprintChanges,
   isCatalogueLot,
   lotCorrections,
 } from './lib/catalogue-corrections.js';
@@ -84,21 +88,28 @@ async function main() {
           if (fields.length === 0) continue;
 
           const anchored = Boolean(passport.blockchainTxHash);
+          const changesFingerprint = fingerprintChanges(passport, corrections);
           console.log(
             `  ${dryRun ? 'would correct' : 'corrected'} ${passport.productName}: ` +
               fields
                 .map((f) => `${f} → ${JSON.stringify(corrections[f as keyof typeof corrections])}`)
                 .join(', ') +
-              (anchored ? '  [anchored: will be re-anchored]' : ''),
+              (!changesFingerprint
+                ? '  [fingerprint unchanged]'
+                : anchored
+                  ? '  [anchored: will be re-anchored]'
+                  : '  [fingerprint recomputed]'),
           );
           corrected += 1;
-          if (anchored) reanchor += 1;
+          if (anchored && changesFingerprint) reanchor += 1;
           if (dryRun) continue;
 
           await tx
             .update(schema.materialPassports)
             .set({ ...corrections, updatedAt: new Date() })
             .where(eq(schema.materialPassports.id, passport.id));
+          // Origin, say, is not in the fingerprint: the anchor stays valid.
+          if (!changesFingerprint) continue;
 
           if (anchored) {
             await tx
