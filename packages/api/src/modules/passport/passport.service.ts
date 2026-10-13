@@ -2,6 +2,7 @@ import { eq, and, ilike, sql, desc } from 'drizzle-orm';
 import {
   blockchainTransactions,
   db,
+  listings,
   materialPassports,
   passportEvents,
   type MaterialPassport,
@@ -14,6 +15,7 @@ import {
   ForbiddenError,
   ConflictError,
   ValidationError,
+  type JwtPayload,
 } from '@trace/core';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
@@ -122,22 +124,176 @@ export async function createPassport(
 
 // ─── Read ────────────────────────────────────────────────────────────────────
 
-export async function getPassportById(
+/** Who is reading a passport: a signed-in user, or nobody (undefined). */
+export type PassportViewer = Pick<JwtPayload, 'role' | 'organisationId'> | undefined;
+
+/**
+ * What anyone may read of a passport, field by field. Everything about the
+ * material is public; who registered it and the platform's own bookkeeping
+ * are not. organisationId is public because it is part of the fingerprint
+ * document, so anyone can recompute the fingerprint. Every column is listed
+ * in one of the two lists (checked below), so a new column needs a decision.
+ */
+export const PUBLIC_PASSPORT_FIELDS = [
+  'id',
+  'organisationId',
+  'gtin',
+  'serialNumber',
+  'digitalLinkUri',
+  'qrCodeUrl',
+  'productName',
+  'categoryL1',
+  'categoryL2',
+  'unitOfMeasure',
+  'materialComposition',
+  'dimensions',
+  'technicalSpecs',
+  'manufacturerName',
+  'countryOfOrigin',
+  'productionDate',
+  'gwpTotal',
+  'embodiedCarbon',
+  'recycledContent',
+  'epdReference',
+  'ceMarking',
+  'declarationOfPerformance',
+  'harmonisedStandard',
+  'origin',
+  'previousBuildingId',
+  'deconstructionDate',
+  'deconstructionMethod',
+  'reclaimedBy',
+  'conditionGrade',
+  'conditionNotes',
+  'conditionPhotos',
+  'originalAge',
+  'remainingLifeEstimate',
+  'carbonSavingsVsNew',
+  'circularityScore',
+  'reuseCount',
+  'reuseSuitability',
+  'handlingRequirements',
+  'hazardousSubstances',
+  'status',
+  'blockchainTxHash',
+  'blockchainPassportHash',
+  'blockchainAnchoredAt',
+  'blockchainChainId',
+  'createdAt',
+] as const satisfies readonly (keyof MaterialPassport)[];
+/** Seen only by the organisation that holds the passport, and the platform. */
+export const PRIVATE_PASSPORT_FIELDS = [
+  'registeredBy',
+  'customAttributes',
+  'updatedAt',
+] as const satisfies readonly (keyof MaterialPassport)[];
+type PublicPassportField = (typeof PUBLIC_PASSPORT_FIELDS)[number];
+type Unclassified = Exclude<
+  keyof MaterialPassport,
+  PublicPassportField | (typeof PRIVATE_PASSPORT_FIELDS)[number]
+>;
+// A compile error here names a column in neither list: decide which it is.
+const everyColumnClassified: [Unclassified] extends [never] ? true : Unclassified = true;
+void everyColumnClassified;
+
+export type PublicPassport = Pick<MaterialPassport, PublicPassportField>;
+
+export function toPublicPassport(passport: MaterialPassport): PublicPassport {
+  return Object.fromEntries(
+    PUBLIC_PASSPORT_FIELDS.map((field) => [field, passport[field]]),
+  ) as PublicPassport;
+}
+
+/** The holding organisation's members and the platform see the whole record. */
+export function seesWholePassport(
+  passport: Pick<MaterialPassport, 'organisationId'>,
+  viewer: PassportViewer,
+): boolean {
+  return (
+    !!viewer &&
+    (viewer.role === 'platform_admin' ||
+      (!!viewer.organisationId && viewer.organisationId === passport.organisationId))
+  );
+}
+
+/**
+ * The passport, if this viewer may see it at all: a draft is private to its
+ * organisation, and is "not found" to anyone else, on every route.
+ */
+export async function loadVisiblePassport(
   passportId: string,
-  requestingOrgId?: string,
+  viewer: PassportViewer,
 ): Promise<MaterialPassport> {
   const passport = await db.query.materialPassports.findFirst({
     where: eq(materialPassports.id, passportId),
   });
-
   if (!passport) throw new NotFoundError('Passport', passportId);
-
-  // Drafts are org-private
-  if (passport.status === 'draft' && requestingOrgId !== passport.organisationId) {
+  if (passport.status === 'draft' && viewer?.organisationId !== passport.organisationId) {
     throw new NotFoundError('Passport', passportId);
   }
-
   return passport;
+}
+
+/** Where the passport is on the marketplace: what a visitor needs to find the listing. */
+export interface PassportListingSummary {
+  id: string;
+  status: string;
+  pricePence: number;
+  currency: string;
+  listedAt: Date;
+}
+
+const LISTING_PREFERENCE = ['active', 'reserved', 'sold'];
+
+/**
+ * The passport's listing a visitor would want: one on sale or fully ordered,
+ * else the one it sold through, newest first. A cancelled or expired listing
+ * is not shown (there is nothing to go and see).
+ */
+export async function passportListing(passportId: string): Promise<PassportListingSummary | null> {
+  const rows = await db
+    .select({
+      id: listings.id,
+      status: listings.status,
+      expiresAt: listings.expiresAt,
+      pricePence: listings.pricePence,
+      currency: listings.currency,
+      createdAt: listings.createdAt,
+    })
+    .from(listings)
+    .where(eq(listings.passportId, passportId))
+    .orderBy(desc(listings.createdAt));
+  const now = new Date();
+  const candidates = rows
+    .map((row) => ({
+      ...row,
+      // A listing past its date reads as expired at once (listingStatusAt).
+      status:
+        row.status === 'active' && row.expiresAt && row.expiresAt <= now ? 'expired' : row.status,
+    }))
+    .filter((row) => LISTING_PREFERENCE.includes(row.status))
+    .sort((a, b) => LISTING_PREFERENCE.indexOf(a.status) - LISTING_PREFERENCE.indexOf(b.status));
+  const chosen = candidates[0];
+  if (!chosen) return null;
+  return {
+    id: chosen.id,
+    status: chosen.status,
+    pricePence: chosen.pricePence,
+    currency: chosen.currency,
+    listedAt: chosen.createdAt,
+  };
+}
+
+/** The whole record for its organisation and the platform; the public fields for anyone else. */
+export async function getPassportById(
+  passportId: string,
+  viewer?: PassportViewer,
+): Promise<(MaterialPassport | PublicPassport) & { listing: PassportListingSummary | null }> {
+  const passport = await loadVisiblePassport(passportId, viewer);
+  return {
+    ...(seesWholePassport(passport, viewer) ? passport : toPublicPassport(passport)),
+    listing: await passportListing(passportId),
+  };
 }
 
 /**
@@ -330,11 +486,9 @@ export interface PassportIntegrityResult {
  */
 export async function verifyPassportIntegrity(
   passportId: string,
+  viewer?: PassportViewer,
 ): Promise<PassportIntegrityResult> {
-  const passport = await db.query.materialPassports.findFirst({
-    where: eq(materialPassports.id, passportId),
-  });
-  if (!passport) throw new NotFoundError('Passport', passportId);
+  const passport = await loadVisiblePassport(passportId, viewer);
   const recomputedHash = computePassportHash(passport);
   const storedHash = passport.blockchainPassportHash;
   return {
@@ -382,7 +536,35 @@ export async function verifyPassport(passportId: string): Promise<PassportWithVe
   return { ...passport, verified, onchainVerified };
 }
 
-export async function getPassportCertificate(passportId: string): Promise<PassportCertificate> {
+/**
+ * What the public passport page reads: the passport as this viewer may see
+ * it, its verification status, and its listing.
+ */
+export async function getPassportVerification(
+  passportId: string,
+  viewer?: PassportViewer,
+): Promise<
+  (MaterialPassport | PublicPassport) & {
+    verified: boolean;
+    onchainVerified: boolean | null;
+    listing: PassportListingSummary | null;
+  }
+> {
+  const visible = await loadVisiblePassport(passportId, viewer);
+  const { verified, onchainVerified, ...passport } = await verifyPassport(passportId);
+  return {
+    ...(seesWholePassport(visible, viewer) ? passport : toPublicPassport(passport)),
+    verified,
+    onchainVerified,
+    listing: await passportListing(passportId),
+  };
+}
+
+export async function getPassportCertificate(
+  passportId: string,
+  viewer?: PassportViewer,
+): Promise<PassportCertificate> {
+  await loadVisiblePassport(passportId, viewer);
   const passport = await db.query.materialPassports.findFirst({
     where: eq(materialPassports.id, passportId),
     with: {
@@ -465,16 +647,51 @@ export async function getPassportCertificate(passportId: string): Promise<Passpo
 
 // ─── History ─────────────────────────────────────────────────────────────────
 
-export async function getPassportHistory(passportId: string): Promise<unknown[]> {
-  const passport = await db.query.materialPassports.findFirst({
-    where: eq(materialPassports.id, passportId),
-  });
-  if (!passport) throw new NotFoundError('Passport', passportId);
+/** The steps of an event the public may read; not who acted, who bought, or for how much. */
+const PUBLIC_EVENT_DATA = [
+  'action',
+  'bizStep',
+  'disposition',
+  'amendment',
+  'fingerprint',
+  'quantity',
+];
 
-  return db.query.passportEvents.findMany({
+export interface PublicPassportEvent {
+  id: string;
+  eventType: string;
+  eventData: Record<string, unknown>;
+  blockchainTxHash: string | null;
+  createdAt: Date;
+}
+
+export function toPublicEvent(event: typeof passportEvents.$inferSelect): PublicPassportEvent {
+  return {
+    id: event.id,
+    eventType: event.eventType,
+    eventData: Object.fromEntries(
+      Object.entries(event.eventData ?? {}).filter(([key]) => PUBLIC_EVENT_DATA.includes(key)),
+    ),
+    blockchainTxHash: event.blockchainTxHash,
+    createdAt: event.createdAt,
+  };
+}
+
+/**
+ * The passport's EPCIS events, newest first. Its organisation and the
+ * platform read them whole; anyone else reads what happened and when, not
+ * who did it, who bought, or the amount (a sale's event names its buyer).
+ */
+export async function getPassportHistory(
+  passportId: string,
+  viewer?: PassportViewer,
+): Promise<Array<typeof passportEvents.$inferSelect | PublicPassportEvent>> {
+  const passport = await loadVisiblePassport(passportId, viewer);
+  const events = await db.query.passportEvents.findMany({
     where: eq(passportEvents.passportId, passportId),
     orderBy: [desc(passportEvents.createdAt)],
   });
+  return seesWholePassport(passport, viewer) ? events : events.map(toPublicEvent);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { UnauthorizedError, ForbiddenError } from '@trace/core';
-import type { UserRole } from '@trace/core';
+import type { JwtPayload, UserRole } from '@trace/core';
 
 /**
  * Verifies the JWT and populates request.user.
@@ -11,6 +11,19 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
     await request.jwtVerify();
   } catch {
     throw new UnauthorizedError('Invalid or expired token');
+  }
+}
+
+/**
+ * The signed-in user, if the request carries a valid token; undefined for
+ * anyone else. For public routes that show more to some readers.
+ */
+export async function optionalUser(request: FastifyRequest): Promise<JwtPayload | undefined> {
+  try {
+    await request.jwtVerify();
+    return request.user;
+  } catch {
+    return undefined;
   }
 }
 
