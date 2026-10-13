@@ -6,7 +6,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StarRating } from '@/components/ui/star-rating';
 import { feedback, type FeedbackEntry } from '@/lib/api-client';
-import { getToken, getUser } from '@/lib/auth';
+import { canViewFeedback, getToken, getUser } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { formatDateTime } from '@/lib/format';
 
@@ -37,7 +37,7 @@ export default function AdminFeedbackPage() {
       router.replace('/login');
       return;
     }
-    if (user.role !== 'platform_admin' && user.role !== 'hub_admin') {
+    if (!canViewFeedback(user)) {
       router.replace('/dashboard');
       return;
     }

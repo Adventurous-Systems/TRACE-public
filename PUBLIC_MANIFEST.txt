@@ -374,6 +374,8 @@ packages/web/src/lib/inspection.test.ts
 packages/web/src/lib/inspection.ts
 packages/web/src/lib/listing-changes.test.ts
 packages/web/src/lib/listing-changes.ts
+packages/web/src/lib/nav.test.ts
+packages/web/src/lib/nav.ts
 packages/web/src/lib/order-quantity.test.ts
 packages/web/src/lib/order-quantity.ts
 packages/web/src/lib/orders.test.ts
