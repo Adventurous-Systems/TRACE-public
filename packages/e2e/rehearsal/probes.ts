@@ -914,11 +914,19 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     'an inspector sees materials of more than one organisation',
     'HTTP 200, 2+ organisations',
     async () => {
-      const res = await materials(inspector, '?limit=50');
-      const holders = new Set((res.body.data?.data ?? []).map((m) => m.organisationName));
+      // One search per holder: the first page alone depends on how much
+      // rehearsal data the stack has gathered (184 materials, all one
+      // organisation's on page one, on 2026-10-13).
+      const hub = await materials(inspector, '?limit=50&q=Facing%20Bricks');
+      const own = await materials(inspector, '?limit=50&q=Rehearsal%20Probe%20Lot');
+      const holders = new Set(
+        [...(hub.body.data?.data ?? []), ...(own.body.data?.data ?? [])].map(
+          (m) => m.organisationName,
+        ),
+      );
       return {
-        pass: res.status === 200 && holders.size > 1,
-        actual: `${says(res)}, ${holders.size}`,
+        pass: hub.status === 200 && own.status === 200 && holders.size > 1,
+        actual: `${says(hub)}, ${holders.size}`,
       };
     },
   );

@@ -180,7 +180,8 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
             /Listed on the marketplace\s+\d{1,2} \w+ \d{4}/,
           ];
           const missing = want.filter((pattern) => !pattern.test(page)).map(String);
-          if (/Registered on\s/.test(page)) missing.push('a second "Registered on" date');
+          // The timeline's "Registered on TRACE" is the one registration date.
+          if (/Registered on(?! TRACE)/.test(page)) missing.push('a second "Registered on" date');
           if (/No circular data recorded/.test(page)) missing.push('"No circular data recorded"');
           if (missing.length) throw new Error(`missing or wrong: ${missing.join(', ')}`);
           return (await j.text(/On the marketplace[^\n]*/)) ?? '';
