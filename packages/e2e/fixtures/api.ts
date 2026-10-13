@@ -36,13 +36,15 @@ export async function createListedPassport(
     quantity?: number;
     minOrderQuantity?: number;
     expiresAt?: string;
+    /** More of the passport: origin, composition, specs and so on. */
+    passport?: Record<string, unknown>;
   },
 ): Promise<ListedPassport> {
   const headers = { Authorization: `Bearer ${token}` };
 
   const pRes = await ctx.post(`${API_URL}/api/v1/passports`, {
     headers,
-    data: { productName: opts.productName, categoryL1: 'masonry' },
+    data: { productName: opts.productName, categoryL1: 'masonry', ...opts.passport },
   });
   expect(pRes.ok(), `create passport (HTTP ${pRes.status()})`).toBeTruthy();
   const passportId: string = (await pRes.json()).data.id;
