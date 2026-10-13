@@ -26,7 +26,7 @@ exit 0
 FAKE
 cat > "$bin/pnpm" <<'FAKE'
 #!/usr/bin/env bash
-echo "pnpm $* | NODE_ENV=${NODE_ENV-unset} TRACE_ENV=${TRACE_ENV-} SIM=${DEMO_SIMULATE_ANCHOR-} REG=${MATERIAL_REGISTRY_ADDRESS-} DB=${DATABASE_URL##*/} CURATED=${E2E_CURATED_ONLY-} KEY_OK=$([[ "${DEPLOYER_PRIVATE_KEY-}" == "$TEST_KEY" ]] && echo yes || echo no)" >> "$TEST_LOG"
+echo "pnpm $* | NODE_ENV=${NODE_ENV-unset} TRACE_ENV=${TRACE_ENV-} SIM=${DEMO_SIMULATE_ANCHOR-} REG=${MATERIAL_REGISTRY_ADDRESS-} DB=${DATABASE_URL##*/} CURATED=${E2E_CURATED_ONLY-} STORE=${STORAGE_DIR-unset} KEY_OK=$([[ "${DEPLOYER_PRIVATE_KEY-}" == "$TEST_KEY" ]] && echo yes || echo no)" >> "$TEST_LOG"
 FAKE
 cat > "$bin/node" <<'FAKE'
 #!/usr/bin/env bash
@@ -146,10 +146,14 @@ done
 grep -q 'pnpm -s rehearse | .* CURATED=1 ' "$log" || fail 'journeys must run against the stack as the curated-only demo'
 grep -q 'pnpm test | .* DB=trace_test ' "$log" || fail 'tests must use trace_test'
 grep -q 'migrate | .* DB=trace_upgrade ' "$log" || fail 'the upgrade must run in its scratch database'
-[[ $(grep -c 'storage:import -- --env local --yes --origin http://localhost:19000 | .* DB=trace_upgrade ' "$log") == 2 ]] \
-  || fail 'the upgrade must import the old release files, and again after its top-up'
-grep -q 'docker compose .* up -d --wait --wait-timeout 120 minio' "$log" \
-  || fail 'the upgrade must start MinIO for the previous release'
+! grep -q 'storage:import' "$log" || fail 'the upgrade must not import from MinIO: R4 onwards stores files on disk'
+! grep -q 'up -d --wait --wait-timeout 120 minio' "$log" || fail 'the upgrade must not need MinIO'
+grep -q 'seed:products | .* DB=trace_upgrade .* STORE=.*/upgrade-objects ' "$log" \
+  || fail 'the previous release must seed into the upgrade rehearsal file store'
+grep -q 'demo:replenish -- --env local --yes | .* DB=trace_upgrade .* STORE=.*/upgrade-objects ' "$log" \
+  || fail 'the previous release must top up into the upgrade rehearsal file store'
+[[ $(grep -c 'demo:correct-catalogue -- --env local --yes | .* DB=trace_upgrade ' "$log") == 2 ]] \
+  || fail 'the upgrade must apply the catalogue corrections, and again after the old release tops up'
 grep -q 'demo:replenish -- --env local --yes | .* DB=trace_upgrade ' "$log" \
   || fail 'the upgrade must prove the previous release works on the new schema'
 ! grep -q 'demo:restore .* DB=trace_upgrade' "$log" || fail 'the upgrade rehearsal must not restore'

@@ -3,37 +3,32 @@
 -- new schema. `pnpm stack upgrade` runs it after the migrations; an exception
 -- fails the rehearsal. Rewrite it with `before.sql`.
 --
--- Object storage (0013) only adds stored_objects: every URL must come through
--- unchanged, and the ledger must start empty, since the files are recorded by
--- storage-import after the deploy, not by the migration. The rehearsal then
--- runs that import and checks every /minio/ URL has a ledger row; the previous
--- release (the rollback target) tops up the catalogue through MinIO, and the
--- import runs again, as it would after a rollback window.
+-- Passport truth: the data must come through as the live release left it.
+-- A sale's selling event keeps its buyer and amount in the database (the
+-- public routes stop showing them; the data itself is not rewritten), the
+-- draft stays a draft, and the visitor's passport is untouched. The rehearsal
+-- then runs the catalogue corrections, and the previous release (the rollback
+-- target) tops up the catalogue on the new schema.
 
 DO $$
-DECLARE
-  most int;
 BEGIN
-  IF to_regclass('public.stored_objects') IS NULL THEN
-    RAISE EXCEPTION 'stored_objects was not created';
+  IF NOT EXISTS (SELECT 1 FROM transactions
+                 WHERE notes = 'upgrade fixture: completed sale' AND status = 'completed') THEN
+    RAISE EXCEPTION 'the completed sale changed';
   END IF;
-  IF (SELECT count(*) FROM stored_objects) <> 0 THEN
-    RAISE EXCEPTION 'stored_objects must start empty; the import records the files';
+  IF NOT EXISTS (SELECT 1 FROM passport_events
+                 WHERE event_type = 'TransactionEvent' AND event_data ? 'buyerId'
+                   AND event_data ? 'amountPence') THEN
+    RAISE EXCEPTION 'the selling event lost its buyer or amount; the data must not be rewritten';
   END IF;
-
-  SELECT max(jsonb_array_length(condition_photos)) INTO most FROM material_passports;
-  IF most <> 9 THEN
-    RAISE EXCEPTION 'a passport over the new photo limit must keep its photos (expected 9, found %)', most;
+  IF NOT EXISTS (SELECT 1 FROM material_passports WHERE status = 'draft') THEN
+    RAISE EXCEPTION 'the draft passport changed status';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM material_passports, jsonb_array_elements_text(condition_photos) u
-                 WHERE u = 'https://images.example.org/upgrade-fixture.jpg') THEN
-    RAISE EXCEPTION 'a photo hosted elsewhere changed';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM quality_reports
-                 WHERE report_notes = 'upgrade fixture: report with a photo'
-                   AND jsonb_array_length(photo_urls) = 1) THEN
-    RAISE EXCEPTION 'the quality report lost its photo';
+  IF NOT EXISTS (SELECT 1 FROM material_passports
+                 WHERE product_name = 'Upgrade Fixture Visitor Beam'
+                   AND deconstruction_method = 'selective' AND reclaimed_by = 'A visitor') THEN
+    RAISE EXCEPTION 'the visitor''s passport changed';
   END IF;
 END $$;
 
-SELECT 'URLs unchanged; stored_objects empty until the import';
+SELECT 'sale, selling event, draft and visitor passport unchanged';
