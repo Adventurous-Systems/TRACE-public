@@ -108,8 +108,16 @@ export default function CertificatePanel({
     if (!certificate) return [];
     return [
       ['Tamper-evident fingerprint', certificate.certificateHash],
-      ['Certificate ID', certificate.txHash],
-      ['Registered on', certificate.registeredAt ? formatDateTime(certificate.registeredAt) : null],
+      // The transaction that recorded the fingerprint on chain (it was
+      // labelled "Certificate ID", which it is not).
+      ['Chain transaction', certificate.txHash],
+      // When the current fingerprint was anchored: it moves on each re-anchor
+      // (an amendment, an inspection that changes the grade), so it is not
+      // the passport's registration date, which the provenance shows.
+      [
+        certificate.status === 'simulated' ? 'Fingerprint prepared' : 'Fingerprint anchored',
+        certificate.registeredAt ? formatDateTime(certificate.registeredAt) : null,
+      ],
       ['Verification block', certificate.blockNumber ? `#${certificate.blockNumber}` : null],
       ['Network', certificate.networkLabel],
       ['Chain ID', certificate.chainId],
@@ -225,7 +233,7 @@ export default function CertificatePanel({
               <dt className="text-gray-500 w-40 shrink-0">{label}</dt>
               {/* Hashes and ids in a code font; human values (dates, block,
                   network name) in the body font so they wrap between words. */}
-              {label === 'Registered on' ||
+              {label.startsWith('Fingerprint ') ||
               label === 'Verification block' ||
               label === 'Network' ? (
                 <dd className="text-sm text-gray-700">{value}</dd>

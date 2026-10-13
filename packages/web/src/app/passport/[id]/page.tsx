@@ -14,8 +14,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Logo } from '@/components/ui/Logo';
 import CertificatePanel from '@/components/passport/CertificatePanel';
 import ProvenanceTimeline, { type AmendmentEntry } from '@/components/passport/ProvenanceTimeline';
+import { CircularEconomyCard } from '@/components/passport/CircularEconomyCard';
+import { ListingLinkCard } from '@/components/passport/ListingLinkCard';
+import { MaterialDetails } from '@/components/passport/MaterialDetails';
+import { OriginBadge } from '@/components/passport/OriginBadge';
 import Link from 'next/link';
-import { deconstructionMethodLabel, formatDate } from '@/lib/format';
+import { formatDate } from '@/lib/format';
 import { gradeBasis } from '@/lib/inspection';
 import { InspectionCard } from '@/components/passport/InspectionCard';
 
@@ -60,28 +64,33 @@ async function getReports(id: string): Promise<QualityReportSummary[] | null> {
   }
 }
 
-// Append-only amendments, oldest-first, for the provenance timeline.
-async function getAmendments(id: string): Promise<AmendmentEntry[]> {
+// For the provenance timeline: append-only amendments, oldest-first, and when
+// the material sold (the public history says that it sold, not to whom).
+async function getHistory(
+  id: string,
+): Promise<{ amendments: AmendmentEntry[]; soldAt: string | null }> {
   try {
-    const events = (await passports.history(id)) as Array<{
-      eventData?: { amendment?: boolean };
-      createdAt?: string;
-    }>;
-    return events
-      .filter((e) => e.eventData?.amendment === true)
-      .map((e) => ({ date: e.createdAt ?? null }))
-      .reverse(); // history comes newest-first; the timeline reads oldest-first
+    const events = await passports.history(id);
+    return {
+      amendments: events
+        .filter((e) => e.eventData['amendment'] === true)
+        .map((e) => ({ date: e.createdAt ?? null }))
+        .reverse(), // history comes newest-first; the timeline reads oldest-first
+      soldAt:
+        events.find((e) => e.eventData['disposition'] === 'urn:epcglobal:cbv:disp:sold')
+          ?.createdAt ?? null,
+    };
   } catch {
-    return [];
+    return { amendments: [], soldAt: null };
   }
 }
 
 export default async function PublicPassportPage({ params }: Props) {
   const { id } = await params;
-  const [loaded, certificate, amendments, reports] = await Promise.all([
+  const [loaded, certificate, history, reports] = await Promise.all([
     getPassport(id),
     getCertificate(id),
-    getAmendments(id),
+    getHistory(id),
     getReports(id),
   ]);
 
@@ -150,10 +159,16 @@ export default async function PublicPassportPage({ params }: Props) {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center" aria-label="TRACE home">
-            <Logo className="h-7" />
-          </Link>
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="flex items-center" aria-label="TRACE home">
+              <Logo className="h-7" />
+            </Link>
+            {/* A passport opened from a QR code had no way to the marketplace. */}
+            <Link href="/marketplace" className="text-sm text-gray-600 hover:text-gray-900">
+              ← Marketplace
+            </Link>
+          </div>
           <Badge variant={trust.variant}>{trust.label}</Badge>
         </div>
       </header>
@@ -167,14 +182,19 @@ export default async function PublicPassportPage({ params }: Props) {
                 {categoryPath(passport.categoryL1, passport.categoryL2)}
               </div>
               <h1 className="text-2xl font-bold">{passport.productName}</h1>
-              {passport.conditionGrade && (
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-100 text-brand-700 font-bold text-sm">
-                    {passport.conditionGrade}
-                  </span>
-                  <span className="text-sm text-gray-600">
-                    Grade {passport.conditionGrade} — {conditionLabel}
-                  </span>
+              {(passport.conditionGrade || passport.origin) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {passport.conditionGrade && (
+                    <>
+                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-brand-100 text-brand-700 font-bold text-sm">
+                        {passport.conditionGrade}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        Grade {passport.conditionGrade} — {conditionLabel}
+                      </span>
+                    </>
+                  )}
+                  <OriginBadge origin={passport.origin} />
                 </div>
               )}
               {basisOfGrade && <p className="mt-1 text-xs text-gray-500">{basisOfGrade}</p>}
@@ -204,6 +224,8 @@ export default async function PublicPassportPage({ params }: Props) {
             </p>
           )}
         </div>
+
+        <ListingLinkCard listing={passport.listing} unitOfMeasure={passport.unitOfMeasure} />
 
         {/* Impact stat tiles */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -249,7 +271,11 @@ export default async function PublicPassportPage({ params }: Props) {
 
         <div className="grid md:grid-cols-2 gap-6">
           <CertificatePanel passportId={passport.id} initialCertificate={certificate} />
-          <ProvenanceTimeline passport={passport} amendments={amendments} />
+          <ProvenanceTimeline
+            passport={passport}
+            amendments={history.amendments}
+            soldAt={history.soldAt}
+          />
         </div>
 
         {reports && <InspectionCard reports={reports} organisationName={declaredBy} />}
@@ -315,46 +341,9 @@ export default async function PublicPassportPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          {/* Circular economy data */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Circular economy</CardTitle>
-              <p className="text-xs text-gray-500">{declaredLine}</p>
-            </CardHeader>
-            <CardContent>
-              <dl className="text-sm space-y-2">
-                {[
-                  [
-                    'Deconstruction method',
-                    deconstructionMethodLabel(passport.deconstructionMethod) || null,
-                  ],
-                  [
-                    'Deconstruction date',
-                    passport.deconstructionDate ? formatDate(passport.deconstructionDate) : null,
-                  ],
-                  ['Reclaimed by', passport.reclaimedBy],
-                  ['Previous building', passport.previousBuildingId],
-                  [
-                    'Remaining life',
-                    passport.remainingLifeEstimate
-                      ? `~${passport.remainingLifeEstimate} years`
-                      : null,
-                  ],
-                  ['Handling requirements', passport.handlingRequirements],
-                ]
-                  .filter(([, v]) => v)
-                  .map(([label, value]) => (
-                    <div key={label} className="flex justify-between">
-                      <dt className="text-gray-500">{label}</dt>
-                      <dd className="font-medium">{value}</dd>
-                    </div>
-                  ))}
-                {!passport.deconstructionMethod && !passport.reclaimedBy && (
-                  <p className="text-gray-400 text-xs">No circular data recorded</p>
-                )}
-              </dl>
-            </CardContent>
-          </Card>
+          <CircularEconomyCard passport={passport} declaredLine={declaredLine} />
+
+          <MaterialDetails passport={passport} declaredLine={declaredLine} />
 
           {/* Environmental */}
           {(passport.gwpTotal ||

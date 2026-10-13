@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  circularRows,
   compositionRows,
   dimensionsLine,
   originLabel,
@@ -79,5 +80,46 @@ describe('reuseLabel', () => {
   it('reads a slug as words', () => {
     expect(reuseLabel('feature-wall')).toBe('Feature wall');
     expect(reuseLabel('Facing brickwork')).toBe('Facing brickwork');
+  });
+});
+
+describe('circularRows', () => {
+  const none = {
+    origin: null,
+    deconstructionMethod: null,
+    deconstructionDate: null,
+    reclaimedBy: null,
+    previousBuildingId: null,
+    remainingLifeEstimate: null,
+    circularityScore: null,
+    handlingRequirements: null,
+    reuseSuitability: [],
+  };
+  it('is empty only when nothing circular is recorded', () => {
+    expect(circularRows(none)).toEqual([]);
+    // A remaining life alone is circular data (it showed "No circular data recorded").
+    expect(circularRows({ ...none, remainingLifeEstimate: 100 })).toEqual([
+      ['Remaining life', '~100 years'],
+    ]);
+  });
+  it('says who supplied surplus stock, and who reclaimed the rest', () => {
+    expect(circularRows({ ...none, origin: 'surplus', reclaimedBy: 'Partners' })).toEqual([
+      ['Origin', 'Surplus (unused stock)'],
+      ['Surplus from', 'Partners'],
+    ]);
+    expect(
+      circularRows({
+        ...none,
+        origin: 'reclaimed',
+        deconstructionMethod: 'selective',
+        reclaimedBy: 'Stirling Reuse Hub',
+        circularityScore: 85,
+      }),
+    ).toEqual([
+      ['Origin', 'Reclaimed'],
+      ['Deconstruction method', 'Selective deconstruction'],
+      ['Reclaimed by', 'Stirling Reuse Hub'],
+      ['Circularity score', '85 / 100'],
+    ]);
   });
 });

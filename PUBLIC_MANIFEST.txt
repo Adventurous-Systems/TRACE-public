@@ -334,7 +334,11 @@ packages/web/src/components/marketplace/AccountNav.tsx
 packages/web/src/components/marketplace/ListingPhoto.tsx
 packages/web/src/components/marketplace/ListingTermsFields.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
+packages/web/src/components/passport/CircularEconomyCard.tsx
 packages/web/src/components/passport/InspectionCard.tsx
+packages/web/src/components/passport/ListingLinkCard.tsx
+packages/web/src/components/passport/MaterialDetails.tsx
+packages/web/src/components/passport/OriginBadge.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx
 packages/web/src/components/passport/QrScanner.tsx
 packages/web/src/components/passport/RegisterWizard.tsx

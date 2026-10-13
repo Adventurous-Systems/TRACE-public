@@ -1,4 +1,5 @@
 import {
+  Boxes,
   Factory,
   Hammer,
   Recycle,
@@ -28,13 +29,21 @@ interface Step {
 
 const fmt = (d?: string | null) => (d ? formatDate(d) : undefined);
 
-/** Honest provenance story built from the passport's own lifecycle data. */
+/**
+ * Honest provenance story built from the passport's own lifecycle data. The
+ * steps follow where the material comes from: a reclaimed one was taken out
+ * of a building; surplus stock was never fitted; a new circular product was
+ * made, nothing more (the surplus aluminium lot showed "Deconstructed").
+ */
 export default function ProvenanceTimeline({
   passport,
   amendments = [],
+  soldAt,
 }: {
   passport: PassportDetail;
   amendments?: AmendmentEntry[];
+  /** When the material sold, from the passport's history. */
+  soldAt?: string | null;
 }) {
   const steps: Step[] = [
     {
@@ -47,17 +56,26 @@ export default function ProvenanceTimeline({
       done: true,
     },
   ];
-  if (passport.deconstructionDate || passport.deconstructionMethod) {
+  if (passport.origin === 'surplus') {
     steps.push({
-      icon: Hammer,
-      title: 'Deconstructed',
-      detail: deconstructionMethodLabel(passport.deconstructionMethod) || undefined,
-      date: fmt(passport.deconstructionDate),
+      icon: Boxes,
+      title: 'Surplus stock, never fitted',
+      detail: passport.reclaimedBy ? `From ${passport.reclaimedBy}` : undefined,
       done: true,
     });
-  }
-  if (passport.reclaimedBy) {
-    steps.push({ icon: Recycle, title: 'Reclaimed', detail: passport.reclaimedBy, done: true });
+  } else if (passport.origin !== 'new') {
+    if (passport.deconstructionDate || passport.deconstructionMethod) {
+      steps.push({
+        icon: Hammer,
+        title: 'Deconstructed',
+        detail: deconstructionMethodLabel(passport.deconstructionMethod) || undefined,
+        date: fmt(passport.deconstructionDate),
+        done: true,
+      });
+    }
+    if (passport.reclaimedBy) {
+      steps.push({ icon: Recycle, title: 'Reclaimed', detail: passport.reclaimedBy, done: true });
+    }
   }
   steps.push({
     icon: ShieldCheck,
@@ -79,10 +97,16 @@ export default function ProvenanceTimeline({
   steps.push({
     icon: Store,
     title: 'Listed on the marketplace',
+    date: fmt(passport.listing?.listedAt),
     done: ['listed', 'reserved', 'sold'].includes(passport.status),
   });
   if (passport.status === 'sold') {
-    steps.push({ icon: CheckCircle2, title: 'Sold — back in use', done: true });
+    steps.push({
+      icon: CheckCircle2,
+      title: 'Sold — back in use',
+      date: fmt(soldAt),
+      done: true,
+    });
   }
 
   return (

@@ -5,6 +5,8 @@
  * it until the 2026-10-13 journey audit.
  */
 import { PASSPORT_ORIGIN_LABELS, type PassportOrigin } from '@trace/core';
+import type { PassportDetail } from './api-client';
+import { deconstructionMethodLabel, formatDate } from './format';
 
 export interface DimensionsLike {
   length?: number | null;
@@ -115,4 +117,42 @@ export function compositionRows(
 export function reuseLabel(value: string): string {
   const words = value.replace(/[_-]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+export type CircularFields = Pick<
+  PassportDetail,
+  | 'origin'
+  | 'deconstructionMethod'
+  | 'deconstructionDate'
+  | 'reclaimedBy'
+  | 'previousBuildingId'
+  | 'remainingLifeEstimate'
+  | 'circularityScore'
+  | 'handlingRequirements'
+  | 'reuseSuitability'
+>;
+
+/** The rows the card shows, in order; empty when nothing circular is recorded. */
+export function circularRows(passport: CircularFields): Array<[string, string]> {
+  const rows: Array<[string, string | null]> = [
+    ['Origin', originLabel(passport.origin)],
+    ['Deconstruction method', deconstructionMethodLabel(passport.deconstructionMethod) || null],
+    [
+      'Deconstruction date',
+      passport.deconstructionDate ? formatDate(passport.deconstructionDate) : null,
+    ],
+    // Surplus stock was never fitted, so it was supplied, not reclaimed.
+    [passport.origin === 'surplus' ? 'Surplus from' : 'Reclaimed by', passport.reclaimedBy],
+    ['Previous building', passport.previousBuildingId],
+    [
+      'Remaining life',
+      passport.remainingLifeEstimate != null ? `~${passport.remainingLifeEstimate} years` : null,
+    ],
+    [
+      'Circularity score',
+      passport.circularityScore != null ? `${passport.circularityScore} / 100` : null,
+    ],
+    ['Handling requirements', passport.handlingRequirements],
+  ];
+  return rows.filter((row): row is [string, string] => Boolean(row[1]));
 }
