@@ -6,21 +6,11 @@ import { INSPECTION_SOURCE_LABELS } from '@trace/core';
 import { Button } from '@/components/ui/button';
 import { quality, type InspectionMaterial, type QualityReportSummary } from '@/lib/api-client';
 import { categoryLabel } from '@/lib/categories';
-import { formatDate } from '@/lib/format';
+import { formatDate, passportStatusLabel } from '@/lib/format';
 import { dimensionsLine } from '@/lib/passport-details';
 import { reportedBy } from '@/lib/inspection';
 import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
 import { inspectionStatus } from './MaterialPicker';
-
-// A material's status in plain words.
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Registered, not on sale',
-  listed: 'On sale',
-  reserved: 'On sale, fully ordered',
-  sold: 'Sold',
-  installed: 'Installed',
-  decommissioned: 'Decommissioned',
-};
 
 /**
  * The material a report is being written about, kept in view while the
@@ -50,7 +40,7 @@ export function MaterialUnderInspection({
     ['Serial number', material.serialNumber],
     ['Size', dimensionsLine(material.dimensions)],
     ['Current grade', material.conditionGrade ? `Grade ${material.conditionGrade}` : 'None yet'],
-    ['Status', STATUS_LABELS[material.status] ?? material.status],
+    ['Status', passportStatusLabel(material.status)],
   ];
 
   return (

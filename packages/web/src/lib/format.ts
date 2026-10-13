@@ -95,3 +95,18 @@ export function formatPrice(pence: number): string {
     maximumFractionDigits: 2,
   })}`;
 }
+
+// A passport's status in plain words.
+const PASSPORT_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  active: 'Registered, not on sale',
+  listed: 'On sale',
+  reserved: 'On sale, fully ordered',
+  sold: 'Sold',
+  installed: 'Installed',
+  decommissioned: 'Decommissioned',
+};
+
+export function passportStatusLabel(status: string | null | undefined): string {
+  return status ? (PASSPORT_STATUS_LABELS[status] ?? status) : '';
+}

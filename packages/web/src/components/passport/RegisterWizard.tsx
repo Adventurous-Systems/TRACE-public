@@ -13,6 +13,9 @@ import {
   UNIT_OF_MEASURE_LABELS,
   PASSPORT_PHOTOS_MAX,
   PHOTO_UPLOAD_MAX_BYTES,
+  PASSPORT_ORIGINS,
+  PASSPORT_ORIGIN_LABELS,
+  type PassportOrigin,
 } from '@trace/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -308,6 +311,7 @@ export default function RegisterWizard() {
         countryOfOrigin: data.countryOfOrigin || undefined,
         conditionGrade: data.conditionGrade || undefined,
         conditionNotes: data.conditionNotes || undefined,
+        origin: data.origin || undefined,
         deconstructionMethod: data.deconstructionMethod || undefined,
         reclaimedBy: data.reclaimedBy || undefined,
         previousBuildingId: data.previousBuildingId || undefined,
@@ -692,6 +696,25 @@ export default function RegisterWizard() {
                 {fieldError('conditionNotes')}
               </div>
 
+              <div className="space-y-1">
+                <Label htmlFor="origin">Where does this material come from?</Label>
+                <select
+                  id="origin"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  {...register('origin')}
+                >
+                  <option value="">Not stated</option>
+                  {PASSPORT_ORIGINS.map((o) => (
+                    <option key={o} value={o}>
+                      {PASSPORT_ORIGIN_LABELS[o]}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">
+                  Reclaimed from a building, unused surplus stock, or a new product made for reuse.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <Label htmlFor="deconstructionMethod">Deconstruction method</Label>
@@ -868,6 +891,10 @@ export default function RegisterWizard() {
                       [
                         'Carbon savings',
                         vals.carbonSavingsVsNew ? `${vals.carbonSavingsVsNew} kgCO₂e` : '—',
+                      ],
+                      [
+                        'Origin',
+                        vals.origin ? PASSPORT_ORIGIN_LABELS[vals.origin as PassportOrigin] : '—',
                       ],
                       ['Deconstruction', vals.deconstructionMethod || '—'],
                       [

@@ -1,5 +1,8 @@
 'use client';
 
+import { CircularEconomyCard } from '@/components/passport/CircularEconomyCard';
+import { MaterialDetails } from '@/components/passport/MaterialDetails';
+import { originLabel } from '@/lib/passport-details';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -26,7 +29,12 @@ import { categoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
 import { toast } from '@/components/ui/use-toast';
 import CertificatePanel from '@/components/passport/CertificatePanel';
-import { formatDate, formatMegabytes } from '@/lib/format';
+import {
+  deconstructionMethodLabel,
+  formatDate,
+  formatMegabytes,
+  passportStatusLabel,
+} from '@/lib/format';
 
 const GRADE_COLORS: Record<string, string> = {
   A: 'bg-green-100 text-green-800',
@@ -255,12 +263,16 @@ export default function PassportDetailPage() {
           <CardContent>
             <dl className="text-sm divide-y">
               {[
-                ['Status', passport.status],
+                ['Status', passportStatusLabel(passport.status)],
+                ['Origin', originLabel(passport.origin) ?? '—'],
                 ['Condition grade', passport.conditionGrade ?? '—'],
                 ['Condition notes', passport.conditionNotes ?? '—'],
                 ['Manufacturer', passport.manufacturerName ?? '—'],
                 ['Country of origin', passport.countryOfOrigin ?? '—'],
-                ['Deconstruction method', passport.deconstructionMethod ?? '—'],
+                [
+                  'Deconstruction method',
+                  deconstructionMethodLabel(passport.deconstructionMethod) || '—',
+                ],
                 ['Reclaimed by', passport.reclaimedBy ?? '—'],
                 [
                   'Remaining life',
@@ -302,6 +314,11 @@ export default function PassportDetailPage() {
             </dl>
           </CardContent>
         </Card>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <CircularEconomyCard passport={passport} declaredLine="As registered." />
+          <MaterialDetails passport={passport} declaredLine="As registered." />
+        </div>
 
         {/* Quality reports */}
         <Card>
