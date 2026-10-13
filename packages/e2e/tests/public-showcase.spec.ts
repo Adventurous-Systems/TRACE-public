@@ -20,9 +20,7 @@ test.describe('@showcase public read-only experience', () => {
 
     await expect(page).toHaveURL(/\/marketplace\//);
     await expect(page.getByText('Surplus Aluminium Stud Walling').first()).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: /order at asking price|make offer/i }),
-    ).not.toBeVisible();
+    await expect(page.getByRole('button', { name: /order at asking price/i })).not.toBeVisible();
 
     const passportLink = page.getByRole('link', { name: /passport/i }).first();
     await expect(passportLink).toBeVisible();

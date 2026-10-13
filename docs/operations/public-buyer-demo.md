@@ -59,7 +59,7 @@ profile:
 The landing page and marketplace show a "What to try" panel
 (components/DemoGuide.tsx), visible only under public_buyer_demo: browse the
 marketplace, open a listing and its passport, click "Verify integrity" to see
-the fingerprint recompute live, then create a free account to make an offer.
+the fingerprint recompute live, then create a free account to order at the asking price.
 The register page's demo banner states what an account is for, and the
 marketplace's empty state distinguishes "no results for these filters" (with
 a clear-filters action) from "no listings are active right now" (attributed
