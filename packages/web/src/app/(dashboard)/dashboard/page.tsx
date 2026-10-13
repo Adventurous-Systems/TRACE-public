@@ -13,9 +13,11 @@ import {
   getUser,
   canRegisterMaterial,
   hasOrganisation,
+  isPlatformAdmin,
   type StoredUser,
 } from '@/lib/auth';
 import { InspectorDashboard } from '@/components/quality/InspectorDashboard';
+import { PlatformAdminOverview } from '@/components/admin/PlatformAdminOverview';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
 
@@ -127,6 +129,7 @@ export default function DashboardPage() {
         </div>
 
         {isInspector && <InspectorDashboard />}
+        {user && isPlatformAdmin(user) && <PlatformAdminOverview user={user} />}
 
         {!isInspector && load.phase !== 'no-org' && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -154,7 +157,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {!isInspector && (
+        {/* The platform admin holds no materials; the overview above is theirs. */}
+        {!isInspector && !isPlatformAdmin(user) && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Recent passports</CardTitle>

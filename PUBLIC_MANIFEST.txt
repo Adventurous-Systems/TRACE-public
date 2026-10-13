@@ -330,6 +330,7 @@ packages/web/src/components/Analytics.tsx
 packages/web/src/components/DashboardLayout.tsx
 packages/web/src/components/DemoGuide.tsx
 packages/web/src/components/FeedbackWidget.tsx
+packages/web/src/components/admin/PlatformAdminOverview.tsx
 packages/web/src/components/marketplace/AccountNav.tsx
 packages/web/src/components/marketplace/ListingPhoto.tsx
 packages/web/src/components/marketplace/ListingTermsFields.tsx
@@ -357,6 +358,8 @@ packages/web/src/components/ui/skeleton.tsx
 packages/web/src/components/ui/star-rating.tsx
 packages/web/src/components/ui/toaster.tsx
 packages/web/src/components/ui/use-toast.ts
+packages/web/src/lib/admin-overview.test.ts
+packages/web/src/lib/admin-overview.ts
 packages/web/src/lib/analytics.ts
 packages/web/src/lib/api-client.ts
 packages/web/src/lib/api-errors.test.ts
