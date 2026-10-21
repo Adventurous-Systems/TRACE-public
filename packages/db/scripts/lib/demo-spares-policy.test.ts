@@ -105,6 +105,20 @@ test('with no live lot, the lowest-numbered passport (the original) is kept', ()
   );
 });
 
+test('with no live lot, a lot that sold is kept: the top-up reopens it in place', () => {
+  const key = CATALOG[3]!.key;
+  const plan = planSpareRetirement([
+    row(key, 1, ['cancelled']),
+    row(key, 2, ['sold'], { transactions: 1, events: 1 }),
+    row(key, 3, ['cancelled']),
+  ])[3]!;
+  assert.equal(plan.keep?.passportId, `passport-${key}-2`);
+  assert.deepEqual(
+    plan.retire.map((r) => r.passportId),
+    [`passport-${key}-1`, `passport-${key}-3`],
+  );
+});
+
 test('rows that are not curated catalogue passports are ignored', () => {
   const plan = planSpareRetirement([
     { ...row('not-in-the-catalogue', 1, ['cancelled']) },

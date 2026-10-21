@@ -225,6 +225,8 @@ packages/db/scripts/demo-retire-spares.ts
 packages/db/scripts/demo-trim-active.ts
 packages/db/scripts/lib/catalogue-corrections.test.ts
 packages/db/scripts/lib/catalogue-corrections.ts
+packages/db/scripts/lib/catalogue-lots.test.ts
+packages/db/scripts/lib/catalogue-lots.ts
 packages/db/scripts/lib/catalogue-photos.ts
 packages/db/scripts/lib/catalogue.ts
 packages/db/scripts/lib/demo-content.ts

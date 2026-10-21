@@ -14,8 +14,8 @@
 -- that must survive:
 --   Lintels: its lot partly sold (to restock), and a spare with an order on
 --            it (kept and reported, never deleted);
---   Aerated Concrete Blocks: its lot sold out, so the previous release's
---            top-up creates a passport during the rollback window;
+--   Aerated Concrete Blocks: its lot sold out, so this checkout reopens it
+--            in place (the previous release would have made a new passport);
 --   Facing Bricks: its lot delisted, so this checkout lists it again;
 -- plus a visitor's passport the tools must not touch. Earlier fixtures are in
 -- this file's history.

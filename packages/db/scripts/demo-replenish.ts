@@ -6,11 +6,15 @@
  * - its lot on sale is restocked in place: when fewer units are available
  *   than the catalogue's lot size, quantity and quantityAvailable rise by the
  *   difference, so orders and history stay as they are;
+ * - a lot that sold out is reopened in place: its listing goes back on sale
+ *   with the catalogue's lot size added, and its orders and history stay;
  * - a lot that was delisted (cancelled or expired) is listed again on the
  *   same passport;
  * - a passport is created only when the product has none at all (a fresh
  *   database).
- * A lot that is fully ordered or sold is reported and left alone. Spare
+ * A lot that is fully ordered (reserved) is left alone until its orders
+ * close. Which passport is the product's lot is productLot's choice
+ * (lib/catalogue-lots.ts), as for demo-retire-spares and demo-restore. Spare
  * passports are reported; demo-retire-spares deletes them. It never deletes
  * anything, and never touches users, orders or visitor data.
  *
@@ -34,10 +38,10 @@ import {
   CATALOGUE_LOCK_NAME,
   LIVE_LOT_STATUSES,
   SEED_TAG,
-  isCatalogueName,
   lotShippingNote,
   type Product,
 } from './lib/catalogue.js';
+import { catalogueKeyOf, productLot } from './lib/catalogue-lots.js';
 import { resolveTarget } from './lib/guard.js';
 import { scriptObjectStore, storeCatalogueImage } from './lib/catalogue-photos.js';
 
@@ -55,27 +59,6 @@ function parseTargetActive(argv: string[]): number {
     throw new Error('--target-active must be 1: the demo keeps one lot per product');
   }
   return target;
-}
-
-function lotNumber(
-  passport: typeof schema.materialPassports.$inferSelect,
-  product: Product,
-): number {
-  const metadata = passport.customAttributes ?? {};
-  const value = metadata['demoLotNumber'];
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
-  return isCatalogueName(passport.productName, product) ? 1 : 0;
-}
-
-function isProductLot(
-  passport: typeof schema.materialPassports.$inferSelect,
-  product: Product,
-): boolean {
-  const metadata = passport.customAttributes ?? {};
-  return (
-    metadata['catalogueKey'] === product.key ||
-    (metadata['seedSource'] === SEED_TAG && isCatalogueName(passport.productName, product))
-  );
 }
 
 function displayName(product: Product, number: number): string {
@@ -133,6 +116,10 @@ async function main() {
                 passports.map((passport) => passport.id),
               ),
             )
+            // The API takes orders under a row lock, not the catalogue lock:
+            // hold the rows so an order can't land between reading a lot and
+            // restocking it.
+            .for('update')
         : [];
       const listingsOf = (passportId: string) =>
         listingRows.filter((listing) => listing.passportId === passportId);
@@ -145,12 +132,12 @@ async function main() {
       const batch = new Date().toISOString().slice(0, 10);
 
       for (const product of CATALOG) {
-        const productPassports = passports
-          .filter((passport) => isProductLot(passport, product))
-          .sort((a, b) => lotNumber(a, product) - lotNumber(b, product));
-        // The product's one lot, as demo-retire-spares and demo-restore pick it.
-        const lot =
-          productPassports.find((passport) => liveListingOf(passport.id)) ?? productPassports[0];
+        const productPassports = passports.filter(
+          (passport) => catalogueKeyOf(passport) === product.key,
+        );
+        const lot = productLot(productPassports, (id) =>
+          listingsOf(id).map((listing) => listing.status),
+        );
         const spares = productPassports.length - 1;
         const spareNote = spares > 0 ? `; ${spares} spare passport(s), run demo-retire-spares` : '';
 
@@ -161,11 +148,12 @@ async function main() {
             const short = product.listing.quantity - live.quantityAvailable;
             if (short > 0) {
               if (!dryRun) {
+                // Increments, so the row's own numbers are what grow.
                 await tx
                   .update(schema.listings)
                   .set({
-                    quantity: live.quantity + short,
-                    quantityAvailable: live.quantityAvailable + short,
+                    quantity: dsql`${schema.listings.quantity} + ${short}`,
+                    quantityAvailable: dsql`${schema.listings.quantityAvailable} + ${short}`,
                   })
                   .where(eq(schema.listings.id, live.id));
               }
@@ -179,7 +167,28 @@ async function main() {
           } else if (live) {
             console.log(`${product.key}: fully ordered, left alone${spareNote}`);
           } else if (listingsOf(lot.id).some((listing) => listing.status === 'sold')) {
-            console.log(`${product.key}: sold out, left alone (needs a human)${spareNote}`);
+            const sold = listingsOf(lot.id)
+              .filter((listing) => listing.status === 'sold')
+              .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]!;
+            const size = product.listing.quantity;
+            if (!dryRun) {
+              await tx
+                .update(schema.listings)
+                .set({
+                  status: 'active',
+                  quantity: dsql`${schema.listings.quantity} + ${size}`,
+                  quantityAvailable: dsql`${schema.listings.quantityAvailable} + ${size}`,
+                })
+                .where(eq(schema.listings.id, sold.id));
+              await tx
+                .update(schema.materialPassports)
+                .set({ status: 'listed', updatedAt: new Date() })
+                .where(eq(schema.materialPassports.id, lot.id));
+            }
+            restocked += 1;
+            console.log(
+              `${product.key}: sold out, ${verb('reopen', 'reopened')} with ${size} more${spareNote}`,
+            );
           } else {
             if (!dryRun) {
               await tx.insert(schema.listings).values({

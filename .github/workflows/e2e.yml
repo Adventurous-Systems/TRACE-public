@@ -150,8 +150,13 @@ jobs:
       # The same suite again on that profile, as the local rehearsal runs it.
       - name: Restart in public buyer demo mode
         run: |
+          # The servers were started by an earlier step, so `wait` can't see
+          # them: poll until both have exited and freed their ports.
           kill "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)"
-          wait "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)" 2>/dev/null || true
+          for i in $(seq 1 30); do
+            kill -0 "$(cat /tmp/api.pid)" 2>/dev/null || kill -0 "$(cat /tmp/web.pid)" 2>/dev/null || break
+            sleep 1
+          done
           (
             cd packages/api
             export TRACE_DEPLOYMENT_PROFILE=public_buyer_demo
@@ -164,11 +169,16 @@ jobs:
             exec node_modules/.bin/next start
           ) > /tmp/web-demo.log 2>&1 &
           echo $! > /tmp/web.pid
+          ready=0
           for i in $(seq 1 60); do
-            curl -sf http://localhost:3001/health/ready >/dev/null \
-              && curl -sf http://localhost:3000 >/dev/null \
-              && break || sleep 2
+            if curl -sf http://localhost:3001/health/ready >/dev/null \
+              && curl -sf http://localhost:3000 >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
           done
+          [ "$ready" = 1 ] || { echo 'the restarted servers did not become ready' >&2; exit 1; }
 
       - name: Run E2E suite on the public buyer demo profile
         env:
@@ -180,8 +190,13 @@ jobs:
 
       - name: Restart in public showcase mode
         run: |
+          # The servers were started by an earlier step, so `wait` can't see
+          # them: poll until both have exited and freed their ports.
           kill "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)"
-          wait "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)" 2>/dev/null || true
+          for i in $(seq 1 30); do
+            kill -0 "$(cat /tmp/api.pid)" 2>/dev/null || kill -0 "$(cat /tmp/web.pid)" 2>/dev/null || break
+            sleep 1
+          done
           (
             cd packages/api
             export TRACE_DEPLOYMENT_PROFILE=public_showcase
@@ -194,11 +209,16 @@ jobs:
             exec node_modules/.bin/next start
           ) > /tmp/web-showcase.log 2>&1 &
           echo $! > /tmp/web.pid
+          ready=0
           for i in $(seq 1 60); do
-            curl -sf http://localhost:3001/health/ready >/dev/null \
-              && curl -sf http://localhost:3000 >/dev/null \
-              && break || sleep 2
+            if curl -sf http://localhost:3001/health/ready >/dev/null \
+              && curl -sf http://localhost:3000 >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
           done
+          [ "$ready" = 1 ] || { echo 'the restarted servers did not become ready' >&2; exit 1; }
 
       - name: Run public showcase browser journeys
         run: pnpm --filter @trace/e2e e2e:showcase

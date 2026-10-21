@@ -6,9 +6,9 @@
 -- One of each (M2): there is no migration, so everything must come through
 -- as the live release left it. The rehearsal then runs this checkout's
 -- post-deploy tools (demo:retire-spares, then the top-up restocking in place)
--- and prints any product still holding more than one passport: Lintels (its
--- spare has an order) and Aerated Concrete Blocks (its sold lot, plus the lot
--- the previous release creates in the rollback window) are expected there.
+-- and prints any product still holding more than one passport: only Lintels
+-- is expected there (its spare has an order). Every product is on sale after
+-- the top-up, so the previous release's top-up creates nothing afterwards.
 
 DO $$
 BEGIN

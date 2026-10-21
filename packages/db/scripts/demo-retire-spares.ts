@@ -57,7 +57,11 @@ async function main(): Promise<void> {
           customAttributes: schema.materialPassports.customAttributes,
         })
         .from(schema.materialPassports)
-        .where(dsql`${schema.materialPassports.customAttributes}->>'seedSource' = ${SEED_TAG}`);
+        .where(dsql`${schema.materialPassports.customAttributes}->>'seedSource' = ${SEED_TAG}`)
+        // The API doesn't take the catalogue lock. Locking the rows means an
+        // order, report or reopened listing can't land on a spare between
+        // the counts below and the delete: it waits, then finds it gone.
+        .for('update');
       const ids = passports.map((p) => p.id);
       if (ids.length === 0) {
         console.log(`No curated passports on ${target.description}.`);
@@ -67,7 +71,8 @@ async function main(): Promise<void> {
       const listings = await tx
         .select({ passportId: schema.listings.passportId, status: schema.listings.status })
         .from(schema.listings)
-        .where(inArray(schema.listings.passportId, ids));
+        .where(inArray(schema.listings.passportId, ids))
+        .for('update');
       const transactions = await countBy(
         tx
           .select({ id: schema.listings.passportId, n: dsql<number>`count(*)` })

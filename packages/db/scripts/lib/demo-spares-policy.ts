@@ -1,4 +1,5 @@
-import { CATALOG, SEED_TAG } from './catalogue.js';
+import { CATALOG } from './catalogue.js';
+import { catalogueKeyOf, demoLotNumberOf, productLot } from './catalogue-lots.js';
 
 /**
  * One passport per curated product (owner, 2026-10-21). Which curated
@@ -31,27 +32,8 @@ export interface ProductSparePlan {
   protected: ProtectedSpare[];
 }
 
-/** A listing in one of these states is the product's lot on the marketplace. */
-const LIVE_LISTING = ['active', 'reserved'];
 /** A spare may only have listings that never sold anything. */
 const RETIRABLE_LISTING = ['cancelled', 'expired'];
-const CATALOGUE_KEYS = new Set(CATALOG.map((product) => product.key));
-
-export function curatedKey(row: Pick<CuratedPassportRow, 'customAttributes'>): string | undefined {
-  const metadata = row.customAttributes ?? {};
-  const key = metadata['catalogueKey'];
-  if (metadata['seedSource'] !== SEED_TAG) return undefined;
-  return typeof key === 'string' && CATALOGUE_KEYS.has(key) ? key : undefined;
-}
-
-/** A passport without a lot number is a product's original, so lot 1. */
-export function demoLotNumber(row: Pick<CuratedPassportRow, 'customAttributes'>): number {
-  const value = row.customAttributes?.['demoLotNumber'];
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 1;
-}
-
-const isLive = (row: CuratedPassportRow) =>
-  row.listingStatuses.some((status) => LIVE_LISTING.includes(status));
 
 /** Why a spare must be left alone; empty when it can be deleted. */
 export function spareProtection(row: CuratedPassportRow): string[] {
@@ -66,24 +48,25 @@ export function spareProtection(row: CuratedPassportRow): string[] {
 }
 
 /**
- * Per catalogue product: keep its live lot (the lowest-numbered, if somehow
- * there are several), or its lowest-numbered passport when none is live, as
- * demo-restore's byCatalogueKey picks it. Every other passport of the product
- * is deleted if nothing depends on it, and reported otherwise.
+ * Per catalogue product: keep its one lot (productLot: the live one, else one
+ * that sold, else the lowest-numbered), as the top-up and demo-restore pick it.
+ * Every other passport of the product is deleted if nothing depends on it,
+ * and reported otherwise.
  */
 export function planSpareRetirement(rows: CuratedPassportRow[]): ProductSparePlan[] {
+  const statusesOf = (id: string) =>
+    rows.find((row) => row.passportId === id)?.listingStatuses ?? [];
   return CATALOG.map((product) => {
     const lots = rows
-      .filter((row) => curatedKey(row) === product.key)
-      .sort(
-        (a, b) => demoLotNumber(a) - demoLotNumber(b) || a.passportId.localeCompare(b.passportId),
-      );
-    const keeper = lots.find(isLive) ?? lots[0];
+      .filter((row) => catalogueKeyOf(row) === product.key)
+      .map((row) => ({ ...row, id: row.passportId }));
+    const keeper = productLot(lots, statusesOf);
     const plan: ProductSparePlan = { catalogueKey: product.key, retire: [], protected: [] };
     if (!keeper) return plan;
     plan.keep = { passportId: keeper.passportId, productName: keeper.productName };
+    lots.sort((a, b) => demoLotNumberOf(a) - demoLotNumberOf(b) || a.id.localeCompare(b.id));
     for (const lot of lots) {
-      if (lot === keeper) continue;
+      if (lot.passportId === keeper.passportId) continue;
       const reasons = spareProtection(lot);
       const entry = { passportId: lot.passportId, productName: lot.productName };
       if (reasons.length === 0) plan.retire.push(entry);
