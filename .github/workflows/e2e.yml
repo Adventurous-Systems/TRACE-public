@@ -145,6 +145,39 @@ jobs:
       - name: The demo must survive the E2E suite
         run: pnpm --filter @trace/db demo:verify -- --env local
 
+      # The live demo runs the public_buyer_demo profile (curated-only browse,
+      # a curated lot's last unit kept back), which the run above doesn't (C7).
+      # The same suite again on that profile, as the local rehearsal runs it.
+      - name: Restart in public buyer demo mode
+        run: |
+          kill "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)"
+          wait "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)" 2>/dev/null || true
+          (
+            cd packages/api
+            export TRACE_DEPLOYMENT_PROFILE=public_buyer_demo
+            exec node_modules/.bin/tsx src/index.ts
+          ) > /tmp/api-demo.log 2>&1 &
+          echo $! > /tmp/api.pid
+          (
+            cd packages/web
+            export TRACE_DEPLOYMENT_PROFILE=public_buyer_demo
+            exec node_modules/.bin/next start
+          ) > /tmp/web-demo.log 2>&1 &
+          echo $! > /tmp/web.pid
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3001/health/ready >/dev/null \
+              && curl -sf http://localhost:3000 >/dev/null \
+              && break || sleep 2
+          done
+
+      - name: Run E2E suite on the public buyer demo profile
+        env:
+          E2E_CURATED_ONLY: '1'
+        run: pnpm e2e
+
+      - name: The demo must survive the suite on its own profile
+        run: pnpm --filter @trace/db demo:verify -- --env local
+
       - name: Restart in public showcase mode
         run: |
           kill "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)"
@@ -175,6 +208,8 @@ jobs:
         run: |
           echo "----- API -----"; tail -n 120 /tmp/api.log || true
           echo "----- WEB -----"; tail -n 120 /tmp/web.log || true
+          echo "----- DEMO API -----"; tail -n 120 /tmp/api-demo.log || true
+          echo "----- DEMO WEB -----"; tail -n 120 /tmp/web-demo.log || true
           echo "----- SHOWCASE API -----"; tail -n 120 /tmp/api-showcase.log || true
           echo "----- SHOWCASE WEB -----"; tail -n 120 /tmp/web-showcase.log || true
 
