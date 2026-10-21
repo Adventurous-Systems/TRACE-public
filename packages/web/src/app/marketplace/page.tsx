@@ -1,5 +1,6 @@
 'use client';
 
+import { OriginBadge } from '@/components/passport/OriginBadge';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { clearSession, getUser, type StoredUser } from '@/lib/auth';
@@ -280,6 +281,7 @@ export default function MarketplacePage() {
                           ? ` · ${subcategoryLabel(listing.passport.categoryL1, listing.passport.categoryL2)}`
                           : ''}
                       </p>
+                      <OriginBadge origin={listing.passport.origin} />
                       <div className="flex items-center justify-between pt-1">
                         <span className="text-lg font-bold text-brand-700">
                           {formatPrice(listing.pricePence)}

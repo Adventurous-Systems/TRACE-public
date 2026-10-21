@@ -18,11 +18,22 @@ describe('formatDate', () => {
     expect(formatDate(null)).toBe('');
     expect(formatDate('not a date')).toBe('');
   });
+
+  it('gives the UK day, so a server in UTC and a reader elsewhere agree (#418)', () => {
+    // 23:30 UTC in British Summer Time is already the next day in the UK.
+    expect(formatDate('2026-06-01T23:30:00Z')).toBe('2 Jun 2026');
+    // A date-only value (a date column) stays that day.
+    expect(formatDate('2026-06-01')).toBe('1 Jun 2026');
+  });
 });
 
 describe('formatDateTime', () => {
-  it('uses a 24-hour clock and a spelled-out month', () => {
-    expect(formatDateTime(new Date(2026, 8, 29, 15, 41))).toBe('29 Sept 2026, 15:41');
+  it('uses a 24-hour clock, a spelled-out month, and UK time', () => {
+    // British Summer Time: UTC+1.
+    expect(formatDateTime('2026-09-29T14:41:00Z')).toBe('29 Sept 2026, 15:41');
+    // Greenwich Mean Time: UTC.
+    expect(formatDateTime('2026-11-05T15:41:00Z')).toBe('5 Nov 2026, 15:41');
+    expect(formatDateTime(null)).toBe('');
   });
 });
 

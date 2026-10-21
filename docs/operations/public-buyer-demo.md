@@ -59,7 +59,7 @@ profile:
 The landing page and marketplace show a "What to try" panel
 (components/DemoGuide.tsx), visible only under public_buyer_demo: browse the
 marketplace, open a listing and its passport, click "Verify integrity" to see
-the fingerprint recompute live, then create a free account to make an offer.
+the fingerprint recompute live, then create a free account to order at the asking price.
 The register page's demo banner states what an account is for, and the
 marketplace's empty state distinguishes "no results for these filters" (with
 a clear-filters action) from "no listings are active right now" (attributed
@@ -157,10 +157,19 @@ without touching visitor data, run:
 
 It changes only the allowlisted fields in
 `scripts/lib/catalogue-corrections.ts`: category, subcategory,
-reclaimed-by and unit of measure. It never changes names, lot numbers, grades
-or photos. A condition note changes only when it still reads exactly as an
-earlier catalogue seeded it (`SUPERSEDED_CONDITION_NOTES`); a note anyone
-edited stays.
-Anchored passports it corrects are marked pending, and the anchor worker
-re-anchors them within one sweep (about 5 minutes). Unlike `demo:restore`,
+reclaimed-by, unit of measure, origin and deconstruction method. It never
+changes lot numbers, grades or photos. A name changes only when it is one
+the catalogue has superseded (`SUPERSEDED_PRODUCT_NAMES` in `catalogue.ts`),
+keeping a lot's "— Demo Lot NNN"; a deconstruction date is only ever cleared,
+for a product the catalogue says was never deconstructed. A condition note
+changes only when it still reads exactly as an earlier catalogue seeded it
+(`SUPERSEDED_CONDITION_NOTES`); a note anyone edited stays. It also gives an
+original curated passport its catalogue key, so every release finds it
+whatever its name.
+Each line of its output says whether the passport's fingerprint changes.
+Origin, unit and key are not in the fingerprint, so those corrections leave
+the anchor as it is. Anchored passports whose fingerprint changes are marked
+pending, and the anchor worker re-anchors them within one sweep (about 5
+minutes). After a rollback window, run it again: the previous release tops up
+lots with its own catalogue. Unlike `demo:restore`,
 it is safe on the public demo.

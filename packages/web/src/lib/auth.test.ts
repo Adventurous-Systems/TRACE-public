@@ -6,6 +6,7 @@ import {
   canCreateListing,
   canViewQuality,
   canViewAdmin,
+  canViewFeedback,
   isSupplier,
   isHubStaff,
   safeNextPath,
@@ -94,13 +95,22 @@ describe('canViewQuality', () => {
   });
 });
 
-// Mirrors the platform-admin-only audit routes and DashboardLayout's
-// existing admin-nav condition (platform_admin || hub_admin).
-describe('canViewAdmin', () => {
-  it('is true only for platform_admin and hub_admin', () => {
-    expect(canViewAdmin(user('platform_admin', null))).toBe(true);
-    expect(canViewAdmin(user('hub_admin', 'org-1'))).toBe(true);
+// Mirrors the platform-admin-only audit and access-request routes. Hub
+// admins were let in, and their Activity page showed only 403s.
+describe('canViewFeedback', () => {
+  it('is true for platform_admin and hub_admin, as the feedback API allows', () => {
+    expect(canViewFeedback(user('platform_admin', null))).toBe(true);
+    expect(canViewFeedback(user('hub_admin', 'org-1'))).toBe(true);
     for (const role of ['buyer', 'supplier', 'hub_staff', 'inspector'] as const) {
+      expect(canViewFeedback(user(role, 'org-1'))).toBe(false);
+    }
+  });
+});
+
+describe('canViewAdmin', () => {
+  it('is true only for platform_admin', () => {
+    expect(canViewAdmin(user('platform_admin', null))).toBe(true);
+    for (const role of ['buyer', 'supplier', 'hub_staff', 'hub_admin', 'inspector'] as const) {
       expect(canViewAdmin(user(role, 'org-1'))).toBe(false);
     }
     expect(canViewAdmin(null)).toBe(false);

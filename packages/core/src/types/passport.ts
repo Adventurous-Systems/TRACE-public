@@ -1,3 +1,5 @@
+import type { PassportOrigin } from '../constants/config.js';
+
 export type PassportStatus =
   | 'draft'
   | 'active'
@@ -78,6 +80,7 @@ export interface MaterialPassport {
   harmonisedStandard?: string;
 
   // Circular Extension
+  origin?: PassportOrigin;
   previousBuildingId?: string;
   deconstructionDate?: Date;
   deconstructionMethod?: DeconstructionMethod;

@@ -17,6 +17,7 @@ const BLOCKS = 'Reclaimed Aerated Concrete Blocks';
 const SISALWOOL = 'Sisalwool 100';
 const BRICKS = 'Reclaimed Facing Bricks';
 const LINTELS = 'Reclaimed Concrete Lintels';
+const ALUMINIUM = 'Surplus Aluminium Stud Walling';
 
 /** The marketplace's carbon figure counts up; read it only once it has settled. */
 const COUNT_UP_MS = 2000;
@@ -81,98 +82,163 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
   const sisalwool = await curated(rehearsal, SISALWOOL);
   const bricks = await curated(rehearsal, BRICKS);
   const lintels = await curated(rehearsal, LINTELS);
+  const aluminium = await curated(rehearsal, ALUMINIUM);
   const nowhere = '00000000-0000-4000-8000-000000000000';
 
   // ── 1. An anonymous visitor ──────────────────────────────────────────────
-  await rehearsal.journey('1 visitor', null, async (j) => {
-    await j.step('landing', async () => {
-      await j.goto('/');
-      return (await j.text(/TRACE issues/)) ?? 'no headline found';
-    });
-    await j.step('marketplace', async () => {
-      await j.goto('/marketplace');
-      await j.page.waitForTimeout(COUNT_UP_MS);
-      return `${await j.text(/Reusing everything|CO₂e saved/)} · ${await j.text(/\d+ listings?/)}`;
-    });
-    await j.step('filter by category', async () => {
-      const select = j.page.locator('select').first();
-      const options = await select.locator('option').allInnerTexts();
-      await select.selectOption({ index: 1 });
-      await j.page.waitForLoadState('networkidle');
-      return `options: ${options.join(', ')} → ${await j.text(/\d+ listings?/)}`;
-    });
-    await j.step('search with no matches', async () => {
-      await j.goto('/marketplace');
-      await j.page.getByPlaceholder(/search materials/i).fill('zzzz-no-such-material');
-      await j.page.waitForTimeout(1200);
-      return (await j.text(/no (results|materials|listings)/i)) ?? 'no empty-state text found';
-    });
-    await j.step('listing (logged out)', async () => {
-      await j.goto(`/marketplace/${kbriq.id}`);
-      const cta = await j.page.getByRole('link', { name: /sign up to buy/i }).count();
-      const form = await j.page.getByLabel('Quantity').count();
-      return `price "${await j.page.locator('p.text-3xl').last().innerText()}", sign-up link: ${cta}, order form: ${form}`;
-    });
-    await j.step('passport', async () => {
-      await j.page.getByText('View full material passport').click();
-      await j.page.waitForLoadState('networkidle');
-      return (await j.text(/Blockchain verified|Pending verification|Trust layer prepared/)) ?? '';
-    });
-    await j.step('verify integrity', async () => {
-      await j.page.getByRole('button', { name: /verify integrity/i }).click();
-      await j.page.waitForTimeout(2500);
-      return (await j.text(/Untampered|Mismatch|still being anchored|Couldn/)) ?? 'no result shown';
-    });
-    await j.step('check on chain now', async () => {
-      await j.page.getByRole('button', { name: /check on chain now/i }).click();
-      await j.page.waitForTimeout(2500);
-      return (
-        (await j.text(/Confirmed just now|different fingerprint|reach the chain/)) ?? 'no result'
+  // A visitor far from the UK: a date formatted without a zone differs
+  // between the server and the browser (React #418, audit 2026-10-13).
+  await rehearsal.journey(
+    '1 visitor',
+    null,
+    async (j) => {
+      await j.step('landing', async () => {
+        await j.goto('/');
+        return (await j.text(/TRACE issues/)) ?? 'no headline found';
+      });
+      await j.step('marketplace', async () => {
+        await j.goto('/marketplace');
+        await j.page.waitForTimeout(COUNT_UP_MS);
+        return `${await j.text(/Reusing everything|CO₂e saved/)} · ${await j.text(/\d+ listings?/)}`;
+      });
+      await j.step('every card says where its lot comes from', async () => {
+        const cards = await j.page.locator('main a[href^="/marketplace/"]').count();
+        const origins = await j.page
+          .locator('main a[href^="/marketplace/"]')
+          .getByText(/^(Reclaimed|Surplus \(unused stock\)|New circular product)$/)
+          .allInnerTexts();
+        if (origins.length !== cards)
+          throw new Error(`${origins.length} origins on ${cards} cards`);
+        return `${cards} cards: ${origins.join(', ')}`;
+      });
+      await j.step('filter by category', async () => {
+        const select = j.page.locator('select').first();
+        const options = await select.locator('option').allInnerTexts();
+        await select.selectOption({ index: 1 });
+        await j.page.waitForLoadState('networkidle');
+        return `options: ${options.join(', ')} → ${await j.text(/\d+ listings?/)}`;
+      });
+      await j.step('search with no matches', async () => {
+        await j.goto('/marketplace');
+        await j.page.getByPlaceholder(/search materials/i).fill('zzzz-no-such-material');
+        await j.page.waitForTimeout(1200);
+        return (await j.text(/no (results|materials|listings)/i)) ?? 'no empty-state text found';
+      });
+      await j.step('listing (logged out)', async () => {
+        await j.goto(`/marketplace/${kbriq.id}`);
+        const cta = await j.page.getByRole('link', { name: /sign up to buy/i }).count();
+        const form = await j.page.getByLabel('Quantity').count();
+        return `price "${await j.page.locator('p.text-3xl').last().innerText()}", sign-up link: ${cta}, order form: ${form}`;
+      });
+      await j.step('passport', async () => {
+        await j.page.getByText('View full material passport').click();
+        await j.page.waitForLoadState('networkidle');
+        return (
+          (await j.text(/Blockchain verified|Pending verification|Trust layer prepared/)) ?? ''
+        );
+      });
+      await j.step('verify integrity', async () => {
+        await j.page.getByRole('button', { name: /verify integrity/i }).click();
+        await j.page.waitForTimeout(2500);
+        return (
+          (await j.text(/Untampered|Mismatch|still being anchored|Couldn/)) ?? 'no result shown'
+        );
+      });
+      await j.step('check on chain now', async () => {
+        await j.page.getByRole('button', { name: /check on chain now/i }).click();
+        await j.page.waitForTimeout(2500);
+        return (
+          (await j.text(/Confirmed just now|different fingerprint|reach the chain/)) ?? 'no result'
+        );
+      });
+      await j.step('explorer', async () => {
+        const [popup] = await Promise.all([
+          j.context.waitForEvent('page', { timeout: 4000 }).catch(() => null),
+          j.page.getByText('View on explorer').click(),
+        ]);
+        const target = popup ?? j.page;
+        await target.waitForLoadState('networkidle');
+        const text = (await target.locator('main, body').first().innerText()).slice(0, 160);
+        if (popup) await popup.close();
+        else await j.page.goBack();
+        return `${popup ? 'new tab' : 'same tab'}: ${text.replace(/\s+/g, ' ')}`;
+      });
+      await j.step(
+        'passport: origin, material and specifications, one registration date',
+        async () => {
+          await j.goto(`/passport/${kbriq.passportId}`);
+          const page = await j.page.locator('main').innerText();
+          const want = [
+            /New circular product/,
+            /Material and specifications/,
+            /Recycled construction & demolition aggregate/,
+            /Compressive strength/,
+            /BBA 25\/7367/,
+            /Circularity score/,
+            /Suitable for reuse in/,
+            /Fingerprint anchored|Fingerprint prepared/,
+            /Listed on the marketplace\s+\d{1,2} \w+ \d{4}/,
+          ];
+          const missing = want.filter((pattern) => !pattern.test(page)).map(String);
+          // The timeline's "Registered on TRACE" is the one registration date.
+          if (/Registered on(?! TRACE)/.test(page)) missing.push('a second "Registered on" date');
+          if (/No circular data recorded/.test(page)) missing.push('"No circular data recorded"');
+          if (missing.length) throw new Error(`missing or wrong: ${missing.join(', ')}`);
+          return (await j.text(/On the marketplace[^\n]*/)) ?? '';
+        },
       );
-    });
-    await j.step('explorer', async () => {
-      const [popup] = await Promise.all([
-        j.context.waitForEvent('page', { timeout: 4000 }).catch(() => null),
-        j.page.getByText('View on explorer').click(),
-      ]);
-      const target = popup ?? j.page;
-      await target.waitForLoadState('networkidle');
-      const text = (await target.locator('main, body').first().innerText()).slice(0, 160);
-      if (popup) await popup.close();
-      else await j.page.goBack();
-      return `${popup ? 'new tab' : 'same tab'}: ${text.replace(/\s+/g, ' ')}`;
-    });
-    await j.step('scan: paste a passport link', async () => {
-      await j.goto('/scan');
-      await j.page
-        .locator('input')
-        .first()
-        .fill(`${rehearsal.baseUrl}/passport/${kbriq.passportId}`);
-      await j.page.getByRole('button', { name: /^go$/i }).click();
-      await j.page.waitForLoadState('networkidle');
-      return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
-    });
-    await j.step(
-      'unknown passport',
-      async () => {
-        await j.goto(`/passport/${nowhere}`);
-        return (await j.page.locator('main, body').first().innerText()).slice(0, 120);
-      },
-      { expectIssues: /HTTP 404|404/ },
-    );
-    await j.step(
-      'unknown listing',
-      async () => {
-        await j.goto(`/marketplace/${nowhere}`);
-        return (await j.page.locator('main, body').first().innerText()).slice(0, 120);
-      },
-      { expectIssues: /HTTP 404|404/ },
-    );
-    await j.step('orders while logged out', async () => {
-      await j.goto('/transactions');
-      return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
-    });
-  });
+      await j.step('passport: back to its listing, and to the marketplace', async () => {
+        await j.page.getByRole('link', { name: /view listing/i }).click();
+        await j.page.waitForURL(/\/marketplace\/[0-9a-f-]{36}$/);
+        const listing = j.page.url().replace(rehearsal.baseUrl, '');
+        await j.page.goBack();
+        await j.page.getByRole('link', { name: '← Marketplace' }).click();
+        await j.page.waitForURL(/\/marketplace$/);
+        return `listing ${listing}; header link → ${j.page.url().replace(rehearsal.baseUrl, '')}`;
+      });
+      await j.step('surplus stock: no deconstruction in its provenance', async () => {
+        await j.goto(`/passport/${aluminium.passportId}`);
+        const page = await j.page.locator('main').innerText();
+        if (/Deconstructed|Deconstruction method/.test(page)) {
+          throw new Error('the surplus lot shows a deconstruction');
+        }
+        return `${(await j.text(/Surplus stock, never fitted/)) ?? 'NO SURPLUS STEP'} · ${
+          (await j.text(/From Reconditioning partners/)) ?? ''
+        }`;
+      });
+      await j.step('scan: paste a passport link', async () => {
+        await j.goto('/scan');
+        await j.page
+          .locator('input')
+          .first()
+          .fill(`${rehearsal.baseUrl}/passport/${kbriq.passportId}`);
+        await j.page.getByRole('button', { name: /^go$/i }).click();
+        await j.page.waitForLoadState('networkidle');
+        return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
+      });
+      await j.step(
+        'unknown passport',
+        async () => {
+          await j.goto(`/passport/${nowhere}`);
+          return (await j.page.locator('main, body').first().innerText()).slice(0, 120);
+        },
+        { expectIssues: /HTTP 404|404/ },
+      );
+      await j.step(
+        'unknown listing',
+        async () => {
+          await j.goto(`/marketplace/${nowhere}`);
+          return (await j.page.locator('main, body').first().innerText()).slice(0, 120);
+        },
+        { expectIssues: /HTTP 404|404/ },
+      );
+      await j.step('orders while logged out', async () => {
+        await j.goto('/transactions');
+        return `landed on ${j.page.url().replace(rehearsal.baseUrl, '')}`;
+      });
+    },
+    { timezoneId: 'Pacific/Auckland' },
+  );
 
   // ── 2. A visitor signs up and orders ─────────────────────────────────────
   await rehearsal.journey('2 new buyer', null, async (j) => {
@@ -279,6 +345,20 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
     await j.step('dashboard', async () => {
       await j.goto('/dashboard');
       return (await j.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 200);
+    });
+    await j.step('nav: every link leads somewhere a hub admin can use', async () => {
+      const links = (await j.page.locator('header nav a').allInnerTexts()).map((l) =>
+        l.replace(/\s+/g, ' ').trim(),
+      );
+      if (links.some((l) => /Access Requests|Activity/.test(l))) {
+        throw new Error(`platform-only pages in the nav: ${links.join(', ')}`);
+      }
+      await j.goto('/admin/activity');
+      return `nav [${links.join(', ')}]; /admin/activity: ${(
+        await j.page.locator('main').innerText()
+      )
+        .replace(/\s+/g, ' ')
+        .slice(0, 120)}`;
     });
     await j.step('incoming orders', () => ordersSummary(j));
     await j.step('accept the K-BRIQ order', async () => {
@@ -503,6 +583,15 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
         return `badge "${badge}", ${grade}, "${basis}", integrity "${integrity}"`;
       });
     }
+    await j.step('the specs never contradict the new grade', async () => {
+      await j.goto(`/passport/${bricks.passportId}`);
+      const specs = await j.page
+        .locator('div', { has: j.page.getByText('Material and specifications', { exact: true }) })
+        .last()
+        .innerText();
+      if (/\bGrade\b/.test(specs)) throw new Error(`a grade in the specs: ${specs.slice(0, 200)}`);
+      return specs.replace(/\s+/g, ' ').slice(0, 200);
+    });
     await j.step('a material nobody has inspected says so', async () => {
       await j.goto(`/passport/${kbriq.passportId}`);
       const page = await j.page.locator('body').innerText();
@@ -514,6 +603,14 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
 
   // ── 8. Hub staff, and a supplier ─────────────────────────────────────────
   await rehearsal.journey('8 hub staff', 'hubStaff', async (j) => {
+    await j.step('nav: no Quality link (the quality API refuses hub staff)', async () => {
+      await j.goto('/dashboard');
+      const links = (await j.page.locator('header nav a').allInnerTexts()).map((l) =>
+        l.replace(/\s+/g, ' ').trim(),
+      );
+      if (links.includes('Quality')) throw new Error(`Quality in the nav: ${links.join(', ')}`);
+      return `nav [${links.join(', ')}]`;
+    });
     for (const route of [
       '/dashboard',
       '/transactions',
@@ -562,6 +659,7 @@ export async function runJourneys(rehearsal: Rehearsal): Promise<void> {
       return `labels: ${labels}; a negative width → ${refused}; corrected → "${await heading()}"`;
     });
     await j.step('register: circular data, with a decimal number of years', async () => {
+      await j.page.locator('#origin').selectOption('surplus');
       await j.page.locator('#conditionGrade').selectOption('B');
       await j.page.locator('#remainingLifeEstimate').fill('12.5');
       await cont();
