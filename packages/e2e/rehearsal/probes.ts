@@ -914,11 +914,19 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     'an inspector sees materials of more than one organisation',
     'HTTP 200, 2+ organisations',
     async () => {
-      const res = await materials(inspector, '?limit=50');
-      const holders = new Set((res.body.data?.data ?? []).map((m) => m.organisationName));
+      // One search per holder: the first page alone depends on how much
+      // rehearsal data the stack has gathered (184 materials, all one
+      // organisation's on page one, on 2026-10-13).
+      const hub = await materials(inspector, '?limit=50&q=Facing%20Bricks');
+      const own = await materials(inspector, '?limit=50&q=Rehearsal%20Probe%20Lot');
+      const holders = new Set(
+        [...(hub.body.data?.data ?? []), ...(own.body.data?.data ?? [])].map(
+          (m) => m.organisationName,
+        ),
+      );
       return {
-        pass: res.status === 200 && holders.size > 1,
-        actual: `${says(res)}, ${holders.size}`,
+        pass: hub.status === 200 && own.status === 200 && holders.size > 1,
+        actual: `${says(hub)}, ${holders.size}`,
       };
     },
   );
@@ -1048,6 +1056,115 @@ export async function runProbes(rehearsal: Rehearsal): Promise<void> {
     const res = await materials(inspector, `?uninspected=true&q=${inspectable.passportId}`);
     return { pass: res.body.data?.total === 0, actual: `${says(res)}, ${res.body.data?.total}` };
   });
+
+  // ── Passport truth: what the public passport routes show (2026-10-13) ───
+  // A sold lot: its history holds the selling event, with the buyer and the
+  // amount in the database.
+  const sold = await createListedPassport(ctx, seller.token, {
+    productName: uniqueName('Rehearsal Sold Lot'),
+    pricePence: 500,
+    quantity: 1,
+  });
+  const soldOrder = await placed(buyer, sold.listingId, 1);
+  await act(seller, soldOrder, 'accept');
+  await act(buyer, soldOrder, 'confirm_delivery');
+  const PRIVATE_KEYS = [
+    'registeredBy',
+    'customAttributes',
+    'buyerId',
+    'amountPence',
+    'actorId',
+    'transactionId',
+  ];
+  const leaks = (data: unknown) =>
+    PRIVATE_KEYS.filter((key) => JSON.stringify(data ?? null).includes(`"${key}"`));
+  for (const route of ['', '/verify', '/history']) {
+    await probe(
+      `an anonymous GET ${route || '/:id'} of a sold passport shows nothing private`,
+      'HTTP 200, no private keys',
+      async () => {
+        const res = await rehearsal.api('GET', `/api/v1/passports/${sold.passportId}${route}`);
+        const found = leaks(res.body.data);
+        return {
+          pass: res.status === 200 && found.length === 0,
+          actual: `${says(res)}${found.length ? `; shows ${found.join(', ')}` : ''}`,
+        };
+      },
+    );
+  }
+  await probe('the public history still says it sold', 'a selling event', async () => {
+    const res = await rehearsal.api<Array<{ eventData: Record<string, unknown> }>>(
+      'GET',
+      `/api/v1/passports/${sold.passportId}/history`,
+    );
+    const selling = (res.body.data ?? []).filter((e) =>
+      String(e.eventData['bizStep'] ?? '').endsWith(':selling'),
+    );
+    return {
+      pass: selling.length === 1,
+      actual: `${says(res)}; ${selling.length} selling event(s)`,
+    };
+  });
+
+  const drafts = await rehearsal.api<{ data: Array<{ id: string }> }>(
+    'GET',
+    '/api/v1/passports?status=draft',
+    { token: staff.token },
+  );
+  const draftId = drafts.body.data?.data?.[0]?.id;
+  for (const route of ['', '/verify', '/certificate', '/history', '/verify-integrity']) {
+    await probe(
+      `a draft's ${route || '/:id'}: not found to the public or another organisation`,
+      '404, 404, and 200 to its own',
+      async () => {
+        if (!draftId) return { pass: false, actual: 'no draft passport to probe' };
+        const url = `/api/v1/passports/${draftId}${route}`;
+        const statuses = [
+          (await rehearsal.api('GET', url)).status,
+          (await rehearsal.api('GET', url, { token: seller.token })).status,
+          (await rehearsal.api('GET', url, { token: staff.token })).status,
+        ];
+        return { pass: statuses.join() === '404,404,200', actual: statuses.join(', ') };
+      },
+    );
+  }
+
+  await probe(
+    'every curated lot on the marketplace says where it comes from',
+    'all set',
+    async () => {
+      const res = await rehearsal.api<{
+        data: Array<{ passport: { productName: string; origin?: string | null } }>;
+      }>('GET', '/api/v1/marketplace/listings?limit=50');
+      const lots = res.body.data?.data ?? [];
+      const without = lots.filter((l) => !l.passport.origin).map((l) => l.passport.productName);
+      return {
+        pass: lots.length > 0 && without.length === 0,
+        actual: `${lots.length} lots; ${without.length ? `no origin: ${without.join(', ')}` : 'all set'}`,
+      };
+    },
+  );
+  await probe('a passport with an origin nobody knows', 'HTTP 400', async () =>
+    expectStatus(
+      await rehearsal.api('POST', '/api/v1/passports', {
+        token: seller.token,
+        body: {
+          productName: uniqueName('Rehearsal Bogus Origin'),
+          categoryL1: 'masonry',
+          origin: 'bogus',
+        },
+      }),
+      400,
+    ),
+  );
+  await probe("a hub admin reads the platform's activity record", 'HTTP 403', async () =>
+    expectStatus(
+      await rehearsal.api('GET', '/api/v1/audit/events?limit=1', {
+        token: (await rehearsal.persona('hubAdmin')).token,
+      }),
+      403,
+    ),
+  );
 
   await ctx.dispose();
 }

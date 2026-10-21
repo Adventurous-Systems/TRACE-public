@@ -119,6 +119,7 @@ async function main() {
       conditionNotes:
         'Good condition with mortar residue. Minor chipping on some units. Suitable for feature walls and garden use.',
       reuseCount: 1,
+      origin: 'reclaimed',
       deconstructionMethod: 'selective',
       carbonSavingsVsNew: '0.22',
       circularityScore: 85,
@@ -148,6 +149,7 @@ async function main() {
       conditionNotes:
         'Excellent condition. Paint coat intact, no corrosion visible. Full structural load data available.',
       reuseCount: 1,
+      origin: 'reclaimed',
       deconstructionMethod: 'selective',
       carbonSavingsVsNew: '1.85',
       circularityScore: 92,
@@ -171,6 +173,7 @@ async function main() {
       conditionNotes:
         'Fair condition. Mix of sizes 400mm × 200mm and 300mm × 200mm. Some surface weathering typical for age. Suitable for secondary roofing.',
       reuseCount: 2,
+      origin: 'reclaimed',
       deconstructionMethod: 'manual',
       carbonSavingsVsNew: '0.45',
       circularityScore: 70,

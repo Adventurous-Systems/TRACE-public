@@ -69,7 +69,13 @@ import {
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
 import { resolveTarget } from './lib/guard.js';
-import { CATALOG, LIVE_LOT_STATUSES, SEED_TAG } from './lib/catalogue.js';
+import {
+  CATALOG,
+  LIVE_LOT_STATUSES,
+  SEED_TAG,
+  SUPERSEDED_PRODUCT_NAMES,
+  isCatalogueName,
+} from './lib/catalogue.js';
 import { DEMO_QUALITY_REPORT, DEMO_ACCESS_REQUEST, DEMO_FEEDBACK } from './lib/demo-content.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -313,9 +319,15 @@ async function main() {
       const metadata = passport.customAttributes ?? {};
       const key = metadata['catalogueKey'];
       if (typeof key === 'string' && catalogueByKey.has(key)) return key;
-      return CATALOG.find((product) => product.passport.productName === passport.productName)?.key;
+      return CATALOG.find((product) => isCatalogueName(passport.productName, product))?.key;
     };
     const byName = new Map(curated.map((p) => [p.productName, p]));
+    // A product's original passport, under its name now or an earlier one
+    // (SUPERSEDED_PRODUCT_NAMES); converging renames it.
+    const originalOf = (product: (typeof CATALOG)[number]) =>
+      [product.passport.productName, ...(SUPERSEDED_PRODUCT_NAMES[product.key] ?? [])]
+        .map((name) => byName.get(name))
+        .find(Boolean);
 
     // demo-replenish.ts appends a "— Demo Lot NNN" suffix to every lot it
     // creates beyond the original (demo-replenish.ts's displayName()), and
@@ -391,7 +403,7 @@ async function main() {
     }
 
     for (const product of CATALOG) {
-      const existing = byName.get(product.passport.productName!);
+      const existing = originalOf(product);
       if (!existing) continue;
 
       // Converge the catalogue-owned fields. status is set to 'listed' because
@@ -400,11 +412,18 @@ async function main() {
       const desired = {
         ...product.passport,
         status: 'listed' as const,
-        customAttributes: { seedSource: SEED_TAG },
+        // The key too, as demo:correct-catalogue gives it: every release finds
+        // the product's original by it, whatever its name.
+        customAttributes: { seedSource: SEED_TAG, catalogueKey: product.key },
       };
 
+      // A relative date the catalogue sets to null (a product with no such
+      // date, like surplus stock never deconstructed) is not relative: it
+      // converges like any other field.
+      const relative = (key: string) =>
+        RELATIVE_DATE_FIELDS.has(key) && (desired as Record<string, unknown>)[key] !== null;
       const drifted = (Object.keys(desired) as (keyof typeof desired)[]).filter((key) => {
-        if (RELATIVE_DATE_FIELDS.has(key as string)) return false;
+        if (relative(key as string)) return false;
         const want = desired[key];
         const have = (existing as Record<string, unknown>)[key as string];
         if (want instanceof Date && have instanceof Date) return want.getTime() !== have.getTime();
@@ -413,7 +432,7 @@ async function main() {
 
       // Never write a relative date back — see RELATIVE_DATE_FIELDS.
       for (const field of RELATIVE_DATE_FIELDS) {
-        delete (desired as Record<string, unknown>)[field];
+        if (relative(field)) delete (desired as Record<string, unknown>)[field];
       }
 
       if (drifted.length > 0 && !dryRun) {
@@ -508,7 +527,7 @@ async function main() {
       let duplicatesCancelled = 0;
 
       for (const product of CATALOG) {
-        const passport = byName.get(product.passport.productName!);
+        const passport = originalOf(product);
         if (!passport) continue;
         const own = (byPassport.get(passport.id) ?? []).sort(
           (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),

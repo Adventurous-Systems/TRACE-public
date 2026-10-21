@@ -2,10 +2,15 @@
  * Which catalogue corrections apply to an existing curated passport or lot.
  *
  * Only an explicit allowlist of descriptive, catalogue-owned fields is ever
- * corrected. Never the product name (lots carry a "— Demo Lot NNN" suffix),
- * never status, and never anything an inspector or seller can change on a
- * live demo (condition grade, notes, photos). That is what makes a correction
- * safe to run on a host with visitor data, unlike demo:restore.
+ * corrected. Never status, and never anything an inspector or seller can
+ * change on a live demo (condition grade, notes, photos). That is what makes a
+ * correction safe to run on a host with visitor data, unlike demo:restore.
+ *
+ * A product name only when it is one the catalogue has superseded
+ * (SUPERSEDED_PRODUCT_NAMES), keeping a lot's "— Demo Lot NNN" suffix; and a
+ * deconstruction date only to clear it, for a product the catalogue says was
+ * never deconstructed (its dates are relative to when the catalogue runs, so
+ * a set date never matches).
  *
  * One narrow exception: a condition note that still reads exactly as an
  * earlier catalogue wrote it (SUPERSEDED_CONDITION_NOTES) nobody has edited,
@@ -14,13 +19,22 @@
  * note is corrected only while it still holds what an earlier catalogue seeded.
  */
 import { SEED_TAG } from '@trace/core/constants/demo-catalogue';
-import { lotShippingNote, type Product } from './catalogue.js';
+import type { MaterialPassport } from '../../drizzle/schema.js';
+import { computePassportHash } from '../../src/passport-hash.js';
+import {
+  SUPERSEDED_PRODUCT_NAMES,
+  isCatalogueName,
+  lotShippingNote,
+  type Product,
+} from './catalogue.js';
 
 export const CORRECTABLE_FIELDS = [
   'categoryL1',
   'categoryL2',
   'reclaimedBy',
   'unitOfMeasure',
+  'origin',
+  'deconstructionMethod',
 ] as const;
 export type CorrectableField = (typeof CORRECTABLE_FIELDS)[number];
 
@@ -40,11 +54,16 @@ export const SUPERSEDED_CONDITION_NOTES: Record<string, readonly string[]> = {
 
 /** Corrected values, typed like their columns (categoryL1 is never null). */
 export interface CatalogueCorrections {
+  productName?: string;
   categoryL1?: string;
   categoryL2?: string | null;
   reclaimedBy?: string | null;
   unitOfMeasure?: string | null;
+  origin?: MaterialPassport['origin'];
+  deconstructionMethod?: string | null;
+  deconstructionDate?: null;
   conditionNotes?: string | null;
+  customAttributes?: Record<string, unknown>;
 }
 
 interface PassportLike {
@@ -54,6 +73,9 @@ interface PassportLike {
   categoryL2: string | null;
   reclaimedBy: string | null;
   unitOfMeasure: string | null;
+  origin?: string | null;
+  deconstructionMethod?: string | null;
+  deconstructionDate?: Date | null;
   conditionNotes?: string | null;
 }
 
@@ -62,8 +84,23 @@ export function isCatalogueLot(passport: PassportLike, product: Product): boolea
   const metadata = passport.customAttributes ?? {};
   return (
     metadata['catalogueKey'] === product.key ||
-    (metadata['seedSource'] === SEED_TAG && passport.productName === product.passport.productName)
+    (metadata['seedSource'] === SEED_TAG && isCatalogueName(passport.productName, product))
   );
+}
+
+/**
+ * The passport's name under the catalogue's current name, when it carries a
+ * superseded one: the bare original, or a lot with its suffix kept. Any other
+ * name (one a seller or the catalogue chose since) stays as it is.
+ */
+function renamed(name: string, product: Product): string | null {
+  for (const old of SUPERSEDED_PRODUCT_NAMES[product.key] ?? []) {
+    if (name === old) return product.passport.productName;
+    if (name.startsWith(`${old} — Demo Lot `)) {
+      return product.passport.productName + name.slice(old.length);
+    }
+  }
+  return null;
 }
 
 /** Field → corrected value, for every allowlisted field that differs. */
@@ -80,6 +117,23 @@ export function catalogueCorrections(
     if (field === 'categoryL1' && wanted === null) continue;
     if ((passport[field] ?? null) !== wanted) corrections[field] = wanted;
   }
+  const name = renamed(passport.productName, product);
+  if (name !== null) corrections['productName'] = name;
+  // An original passport, seeded with the curated tag only, is found by its
+  // name; a release that predates a rename would no longer find it (and top
+  // up a duplicate lot). Its catalogue key, which every release matches on,
+  // keeps it the product's. Not in the fingerprint.
+  const metadata = passport.customAttributes ?? {};
+  if (metadata['catalogueKey'] !== product.key) {
+    (corrections as Record<string, unknown>)['customAttributes'] = {
+      ...metadata,
+      catalogueKey: product.key,
+    };
+  }
+  // Only ever cleared: see the header.
+  if (product.passport.deconstructionDate === null && (passport.deconstructionDate ?? null)) {
+    corrections['deconstructionDate'] = null;
+  }
   const notes = passport.conditionNotes ?? null;
   const currentNotes = product.passport.conditionNotes ?? null;
   if (
@@ -91,6 +145,22 @@ export function catalogueCorrections(
     corrections['conditionNotes'] = currentNotes;
   }
   return corrections as CatalogueCorrections;
+}
+
+/**
+ * Whether applying the corrections changes the passport's fingerprint. Some
+ * corrected fields are in it (category, name, deconstruction); others are not
+ * (origin, unit of measure), and a passport whose fingerprint is unchanged
+ * needs no re-anchor.
+ */
+export function fingerprintChanges(
+  passport: MaterialPassport,
+  corrections: CatalogueCorrections,
+): boolean {
+  return (
+    computePassportHash({ ...passport, ...corrections } as MaterialPassport) !==
+    computePassportHash(passport)
+  );
 }
 
 /**

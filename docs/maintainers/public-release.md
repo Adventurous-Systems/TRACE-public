@@ -49,21 +49,33 @@ as a public remote.
 - Tests cover the public configuration, not a private service dependency.
 - Gitleaks and TruffleHog pass over the complete public history.
 
-## Branch flow without enforced protection
+## Branch flow
 
-Until repository rules are available, maintainers follow this manual invariant:
+`main` and `staging` are protected branches, and the rules apply to
+administrators too:
 
-- No direct feature work on `main` or `staging`.
-- Every change goes through a short-lived public branch and reviewed PR.
-- `staging` receives the reviewed commit first.
-- Deployment uses an exact tested SHA.
-- `main` advances only to a commit already accepted on `staging`.
-- Force-pushes and branch deletion are never used on the three long-lived
-  branches.
+- No direct pushes. Every change goes through a short-lived public branch and a
+  PR into `staging`.
+- Both branches require these checks to pass on an up-to-date branch:
+  - Build and test
+  - Browser tests
+  - Build and start deployment images
+  - Exact-SHA source release tooling
+  - Secret history
+  - GitHub Actions security analysis
+  - High and critical production dependencies
+- `main` also requires Promotion source (`promotion-source.yml`), which accepts
+  only PRs whose head is `staging`. So `main` advances only to a commit already
+  accepted on `staging`.
+- Force-pushes and deletion are disabled on both branches.
+- A merge to `main` deploys the demo from that exact SHA
+  (see [deployment](../operations/deployment.md)).
+- After each release, a PR brings `main`'s merge commit back into `staging`, so
+  the branches stay level.
 
-Keep the private repository and its deployment checkouts under their existing name. A
-name exchange can cause stale private clones to target a new public repository;
-without enforced branch protection, avoiding that exchange is the safer model.
+Keep the private repository and its deployment checkouts under their existing
+name. A name exchange can cause stale private clones to target a new public
+repository.
 
 ## Independence checks
 

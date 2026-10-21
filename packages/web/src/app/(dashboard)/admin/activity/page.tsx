@@ -69,7 +69,7 @@ export default function AdminActivityPage() {
   if (user && !canViewAdmin(user)) {
     return (
       <DashboardLayout>
-        <NoAccess message="Activity and VTHO spend are visible to platform and hub admins." />
+        <NoAccess message="Activity and VTHO spend are visible to the platform administrator." />
       </DashboardLayout>
     );
   }

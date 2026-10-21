@@ -8,6 +8,8 @@ import {
   MATERIAL_CATEGORIES,
   CONDITION_GRADES,
   DECONSTRUCTION_METHODS,
+  PASSPORT_ORIGINS,
+  PASSPORT_ORIGIN_LABELS,
   UNITS_OF_MEASURE,
   UNIT_OF_MEASURE_LABELS,
 } from '@trace/core';
@@ -37,6 +39,7 @@ interface EditForm {
   countryOfOrigin: string;
   conditionGrade: string;
   conditionNotes: string;
+  origin: string;
   deconstructionMethod: string;
   reclaimedBy: string;
   remainingLifeEstimate: string;
@@ -115,6 +118,7 @@ export default function EditPassportPage() {
           countryOfOrigin: p.countryOfOrigin ?? '',
           conditionGrade: p.conditionGrade ?? '',
           conditionNotes: p.conditionNotes ?? '',
+          origin: p.origin ?? '',
           deconstructionMethod: p.deconstructionMethod ?? '',
           reclaimedBy: p.reclaimedBy ?? '',
           remainingLifeEstimate:
@@ -152,6 +156,7 @@ export default function EditPassportPage() {
       countryOfOrigin: data.countryOfOrigin || undefined,
       conditionGrade: data.conditionGrade || undefined,
       conditionNotes: data.conditionNotes || undefined,
+      origin: data.origin || undefined,
       deconstructionMethod: data.deconstructionMethod || undefined,
       reclaimedBy: data.reclaimedBy || undefined,
       remainingLifeEstimate: num(data.remainingLifeEstimate),
@@ -322,6 +327,17 @@ export default function EditPassportPage() {
                       inspection can change it.
                     </p>
                   )}
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="origin">Origin</Label>
+                  <select id="origin" className={selectClass} {...register('origin')}>
+                    <option value="">Not stated</option>
+                    {PASSPORT_ORIGINS.map((o) => (
+                      <option key={o} value={o}>
+                        {PASSPORT_ORIGIN_LABELS[o]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="deconstructionMethod">Deconstruction method</Label>

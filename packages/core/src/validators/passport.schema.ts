@@ -4,6 +4,7 @@ import {
   PASSPORT_STATUSES,
   CONDITION_GRADES,
   DECONSTRUCTION_METHODS,
+  PASSPORT_ORIGINS,
   UNITS_OF_MEASURE,
 } from '../constants/config.js';
 
@@ -62,6 +63,7 @@ export const CreatePassportSchema = z.object({
   harmonisedStandard: z.string().optional(),
 
   // Circular extension
+  origin: z.enum(PASSPORT_ORIGINS).optional(),
   previousBuildingId: z.string().optional(),
   deconstructionDate: z.coerce.date().optional(),
   deconstructionMethod: z.enum(DECONSTRUCTION_METHODS).optional(),

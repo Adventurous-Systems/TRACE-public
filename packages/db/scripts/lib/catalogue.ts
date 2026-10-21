@@ -42,7 +42,28 @@ export function lotShippingNote(product: Product): string {
   return product.listing.note ?? 'Delivery from FK7 or collection';
 }
 
+/**
+ * Names a catalogue product was seeded under before, by product key. An
+ * original curated passport (seeded without a lot number) is found by its
+ * name, so it stays this product's under an earlier name too, and
+ * demo:correct-catalogue renames it (lots keep their "— Demo Lot NNN").
+ */
+export const SUPERSEDED_PRODUCT_NAMES: Record<string, readonly string[]> = {
+  // Unused surplus, not reclaimed from a building (owner, 2026-10-13).
+  'reclaimed-aluminium-stud-walling': ['Reclaimed Aluminium Stud Walling'],
+};
+
+/** Whether a passport's name is this product's, as the catalogue names it now or did before. */
+export function isCatalogueName(name: string, product: Product): boolean {
+  return (
+    name === product.passport.productName ||
+    (SUPERSEDED_PRODUCT_NAMES[product.key] ?? []).includes(name)
+  );
+}
+
+// Reclaimed from a building by the hub, unless a product says otherwise.
 const RECLAIMED = {
+  origin: 'reclaimed',
   deconstructionMethod: 'selective',
   // The hub's name everywhere else is "Stirling Reuse Hub" (owner, 2026-09-29).
   reclaimedBy: 'Stirling Reuse Hub',
@@ -59,6 +80,8 @@ export const CATALOG: Product[] = [
       categoryL1: 'masonry',
       categoryL2: 'facing-brick',
       status: 'listed',
+      // A new product made from recycled material, not reclaimed.
+      origin: 'new',
       manufacturerName: 'Kenoteq',
       countryOfOrigin: 'GB',
       productionDate: new Date(Date.now() - 30 * DAY),
@@ -114,6 +137,8 @@ export const CATALOG: Product[] = [
       categoryL1: 'insulation',
       categoryL2: 'natural-fibre',
       status: 'listed',
+      // A new product made from recycled fibre, not reclaimed.
+      origin: 'new',
       manufacturerName: 'Sisalwool',
       countryOfOrigin: 'GB',
       productionDate: new Date(Date.now() - 20 * DAY),
@@ -248,14 +273,18 @@ export const CATALOG: Product[] = [
     key: 'reclaimed-aluminium-stud-walling',
     image: 'aluminium-stud-walling.jpg',
     passport: {
-      productName: 'Reclaimed Aluminium Stud Walling',
+      // Unused surplus from reconditioning partners, never fitted, so never
+      // deconstructed (owner, 2026-10-13); it was "Reclaimed …" before.
+      productName: 'Surplus Aluminium Stud Walling',
       unitOfMeasure: 'each',
       // Partition framing, not structural steel (owner, 2026-09-29).
       categoryL1: 'partitions-linings',
       categoryL2: 'metal-stud-framing',
       status: 'listed',
       countryOfOrigin: 'GB',
-      ...RECLAIMED,
+      origin: 'surplus',
+      deconstructionMethod: null,
+      deconstructionDate: null,
       reclaimedBy: 'Reconditioning partners',
       materialComposition: [{ material: 'Aluminium', percentage: 100, recycled: true }],
       technicalSpecs: {
