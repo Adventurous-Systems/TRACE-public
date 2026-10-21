@@ -94,7 +94,7 @@ retargeted local tag or altered candidate file cannot pass validation.
 Review the exact public commit before installation. Install fixed copies with
 `install`; do not run an installer from the Git checkout as root. The trusted
 directory is `/usr/local/libexec/trace-demo`, owned by root and not writable by
-the deployment user. Install `release-lib.sh`, `prepare-release.sh`, `verify-release.sh`, `scan-image.sh`, and the reviewed `ops/deploy/*.sh` primitives there with mode 755. Record SHA-256 checksums of those installed copies in the private
+the deployment user. Install `release-lib.sh`, `prepare-release.sh`, `verify-release.sh`, `scan-image.sh`, `ops/backup_db.sh`, `ops/backup_objects.sh`, and the reviewed `ops/deploy/*.sh` primitives there with mode 755. Record SHA-256 checksums of those installed copies in the private
 deployment record.
 
 The preparation interface accepts one argument only:
@@ -212,7 +212,10 @@ end to end, holding the same deployment lock:
 3. Prepare (or, if already prepared, verify) the immutable source release, free
    the inactive slot of any older generation's containers, and write its
    candidate environment file.
-4. Preflight, migrate, and run `demo-verify`. A catalogue integrity failure here
+4. Preflight, take a validated dump of the live database
+   (`backup_db.sh` into `/var/lib/trace-demo/backups/predeploy`, kept 14 days),
+   migrate, and run `demo-verify`. A failed dump aborts before anything is
+   migrated. A catalogue integrity failure
    aborts before anything starts or switches; the live slot is never touched, and
    this always needs a human (investigate and run `demo-replenish` manually —
    never `demo-restore` against the buyer demo, see
