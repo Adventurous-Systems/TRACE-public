@@ -5,7 +5,8 @@ import { Analytics } from '@/components/Analytics';
 
 export const metadata: Metadata = {
   title: 'TRACE — Material Passport Platform',
-  description: 'Blockchain-enabled digital marketplace for construction material reuse',
+  description:
+    'Digital marketplace with tamper-evident material passports for construction material reuse',
   manifest: '/manifest.json',
 };
 

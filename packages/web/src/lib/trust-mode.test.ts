@@ -48,4 +48,14 @@ describe('trustCopy', () => {
     expect(text).not.toMatch(/anchored on|blockchain-anchored|Blockchain Anchored|recorded on/i);
     expect(text).toMatch(/tamper-evident/i);
   });
+
+  // The demo has one hub; the headline used to speak of "circular economy hubs".
+  it.each(['onchain', 'simulated', 'unknown'] as const)(
+    'speaks of a hub and its members when %s',
+    (anchorMode) => {
+      const { headline } = trustCopy({ anchorMode, chainId: null, networkLabel: null });
+      expect(headline).toContain('reuse hubs and their members');
+      expect(headline).not.toMatch(/circular economy hubs/i);
+    },
+  );
 });

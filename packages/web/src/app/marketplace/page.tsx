@@ -121,7 +121,7 @@ export default function MarketplacePage() {
         <div>
           <h1 className="text-3xl font-bold">Material Marketplace</h1>
           <p className="text-gray-500 mt-1">
-            Browse verified reclaimed construction materials from Scottish reuse hubs.
+            Browse reclaimed, surplus and circular construction materials from Stirling Reuse Hub.
           </p>
         </div>
 

@@ -34,7 +34,7 @@ export default async function HomePage() {
       <section className="max-w-4xl mx-auto px-6 pt-20 pb-16 text-center">
         <div className="inline-flex items-center gap-2 bg-brand-100 text-brand-700 px-3 py-1 rounded-full text-sm font-medium mb-8">
           <span className="w-2 h-2 bg-brand-600 rounded-full"></span>
-          EU Digital Product Passport compliant
+          Built around EU Digital Product Passport principles
         </div>
         <h1 className="text-5xl font-bold tracking-tight text-gray-900 mb-6">
           Construction materials deserve
@@ -68,8 +68,8 @@ export default async function HomePage() {
           {[
             {
               Icon: ScrollText,
-              title: 'EU DPP Compliant',
-              desc: 'Every passport follows EU Digital Product Passport standards, ready for 2027 regulation.',
+              title: 'DPP-ready data',
+              desc: "Passports record composition, origin, condition and carbon in a structured form, in line with the EU Digital Product Passport's direction. Not a certified DPP.",
             },
             {
               Icon: ShieldCheck,
