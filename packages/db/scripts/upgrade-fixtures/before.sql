@@ -6,36 +6,65 @@
 -- has, and hold whatever the new migrations will touch. `after.sql` then
 -- checks what they did with it.
 --
--- Written for: passport truth (0014). The live release is R4 (#86/#90,
--- migrations to 0013), which stores files on disk and records each one. This
--- milestone adds a passport's origin (a new column the live release never
--- sets), corrects the catalogue after the deploy (demo:correct-catalogue, run
--- by `pnpm stack upgrade` after `after.sql`), and stops the public passport
--- routes from showing a sale's buyer and amount, or a draft. So the fixture
--- holds a completed sale with its history event, a passport a visitor
--- registered, the seeded draft, and a cancelled curated lot the previous
--- release tops up again. Earlier fixtures are in this file's history.
+-- Written for: one of each (M2). The live release is M1 (#95, migrations to
+-- 0014). M2 adds no migration; it deletes the spare passports a curated
+-- product has beyond its one lot (demo:retire-spares) and makes the top-up
+-- restock that lot in place. So the fixture holds what the live demo has, two
+-- spare passports per product whose listings were cancelled, and the cases
+-- that must survive:
+--   Lintels: its lot partly sold (to restock), and a spare with an order on
+--            it (kept and reported, never deleted);
+--   Aerated Concrete Blocks: its lot sold out, so this checkout reopens it
+--            in place (the previous release would have made a new passport);
+--   Facing Bricks: its lot delisted, so this checkout lists it again;
+-- plus a visitor's passport the tools must not touch. Earlier fixtures are in
+-- this file's history.
 
--- A completed sale of one lintel from a curated lot: the order, the lot one
--- smaller, and the selling event the release writes, with the buyer and the
--- amount in it.
-CREATE TEMP TABLE fixture_sale AS
+-- Two spares per curated product, as the launch left them: copies of the
+-- product's passport, numbered lots 2 and 3, each with a cancelled listing.
+CREATE TEMP TABLE fixture_spare AS
+  SELECT p.*, n AS lot, gen_random_uuid() AS new_id
+  FROM material_passports p CROSS JOIN generate_series(2, 3) AS n
+  WHERE p.custom_attributes->>'seedSource' IS NOT NULL;
+UPDATE fixture_spare SET
+  product_name = regexp_replace(product_name, ' — Demo Lot \d+$', '') || ' — Demo Lot 00' || lot,
+  serial_number = 'TRACE-DEMO-FIXTURE-' || lot || '-' || left(id::text, 8),
+  custom_attributes = custom_attributes || jsonb_build_object('demoLotNumber', lot),
+  status = 'active', blockchain_passport_hash = NULL, blockchain_tx_hash = NULL,
+  blockchain_anchored_at = NULL, qr_code_url = NULL, digital_link_uri = NULL;
+ALTER TABLE fixture_spare DROP COLUMN lot;
+UPDATE fixture_spare SET id = new_id;
+ALTER TABLE fixture_spare DROP COLUMN new_id;
+INSERT INTO material_passports SELECT * FROM fixture_spare;
+INSERT INTO listings (passport_id, organisation_id, seller_id, price_pence, currency, quantity,
+                      quantity_available, min_order_quantity, status, shipping_options)
+  SELECT s.id, l.organisation_id, l.seller_id, l.price_pence, l.currency, l.quantity,
+         l.quantity, l.min_order_quantity, 'cancelled', l.shipping_options
+  FROM fixture_spare s
+  JOIN listings l ON l.passport_id = (
+    SELECT p.id FROM material_passports p
+    WHERE p.custom_attributes->>'catalogueKey' = s.custom_attributes->>'catalogueKey'
+      AND p.custom_attributes->>'demoLotNumber' IS DISTINCT FROM '2'
+      AND p.custom_attributes->>'demoLotNumber' IS DISTINCT FROM '3'
+    ORDER BY p.created_at LIMIT 1);
+
+-- Lintels: one unit of its lot sold, with the selling event; and a spare
+-- (lot 2) that sold a unit before it was cancelled.
+CREATE TEMP TABLE fixture_order AS
   SELECT l.id AS listing_id, l.passport_id, l.seller_id, l.price_pence,
          (SELECT id FROM users WHERE role = 'buyer' ORDER BY created_at LIMIT 1) AS buyer_id,
-         gen_random_uuid() AS order_id
+         gen_random_uuid() AS order_id, l.status AS listing_status
   FROM listings l JOIN material_passports p ON p.id = l.passport_id
-  WHERE p.product_name LIKE 'Reclaimed Concrete Lintels%'
-    AND p.custom_attributes->>'seedSource' IS NOT NULL AND l.status = 'active'
-  ORDER BY l.created_at LIMIT 1;
-
+  WHERE p.custom_attributes->>'catalogueKey' = 'reclaimed-concrete-lintels'
+    AND (l.status = 'active' OR p.custom_attributes->>'demoLotNumber' = '2');
 INSERT INTO transactions (id, listing_id, buyer_id, seller_id, quantity, amount_pence, status,
                           response_deadline, dispute_deadline, notes, created_at)
   SELECT order_id, listing_id, buyer_id, seller_id, 1, price_pence, 'completed',
-         now() - interval '5 days', now() - interval '1 day', 'upgrade fixture: completed sale',
-         now() - interval '6 days'
-  FROM fixture_sale;
+         now() - interval '5 days', now() - interval '1 day',
+         'upgrade fixture: ' || listing_status || ' lot sale', now() - interval '6 days'
+  FROM fixture_order;
 UPDATE listings l SET quantity_available = l.quantity_available - 1
-  FROM fixture_sale s WHERE l.id = s.listing_id;
+  FROM fixture_order o WHERE l.id = o.listing_id;
 INSERT INTO passport_events (passport_id, event_type, event_data, actor_id)
   SELECT passport_id, 'TransactionEvent',
          jsonb_build_object('action', 'ADD',
@@ -44,10 +73,36 @@ INSERT INTO passport_events (passport_id, event_type, event_data, actor_id)
                             'transactionId', order_id, 'buyerId', buyer_id,
                             'quantity', 1, 'amountPence', price_pence),
          buyer_id
-  FROM fixture_sale;
+  FROM fixture_order;
 
--- A passport a visitor registered: no catalogue tag, so no correction may
--- touch it, and it has no origin after the migration.
+-- Aerated Concrete Blocks: the whole lot sold, so it has no lot on sale.
+CREATE TEMP TABLE fixture_sold AS
+  SELECT l.id AS listing_id, l.passport_id, l.seller_id, l.price_pence, l.quantity,
+         (SELECT id FROM users WHERE role = 'buyer' ORDER BY created_at LIMIT 1) AS buyer_id
+  FROM listings l JOIN material_passports p ON p.id = l.passport_id
+  WHERE p.custom_attributes->>'catalogueKey' = 'reclaimed-aerated-concrete-blocks'
+    AND l.status = 'active';
+INSERT INTO transactions (listing_id, buyer_id, seller_id, quantity, amount_pence, status,
+                          response_deadline, dispute_deadline, notes, created_at)
+  SELECT listing_id, buyer_id, seller_id, quantity, price_pence * quantity, 'completed',
+         now() - interval '5 days', now() - interval '1 day',
+         'upgrade fixture: whole lot sold', now() - interval '6 days'
+  FROM fixture_sold;
+UPDATE listings l SET quantity_available = 0, status = 'sold'
+  FROM fixture_sold s WHERE l.id = s.listing_id;
+UPDATE material_passports p SET status = 'sold'
+  FROM fixture_sold s WHERE p.id = s.passport_id;
+
+-- Facing Bricks: the seller cancelled its lot.
+UPDATE listings l SET status = 'cancelled'
+  FROM material_passports p
+  WHERE l.passport_id = p.id AND p.custom_attributes->>'catalogueKey' = 'reclaimed-facing-bricks'
+    AND l.status = 'active';
+UPDATE material_passports p SET status = 'active'
+  FROM listings l
+  WHERE l.passport_id = p.id AND p.custom_attributes->>'catalogueKey' = 'reclaimed-facing-bricks';
+
+-- A passport a visitor registered: no catalogue tag, so nothing may touch it.
 INSERT INTO material_passports (product_name, category_l1, status, organisation_id, registered_by,
                                 deconstruction_method, reclaimed_by, condition_grade)
   SELECT 'Upgrade Fixture Visitor Beam', 'structural-timber', 'active', p.organisation_id,
@@ -55,18 +110,10 @@ INSERT INTO material_passports (product_name, category_l1, status, organisation_
   FROM material_passports p WHERE p.custom_attributes->>'seedSource' IS NOT NULL
   ORDER BY p.created_at LIMIT 1;
 
--- A lot the seller cancelled, so the previous release's top-up creates a new
--- one on the new schema, as it would during a rollback window.
-UPDATE listings l SET status = 'cancelled'
-  FROM material_passports p
-  WHERE l.passport_id = p.id AND p.product_name LIKE 'Reclaimed Facing Bricks%'
-    AND p.custom_attributes->>'seedSource' IS NOT NULL AND l.status = 'active';
-UPDATE material_passports p SET status = 'active'
-  FROM listings l WHERE l.passport_id = p.id AND l.status = 'cancelled';
-
-SELECT 'completed sales: ' || (SELECT count(*) FROM transactions WHERE status = 'completed')
-       || '; selling events with a buyer: '
-       || (SELECT count(*) FROM passport_events WHERE event_data ? 'buyerId')
-       || '; drafts: ' || (SELECT count(*) FROM material_passports WHERE status = 'draft')
+SELECT 'curated passports: '
+       || (SELECT count(*) FROM material_passports WHERE custom_attributes->>'seedSource' IS NOT NULL)
+       || ' for ' || (SELECT count(DISTINCT custom_attributes->>'catalogueKey') FROM material_passports
+                      WHERE custom_attributes->>'seedSource' IS NOT NULL)
+       || ' products; completed sales: ' || (SELECT count(*) FROM transactions WHERE status = 'completed')
        || '; visitor passports: '
        || (SELECT count(*) FROM material_passports WHERE custom_attributes->>'seedSource' IS NULL);

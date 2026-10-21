@@ -96,7 +96,10 @@ async function main(): Promise<void> {
 
     console.log(
       `${dryRun ? 'Would cancel' : 'Cancelled'} ${cancelled} surplus demo lot(s) for ${target.description}; ` +
-        `preserved ${protectedCount} transaction-linked excess lot(s).`,
+        `preserved ${protectedCount} transaction-linked excess lot(s).` +
+        (cancelled > 0
+          ? ' Their passports remain as spares; demo-retire-spares deletes them (one per product).'
+          : ''),
     );
   } finally {
     await client.end();

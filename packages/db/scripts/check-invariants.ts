@@ -18,6 +18,7 @@ import postgres from 'postgres';
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
 import { resolveTarget } from './lib/guard.js';
+import { catalogueKeyOf } from './lib/catalogue-lots.js';
 import { checkInvariants } from './lib/invariants.js';
 
 loadEnv({ path: path.resolve(process.cwd(), '../../.env') });
@@ -49,6 +50,7 @@ async function main() {
         status: passport.status,
         storedHash: passport.blockchainPassportHash,
         computedHash: computePassportHash(passport),
+        catalogueKey: catalogueKeyOf(passport) ?? null,
       })),
     });
 

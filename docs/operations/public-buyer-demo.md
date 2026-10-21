@@ -15,21 +15,43 @@ Run replenishment through the trusted wrapper. It holds the deployment lock and 
     /usr/local/libexec/trace-demo/run-replenish.sh /var/lib/trace-demo/config/active.env
 
 The timer template runs this at 02:15 Africa/Johannesburg with a randomized
-delay. The command holds a PostgreSQL advisory lock and tops up each of the
-seven catalogue products to one lot. A lot counts as present while it is on
-sale or fully held by open orders: a held lot comes back on sale, or sells,
-when its orders close, so it never gets a duplicate. `demo-verify` (the
-deploy gate) counts the same way.
-New lots are independently numbered, serialized, photographed, and tagged with
-catalogueKey, catalogueName, demoLotNumber, demoBatch, and the curated
-seed-source marker. It never deletes or changes visitor data.
+delay. The command holds a PostgreSQL advisory lock and keeps each of the
+seven catalogue products at exactly one passport and one lot:
 
-To converge an older multi-lot deployment, first preview and then run the guarded trim command through the exact operations image:
+- A lot on sale with fewer units available than its catalogue lot size is
+  restocked in place: its quantity and available units rise by the
+  difference, so its orders and history are unchanged.
+- A lot that was delisted (cancelled or expired) is listed again on the same
+  passport.
+- A lot fully held by open orders, or sold out, is reported and left alone.
+- A passport is created only for a product that has none at all.
+
+It never deletes or changes visitor data. `--target-active` is still accepted
+for the installed timer, and must be 1.
+
+Each product has one passport (owner, 2026-10-21). Older deployments kept a
+product's earlier lots as spare passports whose listings were cancelled. To
+delete them, preview and then run, through the trusted wrapper:
+
+    demo-retire-spares --env demo --dry-run
+    demo-retire-spares --env demo --yes
+
+It keeps each product's lot on sale (or, when none is, its lowest-numbered
+passport) and deletes every other curated passport that nothing depends on:
+no order, history event, quality report or sensor reading, and no listing
+other than a cancelled or expired one. Anything else is reported and left
+alone. Deleting a passport removes its listings and events; the audit and
+chain-transaction records are kept, and the spare's QR code stays in the
+write-once file store. Take a database backup first. `demo-verify` and the
+invariant check warn while a product has more than one passport; they don't
+fail, so a deploy can still pass before this has run.
+
+`demo-trim-active` converges an older multi-lot deployment's listings:
 
     demo-trim-active --env demo --target-active 1 --dry-run
     demo-trim-active --env demo --target-active 1 --yes
 
-It cancels only surplus active listings whose passports carry the curated seed marker, a known catalogue key, and a valid demo lot number. The lowest-numbered lot remains active. Transaction-linked, reserved, sold, unmarked, and visitor data remain untouched. The trim and replenishment commands share one PostgreSQL advisory lock.
+It cancels only surplus active listings whose passports carry the curated seed marker, a known catalogue key, and a valid demo lot number. The lowest-numbered lot remains active. Transaction-linked, reserved, sold, unmarked, and visitor data remain untouched. Its cancelled lots become spares for `demo-retire-spares`. The trim, retirement and replenishment commands share one PostgreSQL advisory lock.
 
 Keep secrets in /var/lib/trace-demo/secrets, mutable non-secret configuration in /var/lib/trace-demo/config, mutable deployment state in /var/lib/trace-demo/state, bind-mounted data in /var/lib/trace-demo/data, immutable releases in /opt/trace-public-demo/releases, and only static nginx/systemd material in /etc.
 

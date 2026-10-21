@@ -257,6 +257,27 @@ upgrade_correct_catalogue() {
   return "${PIPESTATUS[0]}"
 }
 
+# One passport per curated product (M2): this checkout deletes the spares,
+# then tops up in place, which must not create a passport. Extra arguments are
+# exported (the file store). Prints any product still holding more than one.
+upgrade_one_of_each() {
+  local url=$1 db=$2; shift 2
+  (set -a; # shellcheck disable=SC1090
+   source "$ENV_FILE"; set +a
+   export DATABASE_URL="$url" TRACE_ENV=local "$@"
+   cd "$repo_root" \
+     && pnpm -s --filter @trace/db demo:retire-spares -- --env local --dry-run \
+     && pnpm -s --filter @trace/db demo:retire-spares -- --env local --yes \
+     && pnpm -s --filter @trace/db demo:replenish -- --env local --target-active 1 --yes \
+     && pnpm -s --filter @trace/db check:invariants -- --env local) 2>&1 | sed 's/^/    /'
+  local status=${PIPESTATUS[0]}
+  compose exec -T postgres psql -U trace -d "$db" -tA -c "
+    select '    still ' || count(*) || ' curated passports for ' || (custom_attributes->>'catalogueKey')
+    from material_passports where custom_attributes->>'seedSource' is not null
+    group by custom_attributes->>'catalogueKey' having count(*) > 1" </dev/null
+  return "$status"
+}
+
 # Every file a passport refers to has a ledger row (and so a file on disk):
 # both releases record what they store (R4 onwards).
 upgrade_storage_check() {
@@ -334,6 +355,8 @@ upgrade_rehearsal() {
   upgrade_storage_check "$db" || failed=1
   say "this checkout's catalogue corrections (the post-deploy step)"
   upgrade_correct_catalogue "$url" || failed=1
+  say "one passport per product: this checkout retires the spares and restocks in place"
+  upgrade_one_of_each "$url" "$db" "${old_release_env[@]}" || failed=1
 
   # The previous release serves traffic while a deploy migrates, and is the
   # rollback target afterwards, so it must still work on the new schema.
@@ -353,6 +376,8 @@ upgrade_rehearsal() {
     # by running the correction again.
     say 'catalogue corrections again, for the lots the old release just created'
     upgrade_correct_catalogue "$url" || failed=1
+    say 'one passport per product again, after the old release topped up'
+    upgrade_one_of_each "$url" "$db" "${old_release_env[@]}" || failed=1
   else
     echo "    the $base release failed on the new schema; see $STATE/upgrade-old-release.log"
     failed=1

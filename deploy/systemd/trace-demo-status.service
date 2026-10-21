@@ -1,0 +1,11 @@
+[Unit]
+Description=TRACE public-demo status file (backup times and free disk) for health-watch
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+# /var/lib/trace-demo-status, readable by the runner account that checks it.
+StateDirectory=trace-demo-status
+StateDirectoryMode=0755
+ExecStart=/usr/local/libexec/trace-demo/write_status.sh /var/lib/trace-demo/backups/db /var/lib/trace-demo/backups/objects /var/lib/trace-demo/data /var/lib/trace-demo-status/status.json

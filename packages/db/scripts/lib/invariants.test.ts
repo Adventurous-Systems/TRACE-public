@@ -158,6 +158,17 @@ test('a stored fingerprint that no longer matches the data is an error; pending 
   assert.deepEqual(check([listing()], [], [passport({ storedHash: null })]), []);
 });
 
+test('more than one passport for a curated product is a warning, not an error', () => {
+  const lot = passport({ id: 'p1', catalogueKey: 'reclaimed-facing-bricks' });
+  const spare = passport({ id: 'p2', status: 'active', catalogueKey: 'reclaimed-facing-bricks' });
+  const other = passport({ id: 'p3', status: 'active', catalogueKey: null });
+  assert.deepEqual(check([listing()], [], [lot, other]), []);
+  const violations = check([listing()], [], [lot, spare, other]);
+  assert.deepEqual(rules(violations), []);
+  assert.deepEqual(rules(violations, 'warning'), ['one-of-each']);
+  assert.match(violations[0]!.detail, /2 curated passports, not 1; run demo-retire-spares/);
+});
+
 test('an order or a listing the sweep should have closed is a warning, not an error', () => {
   const now = new Date('2026-10-10T12:00:00Z');
   const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 60 * 60 * 1000);

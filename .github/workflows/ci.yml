@@ -35,6 +35,7 @@ jobs:
           bash ops/deploy/test-prune-releases.sh
           bash ops/deploy/test-run-ops.sh
           bash ops/test-backup-objects.sh
+          bash ops/test-write-status.sh
           bash scripts/test-local-stack.sh
 
   build-and-test:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly TRACE public-demo status file
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+Unit=trace-demo-status.service
+
+[Install]
+WantedBy=timers.target

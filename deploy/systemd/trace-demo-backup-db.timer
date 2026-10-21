@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly TRACE public-demo database dump
+
+[Timer]
+OnCalendar=*-*-* 02:40:00 Africa/Johannesburg
+RandomizedDelaySec=10m
+Persistent=true
+Unit=trace-demo-backup-db.service
+
+[Install]
+WantedBy=timers.target

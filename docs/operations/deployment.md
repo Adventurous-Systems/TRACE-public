@@ -94,7 +94,7 @@ retargeted local tag or altered candidate file cannot pass validation.
 Review the exact public commit before installation. Install fixed copies with
 `install`; do not run an installer from the Git checkout as root. The trusted
 directory is `/usr/local/libexec/trace-demo`, owned by root and not writable by
-the deployment user. Install `release-lib.sh`, `prepare-release.sh`, `verify-release.sh`, `scan-image.sh`, and the reviewed `ops/deploy/*.sh` primitives there with mode 755. Record SHA-256 checksums of those installed copies in the private
+the deployment user. Install `release-lib.sh`, `prepare-release.sh`, `verify-release.sh`, `scan-image.sh`, `ops/backup_db.sh`, `ops/backup_objects.sh`, and the reviewed `ops/deploy/*.sh` primitives there with mode 755. Record SHA-256 checksums of those installed copies in the private
 deployment record.
 
 The preparation interface accepts one argument only:
@@ -212,7 +212,10 @@ end to end, holding the same deployment lock:
 3. Prepare (or, if already prepared, verify) the immutable source release, free
    the inactive slot of any older generation's containers, and write its
    candidate environment file.
-4. Preflight, migrate, and run `demo-verify`. A catalogue integrity failure here
+4. Preflight, take a validated dump of the live database
+   (`backup_db.sh` into `/var/lib/trace-demo/backups/predeploy`, kept 14 days),
+   migrate, and run `demo-verify`. A failed dump aborts before anything is
+   migrated. A catalogue integrity failure
    aborts before anything starts or switches; the live slot is never touched, and
    this always needs a human (investigate and run `demo-replenish` manually —
    never `demo-restore` against the buyer demo, see
@@ -263,10 +266,24 @@ is ineligible for this procedure.
 
 Use `ops/backup_db.sh` with explicit Compose, environment, and backup paths. It
 creates mode-private custom-format dumps, validates them, applies retention, and
-can notify a dead-man's-switch monitor. `ops/backup_objects.sh` snapshots the
-stored files as hard links, nightly through
+can notify a dead-man's-switch monitor. On the demo host it runs nightly through
+`deploy/systemd/trace-demo-backup-db.timer` (into `/var/lib/trace-demo/backups/db`,
+kept 14 days), and before every migration from `deploy-main.sh`.
+`ops/backup_objects.sh` snapshots the stored files as hard links, nightly through
 `deploy/systemd/trace-demo-backup-objects.timer`; take one at the same release
-boundary.
+boundary. Both stay on the host's disk; an off-host copy is a separate,
+deferred decision.
+
+`deploy/systemd/trace-demo-status.timer` runs `ops/write_status.sh` hourly, and
+after each dump. It writes `/var/lib/trace-demo-status/status.json`: the last
+dump and snapshot times and the free disk, world-readable, with no paths or
+secrets. `.github/workflows/health-watch.yml` reads it daily on the host's
+runner and fails when the status file is more than 3 hours old, a dump or
+snapshot is more than 26 hours old, or less than 15% of the disk is free.
+GitHub emails each failed run, as it does a failed smoke run (which also
+runs after every deploy). Install the units, and `backup_db.sh` and
+`write_status.sh` into `/usr/local/libexec/trace-demo`, with the same care as
+the other installed copies.
 
 Use `ops/restore_db.sh` only against the intended isolated target. It refuses to
 run without `--yes` and creates a validated safety dump in an explicit durable
