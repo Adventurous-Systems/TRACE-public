@@ -51,6 +51,7 @@ export const WizardSchema = z.object({
   // Step 3 — Circular
   conditionGrade: z.enum(['A', 'B', 'C', 'D']).optional().or(z.literal('')),
   conditionNotes: z.string().max(2000, 'Keep the notes under 2,000 characters.').optional(),
+  origin: z.string().optional(),
   deconstructionMethod: z.string().optional(),
   reclaimedBy: z.string().optional(),
   previousBuildingId: z.string().optional(),
@@ -100,6 +101,7 @@ export const STEP_FIELDS = {
     'dimensionUnit',
   ],
   circular: [
+    'origin',
     'conditionGrade',
     'conditionNotes',
     'deconstructionMethod',

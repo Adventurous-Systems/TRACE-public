@@ -76,6 +76,9 @@ export function buildCanonicalJsonLd(passport: MaterialPassport): string {
     // valid "Untampered" result into "Mismatch" with no tampering having
     // occurred — which is exactly what silently broke all seven curated demo
     // passports in June. Removed 2026-09-01; see scripts/rehash-passports.ts.
+    // NOTE: `origin` (migration 0014) is deliberately NOT hashed either: it is
+    // declared by the seller, like the circularity score, and adding a field
+    // here would change every stored fingerprint.
     createdAt: passport.createdAt.toISOString(),
   };
 

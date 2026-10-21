@@ -4,11 +4,11 @@ import { Card } from '@/components/ui/card';
 const STEPS = [
   // The panel also appears on the landing page, where there is no
   // marketplace "below".
-  'Browse the marketplace — every listing is synthetic reclaimed material.',
+  'Browse the marketplace — every listing is synthetic: reclaimed, surplus or new circular material, and each card says which.',
   "Open a listing, then its passport, and click “Verify integrity” — it recomputes the material's fingerprint live and shows whether it matches.",
   'Where the passport shows “Check on chain now”, click it — it asks the blockchain registry directly whether it holds that same fingerprint.',
-  'Create a free account with a fictitious email — no verification, no real password needed.',
-  'Make an offer at asking price and track it under Orders.',
+  "Create a free account with a fictitious email — there's no email verification; use a password you don't use elsewhere.",
+  'Choose a quantity, click “Order at asking price”, and track the order under Orders.',
 ];
 
 /**

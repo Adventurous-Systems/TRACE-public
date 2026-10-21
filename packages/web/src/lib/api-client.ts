@@ -284,7 +284,17 @@ export interface PassportSummary {
   blockchainTxHash: string | null;
   blockchainAnchoredAt: string | null;
   createdAt: string;
-  updatedAt: string;
+  /** Only to the passport's organisation and the platform. */
+  updatedAt?: string;
+}
+
+/** The passport's listing a visitor would go and see (on sale, else the one it sold through). */
+export interface PassportListing {
+  id: string;
+  status: string;
+  pricePence: number;
+  currency: string;
+  listedAt: string;
 }
 
 export interface PassportDetail extends PassportSummary {
@@ -311,12 +321,16 @@ export interface PassportDetail extends PassportSummary {
   epdReference: string | null;
   ceMarking: boolean;
   conditionNotes: string | null;
+  /** reclaimed | surplus | new; null when the seller has not said. */
+  origin: string | null;
   previousBuildingId: string | null;
   deconstructionDate: string | null;
   deconstructionMethod: string | null;
   reclaimedBy: string | null;
   remainingLifeEstimate: number | null;
   carbonSavingsVsNew: string | null;
+  circularityScore: number | null;
+  reuseSuitability: string[];
   handlingRequirements: string | null;
   hazardousSubstances: Array<{
     name: string;
@@ -326,6 +340,14 @@ export interface PassportDetail extends PassportSummary {
   }>;
   blockchainPassportHash: string | null;
   verified?: boolean;
+  listing?: PassportListing | null;
+}
+
+export interface PassportEvent {
+  id: string;
+  eventType: string;
+  eventData: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface PassportCertificate {
@@ -363,6 +385,8 @@ export interface ListingPassport {
   conditionNotes: string | null;
   carbonSavingsVsNew: string | null;
   qrCodeUrl: string | null;
+  /** reclaimed | surplus | new; null when the seller has not said. */
+  origin?: string | null;
   photo?: string | null;
 }
 
@@ -788,7 +812,8 @@ export const passports = {
       token,
     }),
 
-  history: (id: string) => request<unknown[]>(`/api/v1/passports/${id}/history`),
+  /** Newest first. The public view has no actors, buyers or amounts. */
+  history: (id: string) => request<PassportEvent[]>(`/api/v1/passports/${id}/history`),
 
   /** Counts over all of the organisation's passports, for the dashboard. */
   stats: (token: string) =>

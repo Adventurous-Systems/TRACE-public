@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { auditEvents, blockchainTransactions, db, materialPassports } from '@trace/db';
+import {
+  auditEvents,
+  blockchainTransactions,
+  db,
+  listings,
+  materialPassports,
+  organisations,
+  passportEvents,
+  users,
+} from '@trace/db';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
 // Uses credentials created by: pnpm db:seed
@@ -567,5 +576,203 @@ describe('passport identifiers', () => {
       where: eq(materialPassports.id, seeded!.id),
     });
     expect(after!.digitalLinkUri).toBe(`${process.env['WEB_URL']}/passport/${seeded!.id}`);
+  });
+});
+
+// ── Passport truth: public fields, drafts, history, listing, origin ─────────
+
+describe('the public passport routes show only public data', () => {
+  let app: TestApp;
+  let ownerAuth: { authorization: string };
+  let otherOrgAuth: { authorization: string };
+  let platformAuth: { authorization: string };
+  let soldId: string;
+  let draftId: string;
+  let listedId: string;
+  let activeListingId: string;
+
+  const PUBLIC_ROUTES = (id: string) => [
+    `/api/v1/passports/${id}`,
+    `/api/v1/passports/${id}/verify`,
+    `/api/v1/passports/${id}/certificate`,
+    `/api/v1/passports/${id}/history`,
+    `/api/v1/passports/${id}/verify-integrity`,
+  ];
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    const owner = getTestPersona('hubAdmin');
+    ownerAuth = await getAuthHeader(app, owner.email, owner.password);
+    const other = getTestPersona('supplier');
+    otherOrgAuth = await getAuthHeader(app, other.email, other.password);
+    const platform = getTestPersona('platformAdmin');
+    platformAuth = await getAuthHeader(app, platform.email, platform.password);
+
+    const org = await db.query.organisations.findFirst({
+      where: eq(organisations.slug, 'stirling'),
+    });
+    const seller = await db.query.users.findFirst({
+      where: eq(users.email, owner.email),
+    });
+    const buyer = await db.query.users.findFirst({ where: eq(users.role, 'buyer') });
+    const base = {
+      organisationId: org!.id,
+      registeredBy: seller!.id,
+      categoryL1: 'masonry',
+      conditionGrade: 'B',
+      customAttributes: { internalNote: 'not for the public' },
+    };
+    const stamp = Date.now();
+    const [sold, draft, listed] = await db
+      .insert(materialPassports)
+      .values([
+        { ...base, productName: `Public Truth Sold ${stamp}`, status: 'sold' },
+        { ...base, productName: `Public Truth Draft ${stamp}`, status: 'draft' },
+        { ...base, productName: `Public Truth Listed ${stamp}`, status: 'listed' },
+      ])
+      .returning();
+    soldId = sold!.id;
+    draftId = draft!.id;
+    listedId = listed!.id;
+
+    const lot = {
+      organisationId: org!.id,
+      sellerId: seller!.id,
+      pricePence: 350,
+      currency: 'GBP',
+      quantity: 4,
+      shippingOptions: [{ method: 'collection' }],
+    };
+    const [, active] = await db
+      .insert(listings)
+      .values([
+        {
+          ...lot,
+          passportId: listedId,
+          quantityAvailable: 4,
+          status: 'cancelled',
+          createdAt: new Date('2026-09-01T00:00:00Z'),
+        },
+        { ...lot, passportId: listedId, quantityAvailable: 4, status: 'active' },
+        { ...lot, passportId: soldId, quantityAvailable: 0, status: 'sold' },
+      ])
+      .returning();
+    activeListingId = active!.id;
+
+    // The selling event a completed order writes, with its buyer and amount.
+    await db.insert(passportEvents).values({
+      passportId: soldId,
+      eventType: 'TransactionEvent',
+      eventData: {
+        action: 'ADD',
+        bizStep: 'urn:epcglobal:cbv:bizstep:selling',
+        disposition: 'urn:epcglobal:cbv:disp:sold',
+        transactionId: '00000000-0000-4000-8000-0000000000aa',
+        buyerId: buyer!.id,
+        quantity: 4,
+        amountPence: 1400,
+      },
+      actorId: buyer!.id,
+    });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('gives an anonymous reader the material, not who registered it or the platform notes', async () => {
+    for (const url of [`/api/v1/passports/${soldId}`, `/api/v1/passports/${soldId}/verify`]) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      const data = res.json<{ data: Record<string, unknown> }>().data;
+      expect(data['productName'], url).toMatch(/^Public Truth Sold/);
+      expect(data['organisationId'], url).toBeTruthy(); // part of the fingerprint
+      for (const key of ['registeredBy', 'customAttributes', 'updatedAt']) {
+        expect(data, `${url} ${key}`).not.toHaveProperty(key);
+      }
+    }
+  });
+
+  it('gives the holding organisation and the platform the whole record', async () => {
+    for (const auth of [ownerAuth, platformAuth]) {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/passports/${soldId}`,
+        headers: auth,
+      });
+      const data = res.json<{ data: Record<string, unknown> }>().data;
+      expect(data['registeredBy']).toBeTruthy();
+      expect(data['customAttributes']).toEqual({ internalNote: 'not for the public' });
+    }
+    const other = await app.inject({
+      method: 'GET',
+      url: `/api/v1/passports/${soldId}`,
+      headers: otherOrgAuth,
+    });
+    expect(other.json<{ data: Record<string, unknown> }>().data).not.toHaveProperty('registeredBy');
+  });
+
+  it('keeps a draft "not found" on every public route, except to its own organisation', async () => {
+    for (const url of PUBLIC_ROUTES(draftId)) {
+      expect((await app.inject({ method: 'GET', url })).statusCode, url).toBe(404);
+      expect(
+        (await app.inject({ method: 'GET', url, headers: otherOrgAuth })).statusCode,
+        url,
+      ).toBe(404);
+      expect((await app.inject({ method: 'GET', url, headers: ownerAuth })).statusCode, url).toBe(
+        200,
+      );
+    }
+  });
+
+  it('shows a sale in the public history without the buyer, the amount or the actor', async () => {
+    const res = await app.inject({ method: 'GET', url: `/api/v1/passports/${soldId}/history` });
+    expect(res.statusCode).toBe(200);
+    const events = res.json<{ data: Array<Record<string, unknown>> }>().data;
+    expect(events).toHaveLength(1);
+    expect(events[0]).not.toHaveProperty('actorId');
+    expect(events[0]!['eventData']).toEqual({
+      action: 'ADD',
+      bizStep: 'urn:epcglobal:cbv:bizstep:selling',
+      disposition: 'urn:epcglobal:cbv:disp:sold',
+      quantity: 4,
+    });
+    const own = await app.inject({
+      method: 'GET',
+      url: `/api/v1/passports/${soldId}/history`,
+      headers: ownerAuth,
+    });
+    const raw = own.json<{ data: Array<{ eventData: Record<string, unknown> }> }>().data;
+    expect(raw[0]!.eventData['buyerId']).toBeTruthy();
+  });
+
+  it('names the listing to go and see: the one on sale, else the one it sold through', async () => {
+    const listed = await app.inject({ method: 'GET', url: `/api/v1/passports/${listedId}/verify` });
+    expect(
+      listed.json<{ data: { listing: Record<string, unknown> } }>().data.listing,
+    ).toMatchObject({ id: activeListingId, status: 'active', pricePence: 350, currency: 'GBP' });
+    const sold = await app.inject({ method: 'GET', url: `/api/v1/passports/${soldId}` });
+    expect(sold.json<{ data: { listing: { status: string } } }>().data.listing.status).toBe('sold');
+  });
+
+  it('records where a material comes from, and refuses an origin it does not know', async () => {
+    const made = await app.inject({
+      method: 'POST',
+      url: '/api/v1/passports',
+      headers: ownerAuth,
+      payload: { ...VALID_PASSPORT_PAYLOAD, origin: 'surplus' },
+    });
+    expect(made.statusCode).toBe(201);
+    const id = made.json<{ data: { id: string } }>().data.id;
+    const read = await app.inject({ method: 'GET', url: `/api/v1/passports/${id}/verify` });
+    expect(read.json<{ data: { origin: string } }>().data.origin).toBe('surplus');
+
+    const bogus = await app.inject({
+      method: 'POST',
+      url: '/api/v1/passports',
+      headers: ownerAuth,
+      payload: { ...VALID_PASSPORT_PAYLOAD, origin: 'bogus' },
+    });
+    expect(bogus.statusCode).toBe(400);
   });
 });

@@ -204,6 +204,7 @@ packages/db/migrations/0010_release_safety.sql
 packages/db/migrations/0011_inspection_role.sql
 packages/db/migrations/0012_order_lifecycle.sql
 packages/db/migrations/0013_stored_objects.sql
+packages/db/migrations/0014_passport_origin.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
@@ -274,6 +275,7 @@ packages/e2e/tests/listing-management.spec.ts
 packages/e2e/tests/mobile/mobile-nav.spec.ts
 packages/e2e/tests/mobile/overflow.spec.ts
 packages/e2e/tests/order-lifecycle.spec.ts
+packages/e2e/tests/passport-page.spec.ts
 packages/e2e/tests/photo-guard.spec.ts
 packages/e2e/tests/public-marketplace.spec.ts
 packages/e2e/tests/public-showcase.spec.ts
@@ -329,11 +331,16 @@ packages/web/src/components/Analytics.tsx
 packages/web/src/components/DashboardLayout.tsx
 packages/web/src/components/DemoGuide.tsx
 packages/web/src/components/FeedbackWidget.tsx
+packages/web/src/components/admin/PlatformAdminOverview.tsx
 packages/web/src/components/marketplace/AccountNav.tsx
 packages/web/src/components/marketplace/ListingPhoto.tsx
 packages/web/src/components/marketplace/ListingTermsFields.tsx
 packages/web/src/components/passport/CertificatePanel.tsx
+packages/web/src/components/passport/CircularEconomyCard.tsx
 packages/web/src/components/passport/InspectionCard.tsx
+packages/web/src/components/passport/ListingLinkCard.tsx
+packages/web/src/components/passport/MaterialDetails.tsx
+packages/web/src/components/passport/OriginBadge.tsx
 packages/web/src/components/passport/ProvenanceTimeline.tsx
 packages/web/src/components/passport/QrScanner.tsx
 packages/web/src/components/passport/RegisterWizard.tsx
@@ -352,6 +359,8 @@ packages/web/src/components/ui/skeleton.tsx
 packages/web/src/components/ui/star-rating.tsx
 packages/web/src/components/ui/toaster.tsx
 packages/web/src/components/ui/use-toast.ts
+packages/web/src/lib/admin-overview.test.ts
+packages/web/src/lib/admin-overview.ts
 packages/web/src/lib/analytics.ts
 packages/web/src/lib/api-client.ts
 packages/web/src/lib/api-errors.test.ts
@@ -369,10 +378,14 @@ packages/web/src/lib/inspection.test.ts
 packages/web/src/lib/inspection.ts
 packages/web/src/lib/listing-changes.test.ts
 packages/web/src/lib/listing-changes.ts
+packages/web/src/lib/nav.test.ts
+packages/web/src/lib/nav.ts
 packages/web/src/lib/order-quantity.test.ts
 packages/web/src/lib/order-quantity.ts
 packages/web/src/lib/orders.test.ts
 packages/web/src/lib/orders.ts
+packages/web/src/lib/passport-details.test.ts
+packages/web/src/lib/passport-details.ts
 packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
 packages/web/src/lib/register-wizard.test.ts

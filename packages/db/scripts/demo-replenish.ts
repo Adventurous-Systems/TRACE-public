@@ -22,6 +22,7 @@ import {
   CATALOGUE_LOCK_NAME,
   LIVE_LOT_STATUSES,
   SEED_TAG,
+  isCatalogueName,
   lotShippingNote,
   type Product,
 } from './lib/catalogue.js';
@@ -51,7 +52,7 @@ function lotNumber(
   const metadata = passport.customAttributes ?? {};
   const value = metadata['demoLotNumber'];
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
-  return passport.productName === product.passport.productName ? 1 : 0;
+  return isCatalogueName(passport.productName, product) ? 1 : 0;
 }
 
 function isProductLot(
@@ -61,7 +62,7 @@ function isProductLot(
   const metadata = passport.customAttributes ?? {};
   return (
     metadata['catalogueKey'] === product.key ||
-    (metadata['seedSource'] === SEED_TAG && passport.productName === product.passport.productName)
+    (metadata['seedSource'] === SEED_TAG && isCatalogueName(passport.productName, product))
   );
 }
 

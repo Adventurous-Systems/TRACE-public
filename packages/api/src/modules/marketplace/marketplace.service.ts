@@ -148,6 +148,8 @@ export interface ListingWithPassport extends Listing {
     conditionNotes: string | null;
     carbonSavingsVsNew: string | null;
     qrCodeUrl: string | null;
+    /** reclaimed | surplus | new; null when the seller has not said. */
+    origin: string | null;
     photo?: string | null;
   };
   organisation: {
@@ -209,6 +211,7 @@ export async function getListingById(
           conditionNotes: true,
           carbonSavingsVsNew: true,
           qrCodeUrl: true,
+          origin: true,
           conditionPhotos: true,
           customAttributes: true,
         },
@@ -296,6 +299,7 @@ export async function searchListings(
       passportConditionNotes: materialPassports.conditionNotes,
       passportCarbonSavingsVsNew: materialPassports.carbonSavingsVsNew,
       passportQrCodeUrl: materialPassports.qrCodeUrl,
+      passportOrigin: materialPassports.origin,
       passportPhotos: materialPassports.conditionPhotos,
       // Organisation fields
       orgName: organisations.name,
@@ -339,6 +343,7 @@ export async function searchListings(
       conditionNotes: row.passportConditionNotes,
       carbonSavingsVsNew: row.passportCarbonSavingsVsNew,
       qrCodeUrl: row.passportQrCodeUrl,
+      origin: row.passportOrigin,
       photo: (row.passportPhotos as string[] | null)?.[0] ?? null,
     },
     organisation: {
