@@ -1,0 +1,80 @@
+name: Health watch (public demo)
+
+# Daily check of the demo host's backups and disk space. Root timers on the
+# host write a small status file (ops/write_status.sh, hourly and after each
+# nightly dump); this job only reads it. When something is wrong the run
+# fails, and GitHub emails the failure: there is no other alerting channel
+# (owner, 2026-10-21: email only, no external service).
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: health-watch-public-demo
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    if: github.event_name == 'workflow_dispatch' || vars.TRACE_DEMO_LIVE == 'true'
+    name: Backups and disk on the demo host
+    # The demo host's own runner, because the status file is on that host. The
+    # job runs no PR-triggered or untrusted input, checks out no code, uses no
+    # action, and only reads one world-readable file as the runner's
+    # unprivileged account.
+    runs-on: [self-hosted, linux, trace-demo-vps] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 5
+    steps:
+      - name: Check the status file
+        env:
+          STATUS_FILE: /var/lib/trace-demo-status/status.json
+          MAX_STATUS_AGE_HOURS: '3'
+          MAX_BACKUP_AGE_HOURS: '26'
+          MIN_DISK_FREE_PERCENT: '15'
+        run: |
+          python3 -I - <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+
+          now = datetime.now(timezone.utc)
+          path = os.environ['STATUS_FILE']
+          try:
+              with open(path) as f:
+                  status = json.load(f)
+          except (OSError, ValueError) as error:
+              sys.exit(f'Cannot read {path}: {error}. Is trace-demo-status.timer installed and running?')
+
+          def age_hours(key):
+              value = status.get(key)
+              if not value:
+                  return None
+              stamp = datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+              return (now - stamp).total_seconds() / 3600
+
+          problems = []
+          generated = age_hours('generatedAt')
+          if generated is None or generated > float(os.environ['MAX_STATUS_AGE_HOURS']):
+              problems.append(f'the status file is stale ({status.get("generatedAt")}): trace-demo-status.timer has stopped')
+          limit = float(os.environ['MAX_BACKUP_AGE_HOURS'])
+          for key, what, timer in [
+              ('lastDbDump', 'database dump', 'trace-demo-backup-db.timer'),
+              ('lastObjectSnapshot', 'stored-files snapshot', 'trace-demo-backup-objects.timer'),
+          ]:
+              age = age_hours(key)
+              if age is None:
+                  problems.append(f'no {what} found: check {timer}')
+              elif age > limit:
+                  problems.append(f'the last {what} is {age:.0f} hours old ({status[key]}): check {timer}')
+          free = status.get('diskFreePercent')
+          if not isinstance(free, int) or free < int(os.environ['MIN_DISK_FREE_PERCENT']):
+              problems.append(f'only {free}% of the disk is free')
+
+          print(json.dumps(status, indent=2))
+          if problems:
+              for problem in problems:
+                  print(f'::error::{problem}')
+              sys.exit(1)
+          print('Backups are current and the disk has room.')
+          PY

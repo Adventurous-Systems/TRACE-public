@@ -1,11 +1,13 @@
 name: Smoke (public demo)
 
-# Runs the read-only @smoke checks against the live domain on a daily schedule or
-# a manual dispatch. Creates no data — safe against demo.
+# Runs the read-only @smoke checks against the live domain daily, on a manual
+# dispatch, and after every deploy (deploy-demo.yml calls it). Creates no data,
+# so it's safe against the demo. A failure is emailed by GitHub.
 on:
   schedule:
     - cron: '41 5 * * *'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

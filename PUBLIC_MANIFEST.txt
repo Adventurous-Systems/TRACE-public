@@ -5,6 +5,7 @@
 .github/workflows/ci.yml
 .github/workflows/deploy-demo.yml
 .github/workflows/e2e.yml
+.github/workflows/health-watch.yml
 .github/workflows/promotion-source.yml
 .github/workflows/publish-images.yml
 .github/workflows/security.yml
@@ -34,10 +35,14 @@ deploy/nginx/demo.conf.example
 deploy/nginx/local-gateway.conf
 deploy/nginx/maintenance.html
 deploy/nginx/upstream-slot.conf.example
+deploy/systemd/trace-demo-backup-db.service
+deploy/systemd/trace-demo-backup-db.timer
 deploy/systemd/trace-demo-backup-objects.service
 deploy/systemd/trace-demo-backup-objects.timer
 deploy/systemd/trace-demo-replenish.service
 deploy/systemd/trace-demo-replenish.timer
+deploy/systemd/trace-demo-status.service
+deploy/systemd/trace-demo-status.timer
 docker-compose.yml
 docs/AccessManagement.md
 docs/maintainers/parity-manifest.md
@@ -78,6 +83,8 @@ ops/release/test-scan-image.sh
 ops/release/verify-release.sh
 ops/restore_db.sh
 ops/test-backup-objects.sh
+ops/test-write-status.sh
+ops/write_status.sh
 package.json
 packages/api/package.json
 packages/api/src/env.ts
