@@ -85,4 +85,27 @@ test.describe('Public marketplace (logged out)', () => {
     await expect(page.getByPlaceholder(/search materials/i)).toHaveValue('');
     if (!CURATED_ONLY) await expect(page.getByText(productName).first()).toBeVisible();
   });
+
+  // The landing page and marketplace used to claim DPP compliance, "verified"
+  // lots and several hubs. They claim only what the demo can back up.
+  test('claims stay within what the demo can back up', async ({ page }) => {
+    await page.goto('/');
+    const home = await page.locator('body').innerText();
+    expect(home).toContain('Built around EU Digital Product Passport principles');
+    expect(home).toContain('Not a certified DPP.');
+    expect(home).not.toMatch(
+      /DPP compliant|Passport compliant|ready for 2027|circular economy hubs|trust and compliance/i,
+    );
+
+    await page.goto('/marketplace');
+    await expect(
+      page.getByText(
+        'Browse reclaimed, surplus and circular construction materials from Stirling Reuse Hub.',
+      ),
+    ).toBeVisible();
+    await expect(page.getByText(/verified reclaimed/i)).toHaveCount(0);
+
+    const description = await page.locator('meta[name="description"]').getAttribute('content');
+    expect(description).not.toMatch(/blockchain-enabled/i);
+  });
 });

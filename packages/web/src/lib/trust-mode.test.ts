@@ -48,4 +48,16 @@ describe('trustCopy', () => {
     expect(text).not.toMatch(/anchored on|blockchain-anchored|Blockchain Anchored|recorded on/i);
     expect(text).toMatch(/tamper-evident/i);
   });
+
+  // The demo has one hub and three origins; the headline used to speak of
+  // "circular economy hubs", reclaimed material only, and compliance.
+  it.each(['onchain', 'simulated', 'unknown'] as const)(
+    'speaks of a hub and its members when %s',
+    (anchorMode) => {
+      const { headline } = trustCopy({ anchorMode, chainId: null, networkLabel: null });
+      expect(headline).toContain('reuse hubs and their members');
+      expect(headline).toContain('reclaimed, surplus and circular construction materials');
+      expect(headline).not.toMatch(/circular economy hubs|compliance/i);
+    },
+  );
 });

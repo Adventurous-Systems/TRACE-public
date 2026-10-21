@@ -3,6 +3,8 @@ updates:
   # Keep SHA-pinned GitHub Actions up to date (reads the `# vX.Y.Z` comments)
   - package-ecosystem: github-actions
     directory: '/'
+    # Changes reach main only through staging (promotion-source.yml)
+    target-branch: staging
     schedule:
       interval: weekly
     cooldown:

@@ -112,6 +112,12 @@ write_fake "$fake_bin/run-ops.sh" \
   'if [[ "$op" == demo-verify && "${TRACE_TEST_DEMO_VERIFY_FAIL:-0}" == 1 ]]; then exit 1; fi' \
   'exit 0'
 
+write_fake "$fake_bin/backup_db.sh" \
+  '#!/usr/bin/env bash' \
+  'echo "backup-db $* retention=${TRACE_BACKUP_RETENTION_DAYS:-unset}" >> "$TRACE_TEST_CALLS_LOG"' \
+  'if [[ "${TRACE_TEST_BACKUP_FAIL:-0}" == 1 ]]; then exit 1; fi' \
+  'exit 0'
+
 write_fake "$fake_bin/start-candidate.sh" \
   '#!/usr/bin/env bash' \
   'echo "start-candidate $*" >> "$TRACE_TEST_CALLS_LOG"'
@@ -208,6 +214,10 @@ run_deploy() {
     TRACE_DEPLOY_ROLLBACK_NGINX="$fake_bin/rollback-nginx.sh" \
     TRACE_DEPLOY_SWITCH_WORKER="$fake_bin/switch-worker.sh" \
     TRACE_DEPLOY_PRUNE_RELEASES="$fake_bin/prune-releases.sh" \
+    TRACE_DEPLOY_BACKUP_DB="$fake_bin/backup_db.sh" \
+    TRACE_DEPLOY_DATA_COMPOSE_FILE="$config_dir/compose.demo-data.yml" \
+    TRACE_DEPLOY_DATA_ENV_FILE="$tmpdir/data.env" \
+    TRACE_DEPLOY_PREDEPLOY_BACKUP_DIR="$tmpdir/backups/predeploy" \
     TRACE_DEPLOY_DOCKER="$fake_bin/docker" \
     TRACE_DEPLOY_PROBE_ATTEMPTS=2 \
     TRACE_DEPLOY_PROBE_SLEEP=0 \
@@ -247,6 +257,10 @@ grep -q "^prepare-release $code_sha\$" "$calls_log" || fail_message 'expected pr
 grep -q "^preflight $config3/blue-$code_sha.env\$" "$calls_log" \
   || fail_message 'expected the inactive (blue) slot to be prepared'
 grep -q '^run-ops .* migrate$' "$calls_log" || fail_message 'expected a migrate call'
+grep -q "^backup-db $config3/compose.demo-data.yml $tmpdir/data.env $tmpdir/backups/predeploy retention=14\$" "$calls_log" \
+  || fail_message 'expected a pre-migration backup of the data plane, kept 14 days'
+[[ "$(grep -n '^backup-db' "$calls_log" | cut -d: -f1)" -lt "$(grep -n '^run-ops .* migrate$' "$calls_log" | cut -d: -f1)" ]] \
+  || fail_message 'the backup must run before the migration'
 grep -q '^run-ops .* demo-verify --env demo$' "$calls_log" || fail_message 'expected a demo-verify call'
 grep -q "^switch-nginx $config3/nginx/active.conf $config3/nginx/blue.conf $config3/active.env $config3/blue-$code_sha.env\$" "$calls_log" \
   || fail_message 'expected switch-nginx with the blue candidate pair'
@@ -271,6 +285,19 @@ grep -q '^start-candidate' "$calls_log" && fail_message 'must not start the cand
 grep -q '^switch-nginx' "$calls_log" && fail_message 'must not switch nginx after demo-verify fails'
 [[ "$(readlink -f "$config4/active.env")" == "$config4/green-$docs_sha.env" ]] \
   || fail_message 'the live slot must be untouched after a demo-verify failure'
+
+# --- Test 4b: a failed backup aborts before anything is migrated -------------
+config4b="$tmpdir/config4b"; state4b="$tmpdir/state4b"
+setup_config "$config4b" green "$docs_sha"
+: > "$calls_log"
+TRACE_TEST_ENV_EXTRA=(TRACE_TEST_BACKUP_FAIL=1)
+expect_failure 'a failed pre-migration backup aborts the deploy' run_deploy "$config4b" "$state4b"
+TRACE_TEST_ENV_EXTRA=()
+grep -q '^backup-db' "$calls_log" || fail_message 'expected the backup to be attempted'
+grep -q '^run-ops .* migrate$' "$calls_log" && fail_message 'must not migrate after the backup fails'
+grep -q '^switch-nginx' "$calls_log" && fail_message 'must not switch nginx after the backup fails'
+[[ "$(readlink -f "$config4b/active.env")" == "$config4b/green-$docs_sha.env" ]] \
+  || fail_message 'the live slot must be untouched after a backup failure'
 
 # --- Test 5: a public-probe failure after switching triggers rollback -------
 config5="$tmpdir/config5"; state5="$tmpdir/state5"

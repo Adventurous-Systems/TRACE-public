@@ -85,7 +85,7 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -145,10 +145,58 @@ jobs:
       - name: The demo must survive the E2E suite
         run: pnpm --filter @trace/db demo:verify -- --env local
 
+      # The live demo runs the public_buyer_demo profile (curated-only browse,
+      # a curated lot's last unit kept back), which the run above doesn't (C7).
+      # The same suite again on that profile, as the local rehearsal runs it.
+      - name: Restart in public buyer demo mode
+        run: |
+          # The servers were started by an earlier step, so `wait` can't see
+          # them: poll until both have exited and freed their ports.
+          kill "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)"
+          for i in $(seq 1 30); do
+            kill -0 "$(cat /tmp/api.pid)" 2>/dev/null || kill -0 "$(cat /tmp/web.pid)" 2>/dev/null || break
+            sleep 1
+          done
+          (
+            cd packages/api
+            export TRACE_DEPLOYMENT_PROFILE=public_buyer_demo
+            exec node_modules/.bin/tsx src/index.ts
+          ) > /tmp/api-demo.log 2>&1 &
+          echo $! > /tmp/api.pid
+          (
+            cd packages/web
+            export TRACE_DEPLOYMENT_PROFILE=public_buyer_demo
+            exec node_modules/.bin/next start
+          ) > /tmp/web-demo.log 2>&1 &
+          echo $! > /tmp/web.pid
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3001/health/ready >/dev/null \
+              && curl -sf http://localhost:3000 >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          [ "$ready" = 1 ] || { echo 'the restarted servers did not become ready' >&2; exit 1; }
+
+      - name: Run E2E suite on the public buyer demo profile
+        env:
+          E2E_CURATED_ONLY: '1'
+        run: pnpm e2e
+
+      - name: The demo must survive the suite on its own profile
+        run: pnpm --filter @trace/db demo:verify -- --env local
+
       - name: Restart in public showcase mode
         run: |
+          # The servers were started by an earlier step, so `wait` can't see
+          # them: poll until both have exited and freed their ports.
           kill "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)"
-          wait "$(cat /tmp/api.pid)" "$(cat /tmp/web.pid)" 2>/dev/null || true
+          for i in $(seq 1 30); do
+            kill -0 "$(cat /tmp/api.pid)" 2>/dev/null || kill -0 "$(cat /tmp/web.pid)" 2>/dev/null || break
+            sleep 1
+          done
           (
             cd packages/api
             export TRACE_DEPLOYMENT_PROFILE=public_showcase
@@ -161,11 +209,16 @@ jobs:
             exec node_modules/.bin/next start
           ) > /tmp/web-showcase.log 2>&1 &
           echo $! > /tmp/web.pid
+          ready=0
           for i in $(seq 1 60); do
-            curl -sf http://localhost:3001/health/ready >/dev/null \
-              && curl -sf http://localhost:3000 >/dev/null \
-              && break || sleep 2
+            if curl -sf http://localhost:3001/health/ready >/dev/null \
+              && curl -sf http://localhost:3000 >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
           done
+          [ "$ready" = 1 ] || { echo 'the restarted servers did not become ready' >&2; exit 1; }
 
       - name: Run public showcase browser journeys
         run: pnpm --filter @trace/e2e e2e:showcase
@@ -175,12 +228,14 @@ jobs:
         run: |
           echo "----- API -----"; tail -n 120 /tmp/api.log || true
           echo "----- WEB -----"; tail -n 120 /tmp/web.log || true
+          echo "----- DEMO API -----"; tail -n 120 /tmp/api-demo.log || true
+          echo "----- DEMO WEB -----"; tail -n 120 /tmp/web-demo.log || true
           echo "----- SHOWCASE API -----"; tail -n 120 /tmp/api-showcase.log || true
           echo "----- SHOWCASE WEB -----"; tail -n 120 /tmp/web-showcase.log || true
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: |

@@ -69,13 +69,8 @@ import {
 import * as schema from '../drizzle/schema.js';
 import { computePassportHash } from '../src/passport-hash.js';
 import { resolveTarget } from './lib/guard.js';
-import {
-  CATALOG,
-  LIVE_LOT_STATUSES,
-  SEED_TAG,
-  SUPERSEDED_PRODUCT_NAMES,
-  isCatalogueName,
-} from './lib/catalogue.js';
+import { CATALOG, LIVE_LOT_STATUSES, SEED_TAG, SUPERSEDED_PRODUCT_NAMES } from './lib/catalogue.js';
+import { catalogueKeyOf, productLot } from './lib/catalogue-lots.js';
 import { DEMO_QUALITY_REPORT, DEMO_ACCESS_REQUEST, DEMO_FEEDBACK } from './lib/demo-content.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -128,8 +123,9 @@ async function main() {
   // back to this default whenever a curated passport carries catalogueKey.
   const targetActiveRaw = targetActiveIndex >= 0 ? argv[targetActiveIndex + 1] : '1';
   const targetActive = Number(targetActiveRaw);
-  if (!Number.isInteger(targetActive) || targetActive < 1 || targetActive > 10) {
-    throw new Error('--target-active must be an integer from 1 to 10');
+  // One lot per product (owner, 2026-10-21), as demo-replenish enforces.
+  if (targetActive !== 1) {
+    throw new Error('--target-active must be 1: the demo keeps one lot per product');
   }
 
   const target = resolveTarget(argv);
@@ -314,13 +310,8 @@ async function main() {
 
     // ── 1. Curated passports: converge to the catalogue, then rehash ─────────
     const curated = await db.select().from(schema.materialPassports).where(curatedFilter);
-    const catalogueByKey = new Map(CATALOG.map((product) => [product.key, product]));
-    const catalogueKeyFor = (passport: (typeof curated)[number]): string | undefined => {
-      const metadata = passport.customAttributes ?? {};
-      const key = metadata['catalogueKey'];
-      if (typeof key === 'string' && catalogueByKey.has(key)) return key;
-      return CATALOG.find((product) => isCatalogueName(passport.productName, product))?.key;
-    };
+    // Shared with the top-up and demo-retire-spares (lib/catalogue-lots.ts).
+    const catalogueKeyFor = (passport: (typeof curated)[number]) => catalogueKeyOf(passport);
     const byName = new Map(curated.map((p) => [p.productName, p]));
     // A product's original passport, under its name now or an earlier one
     // (SUPERSEDED_PRODUCT_NAMES); converging renames it.
@@ -329,37 +320,49 @@ async function main() {
         .map((name) => byName.get(name))
         .find(Boolean);
 
-    // demo-replenish.ts appends a "— Demo Lot NNN" suffix to every lot it
-    // creates beyond the original (demo-replenish.ts's displayName()), and
-    // production's history shows even a product's original passport can end
-    // up replaced by a suffixed lot 001 — but the bare, un-suffixed name
-    // seed-products.ts gives a freshly-seeded original is just as valid.
-    // byName's keys are whatever productName each row actually has, so it
-    // can find the bare original but never a suffixed lot, and cannot answer
-    // "does a passport exist for catalogue product X" reliably. byCatalogueKey
-    // answers that correctly via catalogueKeyFor, picking the lowest-numbered
-    // lot as the representative passport when more than one exists (matching
-    // demo-trim-active's own "lowest-numbered lot survives" convention). A
-    // row with no demoLotNumber only ever resolves a key via catalogueKeyFor's
-    // bare-name fallback, which requires an exact match to the catalogue's
-    // canonical name — i.e. it can only be the original, un-replenished
-    // passport, so it is lot 1 by definition (matching demo-replenish.ts's
-    // own lotNumber() fallback), never lower-priority than a numbered lot.
-    const lotNumber = (passport: (typeof curated)[number]): number => {
-      const value = (passport.customAttributes as Record<string, unknown> | null)?.[
-        'demoLotNumber'
-      ];
-      return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 1;
-    };
+    // A product's representative passport is its one lot, as the top-up and
+    // demo-retire-spares pick it (productLot: the live lot, else one that
+    // sold, else the lowest-numbered). It used to be the lowest-numbered
+    // regardless, so the tools could disagree about which lot to keep.
+    const curatedListings = curated.length
+      ? await db
+          .select({ passportId: schema.listings.passportId, status: schema.listings.status })
+          .from(schema.listings)
+          .where(
+            inArray(
+              schema.listings.passportId,
+              curated.map((p) => p.id),
+            ),
+          )
+      : [];
+    const statusesOf = (id: string) =>
+      curatedListings.filter((listing) => listing.passportId === id).map((l) => l.status);
     const byCatalogueKey = new Map<string, (typeof curated)[number]>();
-    for (const p of curated) {
-      const key = catalogueKeyFor(p);
-      if (!key) continue;
-      const existing = byCatalogueKey.get(key);
-      if (!existing || lotNumber(p) < lotNumber(existing)) byCatalogueKey.set(key, p);
+    for (const product of CATALOG) {
+      const lot = productLot(
+        curated.filter((p) => catalogueKeyFor(p) === product.key),
+        statusesOf,
+      );
+      if (lot) byCatalogueKey.set(product.key, lot);
     }
 
     console.log(`Curated catalogue (${curated.length}/${CATALOG.length} present):`);
+
+    // One passport per curated product (owner, 2026-10-21). A warning, so the
+    // deploy's demo-verify still passes before demo-retire-spares has run.
+    const perKey = new Map<string, number>();
+    for (const p of curated) {
+      const key = catalogueKeyFor(p);
+      if (key) perKey.set(key, (perKey.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of perKey) {
+      if (count > 1) {
+        problems.push({
+          severity: 'warning',
+          message: `${count} curated passports for ${key}, not 1 — run demo-retire-spares`,
+        });
+      }
+    }
 
     // Rows wearing the curated tag that the catalogue does not define. They are
     // never converged (the loop iterates CATALOG), so they drift silently and

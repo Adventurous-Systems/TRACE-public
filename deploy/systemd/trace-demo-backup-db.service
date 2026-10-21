@@ -1,0 +1,13 @@
+[Unit]
+Description=TRACE public-demo database dump (validated, kept 14 days)
+ConditionPathExists=/var/lib/trace-demo/config/compose.demo-data.yml
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+Environment=TRACE_BACKUP_RETENTION_DAYS=14
+ExecStart=/usr/local/libexec/trace-demo/backup_db.sh /var/lib/trace-demo/config/compose.demo-data.yml /var/lib/trace-demo/secrets/data.env /var/lib/trace-demo/backups/db
+# Refresh the status file at once, so a failed night shows the next morning.
+ExecStopPost=/usr/bin/systemctl start --no-block trace-demo-status.service

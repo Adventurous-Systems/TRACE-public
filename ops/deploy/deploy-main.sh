@@ -33,6 +33,10 @@ if [[ "${TRACE_DEPLOY_TEST_MODE:-0}" == 1 && "$EUID" != 0 ]]; then
   ROLLBACK_NGINX="${TRACE_DEPLOY_ROLLBACK_NGINX:?required in test mode}"
   SWITCH_WORKER="${TRACE_DEPLOY_SWITCH_WORKER:?required in test mode}"
   PRUNE_RELEASES="${TRACE_DEPLOY_PRUNE_RELEASES:-$SCRIPT_DIR/prune-releases.sh}"
+  BACKUP_DB="${TRACE_DEPLOY_BACKUP_DB:?required in test mode}"
+  DATA_COMPOSE_FILE="${TRACE_DEPLOY_DATA_COMPOSE_FILE:?required in test mode}"
+  DATA_ENV_FILE="${TRACE_DEPLOY_DATA_ENV_FILE:?required in test mode}"
+  PREDEPLOY_BACKUP_DIR="${TRACE_DEPLOY_PREDEPLOY_BACKUP_DIR:?required in test mode}"
   DOCKER_BIN="${TRACE_DEPLOY_DOCKER:-docker}"
   PROBE_ATTEMPTS="${TRACE_DEPLOY_PROBE_ATTEMPTS:-12}"
   PROBE_SLEEP="${TRACE_DEPLOY_PROBE_SLEEP:-5}"
@@ -43,7 +47,8 @@ else
   unset TRACE_DEPLOY_TEST_MODE TRACE_DEPLOY_CONFIG_DIR TRACE_DEPLOY_STATE_DIR \
     TRACE_DEPLOY_RELEASE_ROOT TRACE_DEPLOY_LOCK_FILE TRACE_PUBLIC_REPOSITORY_URL \
     TRACE_DEPLOY_PUBLIC_URL TRACE_DEPLOY_SWITCH_WORKER TRACE_DEPLOY_COMPOSE_FILE \
-    TRACE_DEPLOY_DOCKER
+    TRACE_DEPLOY_DOCKER TRACE_DEPLOY_BACKUP_DB TRACE_DEPLOY_DATA_COMPOSE_FILE \
+    TRACE_DEPLOY_DATA_ENV_FILE TRACE_DEPLOY_PREDEPLOY_BACKUP_DIR
   CONFIG_DIR='/var/lib/trace-demo/config'
   STATE_DIR='/var/lib/trace-demo/state'
   RELEASE_ROOT='/opt/trace-public-demo/releases'
@@ -60,6 +65,10 @@ else
   ROLLBACK_NGINX='/usr/local/libexec/trace-demo/rollback-nginx.sh'
   SWITCH_WORKER='/usr/local/libexec/trace-demo/switch-worker.sh'
   PRUNE_RELEASES='/usr/local/libexec/trace-demo/prune-releases.sh'
+  BACKUP_DB='/usr/local/libexec/trace-demo/backup_db.sh'
+  DATA_COMPOSE_FILE="$CONFIG_DIR/compose.demo-data.yml"
+  DATA_ENV_FILE='/var/lib/trace-demo/secrets/data.env'
+  PREDEPLOY_BACKUP_DIR='/var/lib/trace-demo/backups/predeploy'
   DOCKER_BIN='docker'
   PROBE_ATTEMPTS=12
   PROBE_SLEEP=5
@@ -67,6 +76,7 @@ fi
 readonly CONFIG_DIR STATE_DIR RELEASE_ROOT LOCK_FILE PUBLIC_GIT_URL PUBLIC_URL
 readonly PREPARE_RELEASE VERIFY_RELEASE PREFLIGHT RUN_OPS START_CANDIDATE
 readonly VERIFY_CANDIDATE SWITCH_NGINX ROLLBACK_NGINX SWITCH_WORKER PRUNE_RELEASES DOCKER_BIN
+readonly BACKUP_DB DATA_COMPOSE_FILE DATA_ENV_FILE PREDEPLOY_BACKUP_DIR
 readonly PROBE_ATTEMPTS PROBE_SLEEP
 
 [[ "$#" == 0 ]] || { echo "Usage: $0" >&2; exit 2; }
@@ -225,8 +235,13 @@ candidate_tmp="$(mktemp "$CONFIG_DIR/.$slot-$target_sha.env.XXXXXX")"
 chmod 600 "$candidate_tmp"
 mv -f "$candidate_tmp" "$candidate_env"
 
-# --- Preflight, migrate, verify catalogue integrity -------------------------
+# --- Preflight, back up, migrate, verify catalogue integrity ---------------
 "$PREFLIGHT" "$candidate_env"
+# A dump of the live database before any migration touches it, validated with
+# pg_restore --list and kept 14 days (ops/backup_db.sh).
+if ! TRACE_BACKUP_RETENTION_DAYS=14 "$BACKUP_DB" "$DATA_COMPOSE_FILE" "$DATA_ENV_FILE" "$PREDEPLOY_BACKUP_DIR"; then
+  fail 'the pre-migration database backup failed; nothing was migrated and the live slot was not touched.'
+fi
 "$RUN_OPS" "$candidate_env" migrate
 
 if ! "$RUN_OPS" "$candidate_env" demo-verify --env demo; then

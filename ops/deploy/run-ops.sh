@@ -5,7 +5,7 @@ DEPLOY_ENV="${1:-}"
 OPERATION="${2:-}"
 shift 2 || true
 
-[[ -f "$DEPLOY_ENV" ]] || { echo "Usage: $0 <candidate-deploy.env> <migrate|seed|seed-products|demo-restore|demo-verify|demo-replenish|demo-trim-active|demo-correct-catalogue|demo-check-invariants|storage-import|chain-deploy-registry> [args]" >&2; exit 2; }
+[[ -f "$DEPLOY_ENV" ]] || { echo "Usage: $0 <candidate-deploy.env> <migrate|seed|seed-products|demo-restore|demo-verify|demo-replenish|demo-trim-active|demo-retire-spares|demo-correct-catalogue|demo-check-invariants|storage-import|chain-deploy-registry> [args]" >&2; exit 2; }
 value() { awk -F= -v key="$2" '$1 == key {print substr($0, index($0, "=") + 1)}' "$1" | tail -1; }
 # Host paths are fixed; test-run-ops.sh may override them only as a non-root
 # user (the same guard deploy-main.sh uses), never in the installed root path.
@@ -34,6 +34,7 @@ case "$OPERATION" in
   demo-verify) script=dist/scripts/demo-restore.js; set -- --verify "$@" ;;
   demo-replenish) script=dist/scripts/demo-replenish.js ;;
   demo-trim-active) script=dist/scripts/demo-trim-active.js ;;
+  demo-retire-spares) script=dist/scripts/demo-retire-spares.js ;;
   demo-correct-catalogue) script=dist/scripts/demo-correct-catalogue.js ;;
   demo-check-invariants) script=dist/scripts/check-invariants.js ;;
   storage-import) script=dist/scripts/storage-import.js ;;
