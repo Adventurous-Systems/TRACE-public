@@ -64,14 +64,14 @@ export function trustCopy(mode: TrustMode): TrustCopy {
     const where = mode.networkLabel ?? 'a VeChainThor blockchain';
     return {
       headline:
-        'TRACE issues blockchain-anchored material passports for reclaimed construction materials, enabling reuse hubs and their members to buy and sell with trust and compliance.',
+        'TRACE issues blockchain-anchored material passports for reclaimed, surplus and circular construction materials, enabling reuse hubs and their members to buy and sell with trust.',
       cardTitle: 'Blockchain Anchored',
       cardDescription: `Each passport's fingerprint is recorded on ${where}. Anyone can re-check a passport against the chain from its passport page.`,
     };
   }
   return {
     headline:
-      'TRACE issues tamper-evident material passports for reclaimed construction materials, enabling reuse hubs and their members to buy and sell with trust and compliance.',
+      'TRACE issues tamper-evident material passports for reclaimed, surplus and circular construction materials, enabling reuse hubs and their members to buy and sell with trust.',
     cardTitle: 'Tamper-evident',
     cardDescription:
       'Every passport carries a cryptographic fingerprint anyone can re-check. On-chain anchoring is not enabled in this deployment.',

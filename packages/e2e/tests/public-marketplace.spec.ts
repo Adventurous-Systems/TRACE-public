@@ -94,7 +94,7 @@ test.describe('Public marketplace (logged out)', () => {
     expect(home).toContain('Built around EU Digital Product Passport principles');
     expect(home).toContain('Not a certified DPP.');
     expect(home).not.toMatch(
-      /DPP compliant|Passport compliant|ready for 2027|circular economy hubs/i,
+      /DPP compliant|Passport compliant|ready for 2027|circular economy hubs|trust and compliance/i,
     );
 
     await page.goto('/marketplace');
