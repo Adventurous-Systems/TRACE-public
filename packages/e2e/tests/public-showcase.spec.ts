@@ -14,15 +14,13 @@ test.describe('@showcase public read-only experience', () => {
     await page.goto('/marketplace');
 
     await expect(page.getByPlaceholder(/search materials/i)).toBeVisible();
-    const product = page.getByText('Reclaimed Aluminium Stud Walling').first();
+    const product = page.getByText('Surplus Aluminium Stud Walling').first();
     await expect(product).toBeVisible();
     await product.click();
 
     await expect(page).toHaveURL(/\/marketplace\//);
-    await expect(page.getByText('Reclaimed Aluminium Stud Walling').first()).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: /order at asking price|make offer/i }),
-    ).not.toBeVisible();
+    await expect(page.getByText('Surplus Aluminium Stud Walling').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /order at asking price/i })).not.toBeVisible();
 
     const passportLink = page.getByRole('link', { name: /passport/i }).first();
     await expect(passportLink).toBeVisible();

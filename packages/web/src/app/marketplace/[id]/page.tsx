@@ -1,5 +1,6 @@
 'use client';
 
+import { OriginBadge } from '@/components/passport/OriginBadge';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -190,6 +191,7 @@ export default function ListingDetailPage() {
                   Grade {listing.passport.conditionGrade}
                 </Badge>
               )}
+              <OriginBadge origin={listing.passport.origin} className="text-sm" />
               {listingStatus(listing) !== 'active' && (
                 <Badge variant="outline">{listingStatusLabel(listingStatus(listing))}</Badge>
               )}

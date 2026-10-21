@@ -138,7 +138,7 @@ async function main() {
           organisationId: seller.organisationId,
           registeredBy: seller.id,
           conditionPhotos: [],
-          customAttributes: { seedSource: SEED_TAG },
+          customAttributes: { seedSource: SEED_TAG, catalogueKey: product.key },
         })
         .returning();
 

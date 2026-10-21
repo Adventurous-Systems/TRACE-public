@@ -242,18 +242,23 @@ check_invariants() {
   (load_api_env; cd "$repo_root" && pnpm -s --filter @trace/db check:invariants -- --env local "$@")
 }
 
-# storage-import into the upgrade rehearsal's own store, from MinIO directly.
-upgrade_storage_import() {
-  local url=$1 objects=$2 minio_port=$3
+# This checkout's catalogue corrections on the upgrade database: the command a
+# release runs once after the deploy (and again after a rollback window, for
+# the lots the old release created), previewed, applied, then checked.
+upgrade_correct_catalogue() {
+  local url=$1
   (set -a; # shellcheck disable=SC1090
    source "$ENV_FILE"; set +a
-   export DATABASE_URL="$url" TRACE_ENV=local STORAGE_DIR="$objects" \
-     STORAGE_PUBLIC_URL="http://localhost:$API_PORT/minio"
-   cd "$repo_root" && pnpm -s --filter @trace/db storage:import -- --env local --yes \
-     --origin "http://localhost:${minio_port:-19000}") 2>&1 | sed 's/^/    /'
+   export DATABASE_URL="$url" TRACE_ENV=local
+   cd "$repo_root" \
+     && pnpm -s --filter @trace/db demo:correct-catalogue -- --env local --dry-run \
+     && pnpm -s --filter @trace/db demo:correct-catalogue -- --env local --yes \
+     && pnpm -s --filter @trace/db check:invariants -- --env local) 2>&1 | sed 's/^/    /'
+  return "${PIPESTATUS[0]}"
 }
 
-# Every file a passport refers to has a ledger row (and so a file on disk).
+# Every file a passport refers to has a ledger row (and so a file on disk):
+# both releases record what they store (R4 onwards).
 upgrade_storage_check() {
   local db=$1 missing
   missing=$(compose exec -T postgres psql -U trace -d "$db" -tA -c "
@@ -282,14 +287,11 @@ upgrade_rehearsal() {
   local failed=0
 
   say "upgrade rehearsal: $base → $(current_sha)"
-  # The previous release stores its files in MinIO (R4), with URLs shaped as
-  # a deployment's: <origin>/minio/<bucket>/<key>.
-  compose up -d --wait --wait-timeout 120 minio >>"$STATE/compose.log" 2>&1 \
-    || die "MinIO did not become healthy; see $STATE/compose.log"
-  local minio_port objects="$STATE/upgrade-objects"
-  minio_port=$(env_value MINIO_HOST_PORT)
+  # The live release (R4 onwards) stores its files on disk and records each
+  # one. Both releases share one store, as the two slots of a deployment do.
+  local objects="$STATE/upgrade-objects"
   local -a old_release_env=(
-    "MINIO_PUBLIC_URL=http://localhost:$API_PORT/minio" "MINIO_PUBLIC_READ=true"
+    "STORAGE_DIR=$objects" "STORAGE_PUBLIC_URL=http://localhost:$API_PORT/minio"
   )
   rm -rf -- "${objects:?}"
   mkdir -p "$objects"
@@ -329,11 +331,9 @@ upgrade_rehearsal() {
   say 'checking what the migrations did with that data'
   "${psql[@]}" -d "$db" -tA < "$fixtures/after.sql" | sed 's/^/    /' || failed=1
 
-  # What a deployment runs once after the deploy: copy the old release's files
-  # out of MinIO into the file store, recording each.
-  say "copying the $base release's files out of MinIO (storage-import)"
-  upgrade_storage_import "$url" "$objects" "$minio_port" || failed=1
   upgrade_storage_check "$db" || failed=1
+  say "this checkout's catalogue corrections (the post-deploy step)"
+  upgrade_correct_catalogue "$url" || failed=1
 
   # The previous release serves traffic while a deploy migrates, and is the
   # rollback target afterwards, so it must still work on the new schema.
@@ -348,11 +348,11 @@ upgrade_rehearsal() {
      source "$ENV_FILE"; set +a
      export DATABASE_URL="$url" TRACE_ENV=local
      cd "$repo_root" && pnpm -s --filter @trace/db check:invariants -- --env local) || failed=1
-    # A rollback window: what the old release stored in MinIO is picked up by
-    # running the import again.
-    say 'storage-import again, for the files the old release just stored'
-    upgrade_storage_import "$url" "$objects" "$minio_port" || failed=1
     upgrade_storage_check "$db" || failed=1
+    # A rollback window: the lots the old release just created are corrected
+    # by running the correction again.
+    say 'catalogue corrections again, for the lots the old release just created'
+    upgrade_correct_catalogue "$url" || failed=1
   else
     echo "    the $base release failed on the new schema; see $STATE/upgrade-old-release.log"
     failed=1

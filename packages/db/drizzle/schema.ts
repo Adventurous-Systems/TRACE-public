@@ -139,6 +139,9 @@ export const materialPassports = pgTable(
     harmonisedStandard: text('harmonised_standard'),
 
     // Circular Extension
+    // reclaimed | surplus | new (migration 0014). Declared by the seller; not
+    // in the fingerprint.
+    origin: text('origin').$type<'reclaimed' | 'surplus' | 'new'>(),
     previousBuildingId: text('previous_building_id'),
     deconstructionDate: date('deconstruction_date', { mode: 'date' }),
     deconstructionMethod: text('deconstruction_method'), // selective | mechanical | manual | mixed
