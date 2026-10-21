@@ -156,6 +156,10 @@ grep -q 'demo:replenish -- --env local --yes | .* DB=trace_upgrade .* STORE=.*/u
   || fail 'the upgrade must apply the catalogue corrections, and again after the old release tops up'
 grep -q 'demo:replenish -- --env local --yes | .* DB=trace_upgrade ' "$log" \
   || fail 'the upgrade must prove the previous release works on the new schema'
+[[ $(grep -c 'demo:retire-spares -- --env local --yes | .* DB=trace_upgrade .* STORE=.*/upgrade-objects ' "$log") == 2 ]] \
+  || fail 'the upgrade must retire the spare passports, and again after the old release tops up'
+[[ $(grep -c 'demo:replenish -- --env local --target-active 1 --yes | .* DB=trace_upgrade ' "$log") == 2 ]] \
+  || fail "this checkout's top-up must restock in place after each retirement"
 ! grep -q 'demo:restore .* DB=trace_upgrade' "$log" || fail 'the upgrade rehearsal must not restore'
 grep -q 'docker compose .* psql .* drop database if exists trace_upgrade' "$log" || fail 'the scratch database must be dropped'
 evidence=$(ls -d "$tmp/state/rehearsal"/abc123def456-*)

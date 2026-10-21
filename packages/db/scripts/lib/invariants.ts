@@ -53,6 +53,8 @@ export interface PassportRow {
   storedHash: string | null;
   /** The fingerprint recomputed from the row as it is now. */
   computedHash: string;
+  /** The catalogue product a curated demo passport belongs to. */
+  catalogueKey?: string | null;
 }
 
 export interface Violation {
@@ -244,6 +246,27 @@ export function checkInvariants(
           `amount ${order.amountPence}p is not a unit price × quantity ${order.quantity}`,
         );
       }
+    }
+  }
+
+  // One passport per curated product (owner, 2026-10-21). A warning, not an
+  // error: the deploy's own check runs before demo-retire-spares can.
+  const curatedByKey = new Map<string, PassportRow[]>();
+  for (const passport of data.passports) {
+    if (!passport.catalogueKey) continue;
+    curatedByKey.set(passport.catalogueKey, [
+      ...(curatedByKey.get(passport.catalogueKey) ?? []),
+      passport,
+    ]);
+  }
+  for (const [key, passports] of curatedByKey) {
+    if (passports.length > 1) {
+      add(
+        'warning',
+        'one-of-each',
+        `catalogue product ${key}`,
+        `${passports.length} curated passports, not 1; run demo-retire-spares`,
+      );
     }
   }
 

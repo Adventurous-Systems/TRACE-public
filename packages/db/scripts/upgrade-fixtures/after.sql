@@ -3,44 +3,27 @@
 -- new schema. `pnpm stack upgrade` runs it after the migrations; an exception
 -- fails the rehearsal. Rewrite it with `before.sql`.
 --
--- Passport truth: the data must come through as the live release left it.
--- A sale's selling event keeps its buyer and amount in the database (the
--- public routes stop showing them; the data itself is not rewritten), the
--- draft stays a draft, and the visitor's passport is untouched. The rehearsal
--- then runs the catalogue corrections, and the previous release (the rollback
--- target) tops up the catalogue on the new schema.
---
--- Migration 0014 adds the passport's origin: nullable text, limited to the
--- three known values, and null on every row the live release left (no
--- backfill; the catalogue correction sets the curated ones afterwards).
+-- One of each (M2): there is no migration, so everything must come through
+-- as the live release left it. The rehearsal then runs this checkout's
+-- post-deploy tools (demo:retire-spares, then the top-up restocking in place)
+-- and prints any product still holding more than one passport: Lintels (its
+-- spare has an order) and Aerated Concrete Blocks (its sold lot, plus the lot
+-- the previous release creates in the rollback window) are expected there.
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_name = 'material_passports' AND column_name = 'origin'
-                   AND data_type = 'text' AND is_nullable = 'YES') THEN
-    RAISE EXCEPTION 'material_passports.origin is missing, or not nullable text';
+  IF (SELECT count(*) FROM material_passports
+      WHERE custom_attributes->>'seedSource' IS NOT NULL) <> 21 THEN
+    RAISE EXCEPTION 'expected 21 curated passports (7 lots and 14 spares) before the tools run';
   END IF;
-  IF EXISTS (SELECT 1 FROM material_passports WHERE origin IS NOT NULL) THEN
-    RAISE EXCEPTION 'the migration must not set an origin on existing passports';
+  IF (SELECT count(*) FROM transactions WHERE notes LIKE 'upgrade fixture: %'
+        AND status = 'completed') <> 3 THEN
+    RAISE EXCEPTION 'the fixture''s three completed sales changed';
   END IF;
-  BEGIN
-    UPDATE material_passports SET origin = 'bogus'
-      WHERE id = (SELECT id FROM material_passports LIMIT 1);
-    RAISE EXCEPTION 'an unknown origin was accepted';
-  EXCEPTION WHEN check_violation THEN NULL;
-  END;
-  IF NOT EXISTS (SELECT 1 FROM transactions
-                 WHERE notes = 'upgrade fixture: completed sale' AND status = 'completed') THEN
-    RAISE EXCEPTION 'the completed sale changed';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM passport_events
-                 WHERE event_type = 'TransactionEvent' AND event_data ? 'buyerId'
-                   AND event_data ? 'amountPence') THEN
-    RAISE EXCEPTION 'the selling event lost its buyer or amount; the data must not be rewritten';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM material_passports WHERE status = 'draft') THEN
-    RAISE EXCEPTION 'the draft passport changed status';
+  IF NOT EXISTS (SELECT 1 FROM listings l JOIN material_passports p ON p.id = l.passport_id
+                 WHERE p.custom_attributes->>'catalogueKey' = 'reclaimed-aerated-concrete-blocks'
+                   AND l.status = 'sold' AND p.status = 'sold') THEN
+    RAISE EXCEPTION 'the sold-out lot changed';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM material_passports
                  WHERE product_name = 'Upgrade Fixture Visitor Beam'
@@ -49,4 +32,4 @@ BEGIN
   END IF;
 END $$;
 
-SELECT 'origin added, empty and checked; sale, selling event, draft and visitor passport unchanged';
+SELECT 'no migration: 21 curated passports, the three sales, the sold-out lot and the visitor passport unchanged';

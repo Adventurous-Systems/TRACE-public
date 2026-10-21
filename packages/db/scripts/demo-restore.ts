@@ -361,6 +361,22 @@ async function main() {
 
     console.log(`Curated catalogue (${curated.length}/${CATALOG.length} present):`);
 
+    // One passport per curated product (owner, 2026-10-21). A warning, so the
+    // deploy's demo-verify still passes before demo-retire-spares has run.
+    const perKey = new Map<string, number>();
+    for (const p of curated) {
+      const key = catalogueKeyFor(p);
+      if (key) perKey.set(key, (perKey.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of perKey) {
+      if (count > 1) {
+        problems.push({
+          severity: 'warning',
+          message: `${count} curated passports for ${key}, not 1 — run demo-retire-spares`,
+        });
+      }
+    }
+
     // Rows wearing the curated tag that the catalogue does not define. They are
     // never converged (the loop iterates CATALOG), so they drift silently and
     // will render "Mismatch" on the public passport page.
