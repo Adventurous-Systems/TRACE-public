@@ -19,6 +19,7 @@ import { blockchainRoutes } from './modules/blockchain/blockchain.routes.js';
 import { registerAuditFailureHooks } from './lib/audit.js';
 import { enforceDeploymentProfile } from './middleware/deployment-profile.js';
 import { sessionCookie } from './lib/session-cookie.js';
+import { refuseCrossSiteCookieWrites } from './middleware/same-origin.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -56,6 +57,9 @@ export async function buildApp() {
 
   // Public exposure profiles fail closed before body parsing or route handlers.
   app.addHook('onRequest', enforceDeploymentProfile);
+  // A write that carries the session cookie must come from the web app's own
+  // origin. Runs after @fastify/cookie's own onRequest hook has parsed it.
+  app.addHook('onRequest', refuseCrossSiteCookieWrites);
 
   await app.register(multipart, {
     limits: {
