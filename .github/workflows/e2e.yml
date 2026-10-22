@@ -131,13 +131,17 @@ jobs:
             curl -sf http://localhost:3001/health >/dev/null && curl -sf http://localhost:3000 >/dev/null && break || sleep 2
           done
 
+      # WebKit for the sign-in spec (M3a): the session cookie must work in
+      # Safari's engine too, which drops Secure cookies on http.
       - name: Install Playwright browsers
-        run: pnpm --filter @trace/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @trace/e2e exec playwright install --with-deps chromium webkit
 
       # Functional + mobile specs. Visual specs are opt-in (RUN_VISUAL=1) and run
       # in the pinned Playwright container locally, where rendering matches the
       # committed baselines — so they are intentionally skipped here.
-      - name: Run E2E suite (functional + mobile)
+      - name: Run E2E suite (functional + mobile, and sign-in on WebKit)
+        env:
+          E2E_WEBKIT: '1'
         run: pnpm e2e
 
       # The E2E suite creates its own passports and listings and makes a real
