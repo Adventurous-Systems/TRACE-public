@@ -59,7 +59,7 @@
       "brace-expansion@>=2.0.0 <2.1.4": "^2.1.4",
       "brace-expansion@>=3.0.0 <5.0.7": "^5.0.7",
       "flatted@<3.4.2": "^3.4.2",
-      "follow-redirects@<1.16.0": "^1.16.0",
+      "follow-redirects@<1.16.1": "^1.16.1",
       "immutable@>=4.0.0-rc.1 <4.3.9": "^4.3.9",
       "js-yaml@>=4.0.0 <4.3.2": "^4.3.2",
       "minimatch@<3.1.4": "^3.1.4",
