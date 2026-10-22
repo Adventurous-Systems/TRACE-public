@@ -160,6 +160,77 @@ describe('POST /api/v1/auth/register', () => {
   });
 });
 
+describe('the session cookie', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('login sets an httpOnly, Lax, host-only cookie that lives as long as the token', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: SEEDED_ADMIN,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const cookie = res.cookies.find((c) => c.name === 'trace_session');
+    expect(cookie).toBeDefined();
+    expect(cookie!.value).toBe(res.json<{ data: { token: string } }>().data.token);
+    expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 3600 });
+    // WEB_URL is http in the tests, so no Secure (D1); never a Domain.
+    expect(cookie!.secure).toBeFalsy();
+    expect(cookie!.domain).toBeUndefined();
+  });
+
+  it('register sets the cookie too', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: {
+        email: `test-cookie-${Date.now()}@example.com`,
+        password: 'SecurePass1!',
+        name: 'Cookie Registrant',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.cookies.some((c) => c.name === 'trace_session' && c.httpOnly)).toBe(true);
+  });
+
+  it('the cookie alone authenticates a request', async () => {
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: SEEDED_ADMIN,
+    });
+    const token = login.json<{ data: { token: string } }>().data.token;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      cookies: { trace_session: token },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: { email: string } }>().data.email).toBe(SEEDED_ADMIN.email);
+  });
+
+  it('a bad cookie is a 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      cookies: { trace_session: 'not.a.valid.jwt' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe('GET /api/v1/auth/me', () => {
   let app: TestApp;
   let authHeader: { authorization: string };
