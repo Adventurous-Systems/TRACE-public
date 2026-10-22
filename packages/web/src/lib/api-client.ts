@@ -53,8 +53,10 @@ function noteSessionEnded(path: string, status: number): void {
 // `credentials: 'include'` covers the local stack too, where the API is on
 // another port. No script can read the token.
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // JSON only when there is a body: Fastify refuses an empty body labelled
+  // JSON (400), which is how sign-out once never reached the API.
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers as Record<string, string>),
   };
 

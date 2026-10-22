@@ -1,12 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ForbiddenError } from '@trace/core';
 import { env } from '../env.js';
-import { sessionCookie } from '../lib/session-cookie.js';
+import { SESSION_COOKIE } from '../lib/session-cookie.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 // The test @fastify/jwt uses: a Bearer header wins over the cookie.
 const BEARER = /^Bearer\s/i;
-const SESSION_COOKIE = sessionCookie(env.WEB_URL).name;
 const WEB_ORIGIN = new URL(env.WEB_URL).origin;
 
 /**
@@ -38,7 +37,7 @@ export async function refuseCrossSiteCookieWrites(
   request: FastifyRequest,
   _reply: FastifyReply,
 ): Promise<void> {
-  const hasSessionCookie = Boolean(request.cookies[SESSION_COOKIE]);
+  const hasSessionCookie = Boolean(request.cookies[SESSION_COOKIE.name]);
   const { authorization, origin } = request.headers;
   if (isCrossSiteCookieWrite(request.method, hasSessionCookie, authorization, origin, WEB_ORIGIN)) {
     throw new ForbiddenError('Cross-site request refused');

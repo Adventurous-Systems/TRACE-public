@@ -2,12 +2,11 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { LoginSchema, RegisterSchema, type JwtPayload } from '@trace/core';
 import { authenticate, optionalUser } from '../../middleware/auth.js';
 import { env } from '../../env.js';
-import { sessionCookie, sessionCookieOptions } from '../../lib/session-cookie.js';
+import { SESSION_COOKIE, sessionCookieOptions } from '../../lib/session-cookie.js';
 import { loginUser, registerUser } from './auth.service.js';
 
 const LOGIN_RATE_LIMIT = { max: env.LOGIN_RATE_LIMIT_MAX, timeWindow: '1 minute' } as const;
 const REGISTER_RATE_LIMIT = { max: 20, timeWindow: '1 hour' } as const;
-const SESSION_COOKIE = sessionCookie(env.WEB_URL);
 
 /**
  * Signs the session token and sets it as the browser's session cookie, which

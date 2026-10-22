@@ -25,6 +25,8 @@ export function waitMinutes(failures: number): number {
 /**
  * Counts a failed sign-in, in one statement so concurrent guesses can't
  * undercount. On the right-hand side of SET, columns hold their old values.
+ * The wait is waitMinutes() in SQL (login-backoff.test.ts checks they agree);
+ * least() caps it before the cast, so a long run never overflows an int.
  */
 export async function recordFailedLogin(userId: string): Promise<void> {
   const runContinues = sql`${users.failedLoginAt} is not null and now() <= greatest(${users.failedLoginAt}, coalesce(${users.loginBackoffUntil}, ${users.failedLoginAt})) + make_interval(mins => ${RUN_WINDOW_MINUTES}::int)`;
@@ -35,7 +37,7 @@ export async function recordFailedLogin(userId: string): Promise<void> {
       failedLoginCount: failures,
       failedLoginAt: sql`now()`,
       loginBackoffUntil: sql`case when ${failures} >= ${FREE_FAILURES}::int
-        then now() + make_interval(mins => least(power(2, ${failures} - ${FREE_FAILURES}::int)::int, ${MAX_WAIT_MINUTES}::int))
+        then now() + make_interval(mins => least(power(2, ${failures} - ${FREE_FAILURES}::int), ${MAX_WAIT_MINUTES}::int)::int)
         else null end`,
     })
     .where(eq(users.id, userId));

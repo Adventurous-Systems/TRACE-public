@@ -35,6 +35,18 @@ describe('api-client and the session cookie (M3a)', () => {
     expect(init.headers).not.toHaveProperty('Authorization');
   });
 
+  it('labels a body as JSON, and sends no Content-Type without one (sign-out)', async () => {
+    const fetchMock = answer(200);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await auth.logout();
+    await auth.login('a@example.com', 'a-password');
+
+    const [logout, login] = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(logout![1].headers).not.toHaveProperty('Content-Type');
+    expect(login![1].headers).toHaveProperty('Content-Type', 'application/json');
+  });
+
   it('announces a session that ended when the API refuses a call with 401', async () => {
     vi.stubGlobal('fetch', answer(401));
     await expect(passports.stats()).rejects.toMatchObject({ status: 401 });

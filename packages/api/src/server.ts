@@ -18,7 +18,7 @@ import { auditRoutes } from './modules/audit/audit.routes.js';
 import { blockchainRoutes } from './modules/blockchain/blockchain.routes.js';
 import { registerAuditFailureHooks } from './lib/audit.js';
 import { enforceDeploymentProfile } from './middleware/deployment-profile.js';
-import { sessionCookie } from './lib/session-cookie.js';
+import { SESSION_COOKIE } from './lib/session-cookie.js';
 import { refuseCrossSiteCookieWrites } from './middleware/same-origin.js';
 
 export async function buildApp() {
@@ -44,7 +44,7 @@ export async function buildApp() {
   await app.register(jwt, {
     secret: env.JWT_SECRET,
     sign: { expiresIn: env.JWT_EXPIRY },
-    cookie: { cookieName: sessionCookie(env.WEB_URL).name, signed: false },
+    cookie: { cookieName: SESSION_COOKIE.name, signed: false },
   });
 
   // Rate limit is not applied in test environment to keep tests fast

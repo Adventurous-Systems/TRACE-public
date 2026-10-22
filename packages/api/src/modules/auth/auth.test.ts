@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { db, users } from '@trace/db';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
@@ -310,6 +310,25 @@ describe('revocation', () => {
     const res = await me(token);
     expect(res.statusCode).toBe(200);
     expect(res.json<{ data: { role: string } }>().data.role).toBe('hub_staff');
+  });
+
+  it('a database failure is a 500, never a signed-out 401', async () => {
+    const { token } = await signUp('db-down');
+    const failing = vi
+      .spyOn(db.query.users, 'findFirst')
+      .mockRejectedValue(new Error('connection terminated'));
+    try {
+      expect((await me(token)).statusCode).toBe(500);
+      const session = await app.inject({
+        method: 'GET',
+        url: '/api/v1/auth/session',
+        cookies: { trace_session: token },
+      });
+      expect(session.statusCode).toBe(500);
+    } finally {
+      failing.mockRestore();
+    }
+    expect((await me(token)).statusCode).toBe(200);
   });
 
   it('logout clears the session cookie, with or without a session', async () => {

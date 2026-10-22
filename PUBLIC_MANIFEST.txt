@@ -177,6 +177,7 @@ packages/core/src/constants/dates.test.ts
 packages/core/src/constants/dates.ts
 packages/core/src/constants/demo-catalogue.ts
 packages/core/src/constants/demo-personas.ts
+packages/core/src/constants/session.ts
 packages/core/src/constants/uploads.ts
 packages/core/src/errors.ts
 packages/core/src/index.ts
@@ -410,6 +411,7 @@ packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
 packages/web/src/lib/register-wizard.test.ts
 packages/web/src/lib/register-wizard.ts
+packages/web/src/lib/session.test.ts
 packages/web/src/lib/session.tsx
 packages/web/src/lib/trust-mode.test.ts
 packages/web/src/lib/trust-mode.ts

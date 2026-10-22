@@ -9,10 +9,17 @@ import type { JwtPayload, UserRole } from '@trace/core';
  * header, else the session cookie), then reads the user's row: a token whose
  * `tv` is missing or older than the row's token_version has been revoked.
  * Role and organisation come from the row, not the token, so a change to
- * either applies on the user's next request. Throws on any failure.
+ * either applies on the user's next request.
+ *
+ * Throws UnauthorizedError when there is no valid session. Anything else (the
+ * database failing) propagates as itself: a 500, not a signed-out user.
  */
 async function loadSession(request: FastifyRequest): Promise<JwtPayload> {
-  await request.jwtVerify();
+  try {
+    await request.jwtVerify();
+  } catch {
+    throw new UnauthorizedError('Invalid or expired token');
+  }
   const claims = request.user;
   if (typeof claims.tv !== 'number') throw new UnauthorizedError('Invalid or expired token');
 
@@ -40,11 +47,7 @@ async function loadSession(request: FastifyRequest): Promise<JwtPayload> {
  * Use as a preHandler on routes that require authentication.
  */
 export async function authenticate(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
-  try {
-    await loadSession(request);
-  } catch {
-    throw new UnauthorizedError('Invalid or expired token');
-  }
+  await loadSession(request);
 }
 
 /**
@@ -54,8 +57,9 @@ export async function authenticate(request: FastifyRequest, _reply: FastifyReply
 export async function optionalUser(request: FastifyRequest): Promise<JwtPayload | undefined> {
   try {
     return await loadSession(request);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return undefined;
+    throw error;
   }
 }
 

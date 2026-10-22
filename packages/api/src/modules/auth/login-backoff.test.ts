@@ -98,6 +98,30 @@ describe('login backoff per account', () => {
     expect(waitMs).toBeLessThanOrEqual(120_000);
   });
 
+  it('waits in SQL exactly as waitMinutes says, however long the run (no int overflow)', async () => {
+    const { id, email } = await signUp('schedule');
+    for (const failures of [1, 4, 5, 6, 7, 8, 9, 10, 35, 36, 40]) {
+      await db
+        .update(users)
+        .set({
+          failedLoginCount: failures - 1,
+          failedLoginAt: new Date(Date.now() - 10_000),
+          loginBackoffUntil: null,
+        })
+        .where(eq(users.id, id));
+
+      expect((await login(email, 'WrongPass999!')).statusCode, `failure ${failures}`).toBe(401);
+      const after = await row(id);
+      expect(after.failedLoginCount).toBe(failures);
+      const waited = after.loginBackoffUntil
+        ? after.loginBackoffUntil.getTime() - after.failedLoginAt!.getTime()
+        : 0;
+      expect(Math.round(waited / 60_000), `wait after failure ${failures}`).toBe(
+        waitMinutes(failures),
+      );
+    }
+  });
+
   it('starts a new run after 15 quiet minutes', async () => {
     const { id, email } = await signUp('quiet');
     await db

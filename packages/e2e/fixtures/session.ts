@@ -1,10 +1,4 @@
-/**
- * The session cookie's name, by the API's rule (M3a, D1): `__Host-trace_session`
- * over https, `trace_session` over http (the local stack and CI).
- */
-export function sessionCookieName(baseUrl: string): string {
-  return new URL(baseUrl).protocol === 'https:' ? '__Host-trace_session' : 'trace_session';
-}
+import { sessionCookieName } from '@trace/core/constants/session';
 
 /**
  * The browser state of a signed-in user: the session cookie the API sets at
