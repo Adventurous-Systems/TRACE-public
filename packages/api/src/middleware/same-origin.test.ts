@@ -6,19 +6,27 @@ const WEB = 'https://demo.example';
 
 describe('isCrossSiteCookieWrite', () => {
   it('refuses a cookie write from another origin, or with none', () => {
-    expect(isCrossSiteCookieWrite('POST', true, 'https://evil.example', WEB)).toBe(true);
-    expect(isCrossSiteCookieWrite('DELETE', true, undefined, WEB)).toBe(true);
-    expect(isCrossSiteCookieWrite('PATCH', true, 'null', WEB)).toBe(true);
+    expect(isCrossSiteCookieWrite('POST', true, undefined, 'https://evil.example', WEB)).toBe(true);
+    expect(isCrossSiteCookieWrite('DELETE', true, undefined, undefined, WEB)).toBe(true);
+    expect(isCrossSiteCookieWrite('PATCH', true, undefined, 'null', WEB)).toBe(true);
   });
 
   it('allows a cookie write from the web app itself', () => {
-    expect(isCrossSiteCookieWrite('POST', true, WEB, WEB)).toBe(false);
+    expect(isCrossSiteCookieWrite('POST', true, undefined, WEB, WEB)).toBe(false);
+  });
+
+  it('leaves a Bearer write alone: the header authenticates it, not the cookie', () => {
+    expect(isCrossSiteCookieWrite('POST', true, 'Bearer abc.def.ghi', undefined, WEB)).toBe(false);
+  });
+
+  it('still checks a write whose Authorization is not Bearer: the cookie authenticates it', () => {
+    expect(isCrossSiteCookieWrite('POST', true, 'Basic dXNlcjpwYXNz', undefined, WEB)).toBe(true);
   });
 
   it('never checks reads, or writes without the cookie', () => {
-    expect(isCrossSiteCookieWrite('GET', true, 'https://evil.example', WEB)).toBe(false);
-    expect(isCrossSiteCookieWrite('options', true, undefined, WEB)).toBe(false);
-    expect(isCrossSiteCookieWrite('POST', false, undefined, WEB)).toBe(false);
+    expect(isCrossSiteCookieWrite('GET', true, undefined, 'https://evil.example', WEB)).toBe(false);
+    expect(isCrossSiteCookieWrite('options', true, undefined, undefined, WEB)).toBe(false);
+    expect(isCrossSiteCookieWrite('POST', false, undefined, undefined, WEB)).toBe(false);
   });
 });
 
@@ -78,6 +86,17 @@ describe('cross-site writes against the API', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/feedback',
+      headers: { authorization: `Bearer ${token}` },
+      payload: feedback,
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('accepts a write with both the cookie and a Bearer header, as the e2e helpers send', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/feedback',
+      cookies: { trace_session: token },
       headers: { authorization: `Bearer ${token}` },
       payload: feedback,
     });

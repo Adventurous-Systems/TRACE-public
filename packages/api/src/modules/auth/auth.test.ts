@@ -363,7 +363,7 @@ describe('GET /api/v1/auth/session', () => {
   });
 
   it('is null, not a 401, for anyone without one', async () => {
-    for (const cookies of [undefined, { trace_session: 'not.a.valid.jwt' }]) {
+    for (const cookies of [{}, { trace_session: 'not.a.valid.jwt' }]) {
       const res = await app.inject({ method: 'GET', url: '/api/v1/auth/session', cookies });
       expect(res.statusCode).toBe(200);
       expect(res.json<{ success: boolean; data: unknown }>()).toEqual({
