@@ -25,7 +25,8 @@ import { Badge } from '@/components/ui/badge';
 import { passports, type PassportCertificate } from '@/lib/api-client';
 import { CARBON_FACTOR_PER_KG, DEFAULT_CARBON_FACTOR } from '@/lib/carbon-factors';
 import { subcategoryLabel, categoryLabel } from '@/lib/categories';
-import { getToken, getUser, canRegisterMaterial, type StoredUser } from '@/lib/auth';
+import { canRegisterMaterial } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { NoAccess } from '@/components/ui/load-state';
 import { getErrorMessage } from '@/lib/api-errors';
 import { track } from '@/lib/analytics';
@@ -78,17 +79,13 @@ export default function RegisterWizard() {
   const previewPhotoCount = createdPassportId ? uploadedPhotos : photos.length;
   const photoInputRef = useRef<HTMLInputElement>(null);
   // J-11: app/(dashboard)/passports/new/page.tsx is a server component and
-  // role lives in localStorage, so it cannot be guarded server-side. This is
-  // the guard for that route — checked here, not at the page, so it applies
-  // regardless of how the route is reached. Effect-based to avoid a
-  // hydration mismatch (getUser() returns null on the server); all hooks
+  // the role comes from the session provider, so it cannot be guarded
+  // server-side. This is the guard for that route — checked here, not at the
+  // page, so it applies regardless of how the route is reached. All hooks
   // above and below still run unconditionally on every render, so the
   // actual gate is only in the JSX returned at the bottom of this
   // component, never an early return.
-  const [wizardUser, setWizardUser] = useState<StoredUser | null>(null);
-  useEffect(() => {
-    setWizardUser(getUser());
-  }, []);
+  const { user: wizardUser } = useSession();
 
   function addPhotoFiles(files: FileList | null) {
     if (!files) return;
@@ -293,8 +290,7 @@ export default function RegisterWizard() {
 
   async function onSubmit(data: WizardForm) {
     setError(null);
-    const token = getToken();
-    if (!token) {
+    if (!wizardUser) {
       router.push('/login');
       return;
     }
@@ -338,7 +334,7 @@ export default function RegisterWizard() {
             : undefined,
       };
 
-      const passport = await passports.create(payload, token);
+      const passport = await passports.create(payload);
       track('passport-create', {
         materialCategory: data.categoryL1,
         hasPhotos: photos.length > 0,
@@ -351,7 +347,7 @@ export default function RegisterWizard() {
       let failure: string | null = null;
       for (const file of photos) {
         try {
-          await passports.uploadPhoto(passport.id, file, token);
+          await passports.uploadPhoto(passport.id, file);
           uploaded += 1;
         } catch (err) {
           failure ??= err instanceof Error ? err.message : 'Upload failed';

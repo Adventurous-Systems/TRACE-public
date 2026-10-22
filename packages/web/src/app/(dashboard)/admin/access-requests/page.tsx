@@ -10,7 +10,8 @@ import {
   type AccessRequestOrganisation,
   type AccessRequestReview,
 } from '@/lib/api-client';
-import { getSession, isPlatformAdmin, type StoredUser } from '@/lib/auth';
+import { isPlatformAdmin } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { getErrorMessage } from '@/lib/api-errors';
 import { formatDateTime } from '@/lib/format';
 
@@ -48,9 +49,7 @@ function dateOrNotReviewed(value: string | null) {
 }
 
 export default function AdminAccessRequestsPage() {
-  const [user, setUser] = useState<StoredUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [sessionReady, setSessionReady] = useState(false);
+  const { user, status: sessionStatus } = useSession();
   const [view, setView] = useState<AdminView>('pending');
   const [pendingFilter, setPendingFilter] = useState<PendingStatusFilter>('pending');
   const [requests, setRequests] = useState<AccessRequestReview[]>([]);
@@ -66,15 +65,8 @@ export default function AdminAccessRequestsPage() {
   const [loadVersion, setLoadVersion] = useState(0);
   const loadingRef = useRef(false);
 
-  useEffect(() => {
-    const session = getSession();
-    setToken(session.token);
-    setUser(session.user);
-    setSessionReady(true);
-  }, []);
-
   const loadData = useCallback(async () => {
-    if (!token || !isPlatformAdmin(user) || loadingRef.current) {
+    if (!isPlatformAdmin(user) || loadingRef.current) {
       return;
     }
 
@@ -83,14 +75,14 @@ export default function AdminAccessRequestsPage() {
     setError(null);
 
     try {
-      const organisationData = await accessRequests.organisations(token);
+      const organisationData = await accessRequests.organisations();
       setOrganisations(organisationData);
 
       if (view === 'organisations') {
         setRequests([]);
       } else {
         const status = view === 'approved' ? 'approved' : pendingFilter;
-        const requestData = await accessRequests.list(token, status);
+        const requestData = await accessRequests.list(status);
         setRequests(requestData);
       }
     } catch (err) {
@@ -99,16 +91,10 @@ export default function AdminAccessRequestsPage() {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [pendingFilter, token, user, view]);
+  }, [pendingFilter, user, view]);
 
   useEffect(() => {
-    if (!sessionReady) {
-      return;
-    }
-
-    if (!token) {
-      setError('Missing session token. Please sign in again.');
-      setLoading(false);
+    if (sessionStatus === 'loading') {
       return;
     }
 
@@ -123,7 +109,7 @@ export default function AdminAccessRequestsPage() {
     }
 
     void loadData();
-  }, [loadData, loadVersion, sessionReady, token, user]);
+  }, [loadData, loadVersion, sessionStatus, user]);
 
   useEffect(() => {
     if (requests.length === 0) {
@@ -246,7 +232,7 @@ export default function AdminAccessRequestsPage() {
   }
 
   async function handleSavePending(requestId: string) {
-    if (!token) return;
+    if (!user) return;
     const draft = pendingDrafts[requestId];
     if (!draft?.organisationName.trim()) {
       setError('Organisation name is required for pending requests.');
@@ -256,16 +242,12 @@ export default function AdminAccessRequestsPage() {
     setBusyKey(`save-pending-${requestId}`);
     setError(null);
     try {
-      await accessRequests.updatePending(
-        requestId,
-        {
-          requestedRole: draft.requestedRole,
-          organisationName: draft.organisationName.trim(),
-          ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}),
-          ...(draft.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
-        },
-        token,
-      );
+      await accessRequests.updatePending(requestId, {
+        requestedRole: draft.requestedRole,
+        organisationName: draft.organisationName.trim(),
+        ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}),
+        ...(draft.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
+      });
       refreshData();
     } catch (err) {
       setError(getErrorMessage(err, 'update this request'));
@@ -275,7 +257,7 @@ export default function AdminAccessRequestsPage() {
   }
 
   async function handleApprove(requestId: string) {
-    if (!token) return;
+    if (!user) return;
     const draft = pendingDrafts[requestId];
     if (!draft?.organisationName.trim()) {
       setError(
@@ -287,15 +269,11 @@ export default function AdminAccessRequestsPage() {
     setBusyKey(`approve-${requestId}`);
     setError(null);
     try {
-      await accessRequests.approve(
-        requestId,
-        {
-          role: draft.requestedRole,
-          organisationName: draft.organisationName.trim(),
-          ...(draft.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
-        },
-        token,
-      );
+      await accessRequests.approve(requestId, {
+        role: draft.requestedRole,
+        organisationName: draft.organisationName.trim(),
+        ...(draft.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
+      });
       refreshData();
     } catch (err) {
       setError(getErrorMessage(err, 'approve this request'));
@@ -305,19 +283,15 @@ export default function AdminAccessRequestsPage() {
   }
 
   async function handleReject(requestId: string) {
-    if (!token) return;
+    if (!user) return;
     const draft = pendingDrafts[requestId];
 
     setBusyKey(`reject-${requestId}`);
     setError(null);
     try {
-      await accessRequests.reject(
-        requestId,
-        {
-          ...(draft?.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
-        },
-        token,
-      );
+      await accessRequests.reject(requestId, {
+        ...(draft?.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
+      });
       refreshData();
     } catch (err) {
       setError(getErrorMessage(err, 'reject this request'));
@@ -327,7 +301,7 @@ export default function AdminAccessRequestsPage() {
   }
 
   async function handleSaveApproved(requestId: string) {
-    if (!token) return;
+    if (!user) return;
     const draft = approvedDrafts[requestId];
     if (!draft) return;
 
@@ -339,20 +313,16 @@ export default function AdminAccessRequestsPage() {
     setBusyKey(`save-approved-${requestId}`);
     setError(null);
     try {
-      await accessRequests.updateApprovedUser(
-        requestId,
-        {
-          role: draft.role,
-          ...(draft.role !== 'buyer' && draft.organisationId
-            ? { organisationId: draft.organisationId }
-            : {}),
-          ...(draft.role !== 'buyer' && draft.organisationName.trim()
-            ? { organisationName: draft.organisationName.trim() }
-            : {}),
-          ...(draft.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
-        },
-        token,
-      );
+      await accessRequests.updateApprovedUser(requestId, {
+        role: draft.role,
+        ...(draft.role !== 'buyer' && draft.organisationId
+          ? { organisationId: draft.organisationId }
+          : {}),
+        ...(draft.role !== 'buyer' && draft.organisationName.trim()
+          ? { organisationName: draft.organisationName.trim() }
+          : {}),
+        ...(draft.reviewNotes.trim() ? { reviewNotes: draft.reviewNotes.trim() } : {}),
+      });
       refreshData();
     } catch (err) {
       setError(getErrorMessage(err, 'update this access'));
@@ -362,20 +332,16 @@ export default function AdminAccessRequestsPage() {
   }
 
   async function handleRevokeAccess(requestId: string) {
-    if (!token) return;
+    if (!user) return;
     const draft = approvedDrafts[requestId];
 
     setBusyKey(`revoke-${requestId}`);
     setError(null);
     try {
-      await accessRequests.updateApprovedUser(
-        requestId,
-        {
-          role: 'buyer',
-          reviewNotes: draft?.reviewNotes.trim() || 'Access revoked by platform admin',
-        },
-        token,
-      );
+      await accessRequests.updateApprovedUser(requestId, {
+        role: 'buyer',
+        reviewNotes: draft?.reviewNotes.trim() || 'Access revoked by platform admin',
+      });
       refreshData();
     } catch (err) {
       setError(getErrorMessage(err, 'revoke this access'));
@@ -385,7 +351,7 @@ export default function AdminAccessRequestsPage() {
   }
 
   async function handleSaveOrganisation(organisationId: string) {
-    if (!token) return;
+    if (!user) return;
     const draft = organisationDrafts[organisationId];
     if (!draft?.name.trim()) {
       setError('Organisation name cannot be empty.');
@@ -395,14 +361,10 @@ export default function AdminAccessRequestsPage() {
     setBusyKey(`save-organisation-${organisationId}`);
     setError(null);
     try {
-      await accessRequests.updateOrganisation(
-        organisationId,
-        {
-          name: draft.name.trim(),
-          verified: draft.verified,
-        },
-        token,
-      );
+      await accessRequests.updateOrganisation(organisationId, {
+        name: draft.name.trim(),
+        verified: draft.verified,
+      });
       refreshData();
     } catch (err) {
       setError(getErrorMessage(err, 'update this organisation'));
@@ -412,7 +374,7 @@ export default function AdminAccessRequestsPage() {
   }
 
   if (!isPlatformAdmin(user)) {
-    if (!sessionReady) {
+    if (sessionStatus === 'loading') {
       return null;
     }
 

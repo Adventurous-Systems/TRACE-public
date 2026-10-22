@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { config as loadEnv } from 'dotenv';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcrypt';
 import {
   DEMO_PERSONA_LIST,
@@ -70,7 +70,11 @@ async function main() {
       if (!dryRun) {
         await db
           .update(schema.users)
-          .set({ passwordHash: await bcrypt.hash(password, 12) })
+          // A rotated password ends every session the account holds (M3a).
+          .set({
+            passwordHash: await bcrypt.hash(password, 12),
+            tokenVersion: sql`${schema.users.tokenVersion} + 1`,
+          })
           .where(eq(schema.users.id, user.id));
       }
       rotated++;

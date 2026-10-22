@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { marketplace, type OrdersSummary } from './api-client';
-import { getToken, type StoredUser } from './auth';
+import type { StoredUser } from './auth';
 
 /** Roles with orders of their own, or (the platform admin) flagged ones to resolve. */
 const HAS_ORDERS = ['buyer', 'supplier', 'hub_staff', 'hub_admin', 'platform_admin'];
@@ -27,15 +27,14 @@ export function useOrdersSummary(user: StoredUser | null): OrdersSummary | null 
   const role = user?.role;
 
   useEffect(() => {
-    const token = getToken();
-    if (!token || !role || !HAS_ORDERS.includes(role)) {
+    if (!role || !HAS_ORDERS.includes(role)) {
       setSummary(null);
       return;
     }
     let current = true;
     const read = () => {
       marketplace
-        .ordersSummary(token)
+        .ordersSummary()
         .then((data) => {
           if (current) setSummary(data);
         })

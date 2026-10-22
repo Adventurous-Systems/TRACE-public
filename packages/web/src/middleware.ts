@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+// The session cookie the API sets (M3a): its name depends on the scheme. It is
+// httpOnly, which hides it from scripts, not from this server.
+import { SESSION_COOKIE_NAMES } from '@trace/core/constants/session';
 
 const PROTECTED_PREFIXES = [
   '/dashboard',
@@ -27,7 +30,9 @@ export function middleware(request: NextRequest): NextResponse {
 
   if (!isProtected) return NextResponse.next();
 
-  const token = request.cookies.get('trace_auth')?.value;
+  // Only a quick, unverified look: the API checks the signature and the
+  // token version, and the page signs out if it refuses.
+  const token = SESSION_COOKIE_NAMES.map((name) => request.cookies.get(name)?.value).find(Boolean);
 
   if (!token || isJwtExpired(token)) {
     const loginUrl = request.nextUrl.clone();

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
-import { authenticate, authorize } from '../../middleware/auth.js';
+import { authenticate, authorize, optionalUser } from '../../middleware/auth.js';
 import { submitFeedback, listFeedback } from './feedback.service.js';
 
 const SubmitFeedbackSchema = z.object({
@@ -12,17 +12,12 @@ const SubmitFeedbackSchema = z.object({
 
 export async function feedbackRoutes(app: FastifyInstance): Promise<void> {
   // ── POST /api/v1/feedback ─────────────────────────────────────────────────
-  // Public — attaches user_id if a valid JWT is present
+  // Public — attaches user_id if a valid session is present
   app.post('/', async (request, reply) => {
     const input = SubmitFeedbackSchema.parse(request.body);
 
-    let userId: string | undefined;
-    try {
-      await request.jwtVerify();
-      userId = request.user.sub;
-    } catch {
-      // unauthenticated — still accept feedback
-    }
+    // Unauthenticated (or revoked): still accept the feedback, without a user.
+    const userId = (await optionalUser(request))?.sub;
 
     const submission = await submitFeedback(
       {

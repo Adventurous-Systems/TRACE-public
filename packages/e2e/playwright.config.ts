@@ -52,5 +52,17 @@ export default defineConfig({
         deviceScaleFactor: 2,
       },
     },
+    // Sign-in on WebKit (M3a): the session cookie must work in Safari's engine,
+    // which drops Secure cookies on http. Only where WebKit is installed (CI's
+    // first arm sets E2E_WEBKIT=1); it needs system libraries most dev boxes lack.
+    ...(process.env.E2E_WEBKIT === '1'
+      ? [
+          {
+            name: 'desktop-webkit',
+            testMatch: ['**/auth-redirect.spec.ts'],
+            use: { ...devices['Desktop Safari'] },
+          },
+        ]
+      : []),
   ],
 });

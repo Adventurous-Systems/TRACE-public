@@ -11,7 +11,8 @@ import { LoadFailure, NoAccess } from '@/components/ui/load-state';
 import { toast } from '@/components/ui/use-toast';
 import { marketplace, type FlaggedOrder } from '@/lib/api-client';
 import { getErrorMessage } from '@/lib/api-errors';
-import { getToken, getUser, isPlatformAdmin, type StoredUser } from '@/lib/auth';
+import { isPlatformAdmin } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { formatDateTime, formatPrice } from '@/lib/format';
 import { stepText } from '@/lib/orders';
 import { announceOrdersChanged } from '@/lib/use-orders-summary';
@@ -39,11 +40,10 @@ function ResolveForm({ order, onResolved }: { order: FlaggedOrder; onResolved: (
   const ready = outcome !== null && note.trim().length >= MIN_REASON;
 
   async function resolve() {
-    const token = getToken();
-    if (!token || !outcome) return;
+    if (!outcome) return;
     setSaving(true);
     try {
-      await marketplace.updateTransaction(order.id, 'resolve_dispute', token, {
+      await marketplace.updateTransaction(order.id, 'resolve_dispute', {
         outcome,
         notes: note.trim(),
       });
@@ -185,24 +185,21 @@ function OrderCard({ order, onResolved }: { order: FlaggedOrder; onResolved: () 
  * flagged order could only be resolved through the API, one way.
  */
 export default function FlaggedOrdersPage() {
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user } = useSession();
   const [orders, setOrders] = useState<FlaggedOrder[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    const token = getToken();
-    const current = getUser();
-    setUser(current);
-    if (!token || !isPlatformAdmin(current)) return;
+    if (!isPlatformAdmin(user)) return;
     marketplace
-      .flaggedOrders(token)
+      .flaggedOrders()
       .then((data) => {
         setOrders(data);
         setError(null);
         announceOrdersChanged();
       })
       .catch((e: unknown) => setError(getErrorMessage(e, 'load the flagged orders')));
-  }, []);
+  }, [user]);
   useEffect(load, [load]);
 
   const waiting = orders?.filter((order) => order.status === 'disputed') ?? [];

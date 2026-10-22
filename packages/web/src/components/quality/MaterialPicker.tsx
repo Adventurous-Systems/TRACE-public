@@ -25,11 +25,9 @@ export function inspectionStatus(material: InspectionMaterial): string {
  * field that asked the inspector to type the passport's UUID.
  */
 export function MaterialPicker({
-  token,
   onSelect,
   actionLabel = 'Inspect',
 }: {
-  token: string;
   onSelect: (material: InspectionMaterial) => void;
   /** What choosing a material is called: a hub "checks" its own. */
   actionLabel?: string;
@@ -49,10 +47,13 @@ export function MaterialPicker({
     const timer = setTimeout(
       () => {
         quality
-          .materials(
-            { q: search.trim(), categoryL1: category, uninspected, page, limit: PAGE_SIZE },
-            token,
-          )
+          .materials({
+            q: search.trim(),
+            categoryL1: category,
+            uninspected,
+            page,
+            limit: PAGE_SIZE,
+          })
           .then((res) => {
             if (request !== latest.current) return;
             setResult({ items: res.data, total: res.total });
@@ -66,7 +67,7 @@ export function MaterialPicker({
       search ? 300 : 0,
     );
     return () => clearTimeout(timer);
-  }, [search, category, uninspected, page, token]);
+  }, [search, category, uninspected, page]);
 
   const pages = result ? Math.max(1, Math.ceil(result.total / PAGE_SIZE)) : 1;
 

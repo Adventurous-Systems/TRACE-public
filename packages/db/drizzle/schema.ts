@@ -50,6 +50,13 @@ export const users = pgTable(
     notificationPrefs: jsonb('notification_prefs').$type<Record<string, unknown>>().default({}),
     // When this person last opened their orders: what changed since is new to them.
     ordersSeenAt: timestamp('orders_seen_at', { withTimezone: true }),
+    // Every session token carries this; raising it ends the user's sessions (0015).
+    tokenVersion: integer('token_version').default(0).notNull(),
+    // Login backoff per account (0015, D5): failures in the current window,
+    // the last one, and when sign-in may be tried again.
+    failedLoginCount: integer('failed_login_count').default(0).notNull(),
+    failedLoginAt: timestamp('failed_login_at', { withTimezone: true }),
+    loginBackoffUntil: timestamp('login_backoff_until', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [unique('users_email_unique').on(table.email)],

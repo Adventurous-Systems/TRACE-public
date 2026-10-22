@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
@@ -17,6 +18,8 @@ import { auditRoutes } from './modules/audit/audit.routes.js';
 import { blockchainRoutes } from './modules/blockchain/blockchain.routes.js';
 import { registerAuditFailureHooks } from './lib/audit.js';
 import { enforceDeploymentProfile } from './middleware/deployment-profile.js';
+import { SESSION_COOKIE } from './lib/session-cookie.js';
+import { refuseCrossSiteCookieWrites } from './middleware/same-origin.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -35,9 +38,13 @@ export async function buildApp() {
     credentials: true,
   });
 
+  // The browser sends its session as an httpOnly cookie; scripts and probes
+  // still send `Authorization: Bearer`, which @fastify/jwt checks first.
+  await app.register(cookie);
   await app.register(jwt, {
     secret: env.JWT_SECRET,
     sign: { expiresIn: env.JWT_EXPIRY },
+    cookie: { cookieName: SESSION_COOKIE.name, signed: false },
   });
 
   // Rate limit is not applied in test environment to keep tests fast
@@ -50,6 +57,9 @@ export async function buildApp() {
 
   // Public exposure profiles fail closed before body parsing or route handlers.
   app.addHook('onRequest', enforceDeploymentProfile);
+  // A write that carries the session cookie must come from the web app's own
+  // origin. Runs after @fastify/cookie's own onRequest hook has parsed it.
+  app.addHook('onRequest', refuseCrossSiteCookieWrites);
 
   await app.register(multipart, {
     limits: {

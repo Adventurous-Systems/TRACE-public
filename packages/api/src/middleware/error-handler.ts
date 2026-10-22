@@ -1,6 +1,6 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
-import { isTraceError } from '@trace/core';
+import { isTraceError, TooManyRequestsError } from '@trace/core';
 
 export function errorHandler(
   error: FastifyError,
@@ -9,6 +9,9 @@ export function errorHandler(
 ): void {
   // Known application errors (TraceError and subclasses)
   if (isTraceError(error)) {
+    if (error instanceof TooManyRequestsError && error.retryAfterSeconds !== undefined) {
+      void reply.header('retry-after', String(error.retryAfterSeconds));
+    }
     void reply.status(error.statusCode).send({
       success: false,
       error: { code: error.code, message: error.message },

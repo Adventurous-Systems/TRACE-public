@@ -13,7 +13,8 @@ import {
   orderQuantityProblem,
 } from '@/lib/order-quantity';
 import { listingStatus } from '@/lib/orders';
-import { canCreateListing, clearSession, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { canCreateListing } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { AccountNav } from '@/components/marketplace/AccountNav';
 import { categoryLabel, subcategoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -58,11 +59,9 @@ export default function ListingDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user, signOut } = useSession();
 
   useEffect(() => {
-    // Resolve auth state client-side (avoids a hydration mismatch for the CTA).
-    setUser(getUser());
     marketplace
       .getListing(params.id)
       .then((found) => {
@@ -74,10 +73,7 @@ export default function ListingDetailPage() {
   }, [params.id]);
 
   async function handleMakeOffer() {
-    const token = getToken();
-    const user = getUser();
-
-    if (!token || !user) {
+    if (!user) {
       router.push(`/login?next=${encodeURIComponent(`/marketplace/${params.id}`)}`);
       return;
     }
@@ -90,7 +86,7 @@ export default function ListingDetailPage() {
         quantity,
       };
       if (notes) offerPayload.notes = notes;
-      await marketplace.makeOffer(offerPayload, token);
+      await marketplace.makeOffer(offerPayload);
       track('make-offer', {
         listingCategory: listing?.passport?.categoryL1 ?? 'unknown',
         hasCustomNote: notes.trim().length > 0,
@@ -158,10 +154,7 @@ export default function ListingDetailPage() {
           <div className="flex items-center gap-3">
             <AccountNav
               user={user}
-              onSignOut={() => {
-                clearSession();
-                setUser(null);
-              }}
+              onSignOut={() => void signOut()}
               loginNext={`/marketplace/${params.id}`}
             />
             <Link href="/" className="flex items-center" aria-label="TRACE home">

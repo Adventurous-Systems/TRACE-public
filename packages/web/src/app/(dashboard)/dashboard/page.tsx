@@ -8,14 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadFailure } from '@/components/ui/load-state';
 import { passports, ApiError, type PassportSummary } from '@/lib/api-client';
-import {
-  getToken,
-  getUser,
-  canRegisterMaterial,
-  hasOrganisation,
-  isPlatformAdmin,
-  type StoredUser,
-} from '@/lib/auth';
+import { canRegisterMaterial, hasOrganisation, isPlatformAdmin } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { InspectorDashboard } from '@/components/quality/InspectorDashboard';
 import { PlatformAdminOverview } from '@/components/admin/PlatformAdminOverview';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -52,45 +46,24 @@ type Load =
 
 export default function DashboardPage() {
   const [load, setLoad] = useState<Load>({ phase: 'loading' });
-  // Effect-based, not a render-time call — getUser() returns null on the
-  // server, and reading it during render hydration-mismatches.
-  const [user, setUser] = useState<StoredUser | null>(null);
-
-  useEffect(() => {
-    setUser(getUser());
-  }, []);
+  // Null until the session is known; DashboardLayout sends a signed-out
+  // visitor to /login.
+  const { user } = useSession();
 
   function fetchPassports() {
-    const current = getUser();
+    if (!user) return;
     // An account with no organisation holds no materials. That is known
     // before asking, so don't make a request that can only fail (it used to
     // put a 400 in the console on every load).
-    if (current && !hasOrganisation(current)) {
+    if (!hasOrganisation(user)) {
       setLoad({ phase: 'no-org' });
-      return;
-    }
-    const token = getToken();
-    if (!token) {
-      // Middleware already redirects an unauthenticated visitor to /login
-      // before this page can render; reaching here with no token is a
-      // narrow client/server staleness window, not the common case. Resolve
-      // to a terminal phase either way — J-14: this used to leave `loading`
-      // true forever, so the tiles spun indefinitely instead of showing
-      // anything.
-      setLoad({
-        phase: 'error',
-        message: 'Your session could not be verified. Please sign in again.',
-      });
       return;
     }
     setLoad({ phase: 'loading' });
     // The tiles count every passport the organisation holds; the list below
     // shows the five most recent. (The tiles used to be counted from those
     // five: "Total 10, Active 0, Anchored 5".)
-    Promise.all([
-      passports.list(new URLSearchParams({ limit: '5' }), token),
-      passports.stats(token),
-    ])
+    Promise.all([passports.list(new URLSearchParams({ limit: '5' })), passports.stats()])
       .then(([recent, stats]) => setLoad({ phase: 'ready', items: recent.data, stats }))
       .catch((e: unknown) => {
         if (e instanceof ApiError && e.code === 'NO_ORGANISATION') {
@@ -101,7 +74,7 @@ export default function DashboardPage() {
       });
   }
 
-  useEffect(fetchPassports, []);
+  useEffect(fetchPassports, [user]);
 
   const stats = load.phase === 'ready' ? load.stats : null;
   const items = load.phase === 'ready' ? load.items : [];

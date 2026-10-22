@@ -6,7 +6,8 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StarRating } from '@/components/ui/star-rating';
 import { feedback, type FeedbackEntry } from '@/lib/api-client';
-import { canViewFeedback, getToken, getUser } from '@/lib/auth';
+import { canViewFeedback } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { getErrorMessage } from '@/lib/api-errors';
 import { formatDateTime } from '@/lib/format';
 
@@ -26,14 +27,14 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export default function AdminFeedbackPage() {
   const router = useRouter();
+  const { user, status } = useSession();
   const [items, setItems] = useState<FeedbackEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = getToken();
-    const user = getUser();
-    if (!token || !user) {
+    if (status === 'loading') return;
+    if (!user) {
       router.replace('/login');
       return;
     }
@@ -42,11 +43,11 @@ export default function AdminFeedbackPage() {
       return;
     }
     feedback
-      .list(token)
+      .list()
       .then(setItems)
       .catch((e: unknown) => setError(getErrorMessage(e, 'load feedback')))
       .finally(() => setLoading(false));
-  }, [router]);
+  }, [router, status, user]);
 
   const avgRating = items.length
     ? (items.reduce((s, i) => s + i.rating, 0) / items.length).toFixed(1)

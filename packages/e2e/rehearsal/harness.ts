@@ -209,7 +209,7 @@ export class Rehearsal {
         typeof who === 'string'
           ? await this.persona(who)
           : await this.login(who.email, who.password);
-      storageState = buildStorageState(session.token, session.user, this.baseUrl);
+      storageState = buildStorageState(session.token, this.baseUrl);
     }
     const context = await this.browser.newContext({
       viewport: options.mobile ? { width: 375, height: 812 } : { width: 1366, height: 900 },

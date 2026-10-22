@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NoAccess } from '@/components/ui/load-state';
 import { audit, type AuditEvent, type BlockchainTransactionsResponse } from '@/lib/api-client';
 import { listingChangeSummary } from '@/lib/listing-changes';
-import { getToken, getUser, canViewAdmin, type StoredUser } from '@/lib/auth';
+import { canViewAdmin } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { formatDateTime } from '@/lib/format';
 
 function formatVtho(value: string | null | undefined) {
@@ -38,16 +39,11 @@ export default function AdminActivityPage() {
   // transactions", "User actions" — populated with "—" and "No transactions
   // logged", because both API calls behind it 403'd and were swallowed by
   // `.catch(console.error)`. It read as "this feature is empty" rather than
-  // "this isn't yours". Effect-based, not a render-time call, to avoid a
-  // hydration mismatch (getUser() returns null on the server).
-  const [user, setUser] = useState<StoredUser | null>(null);
+  // "this isn't yours". Null until the session is known.
+  const { user } = useSession();
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [chain, setChain] = useState<BlockchainTransactionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setUser(getUser());
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -55,9 +51,7 @@ export default function AdminActivityPage() {
       setLoading(false);
       return;
     }
-    const token = getToken();
-    if (!token) return;
-    Promise.all([audit.events(token, 40), audit.blockchainTransactions(token, 40)])
+    Promise.all([audit.events(40), audit.blockchainTransactions(40)])
       .then(([eventData, chainData]) => {
         setEvents(eventData);
         setChain(chainData);

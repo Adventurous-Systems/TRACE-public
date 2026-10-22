@@ -107,6 +107,8 @@ packages/api/src/lib/passport-hash.test.ts
 packages/api/src/lib/passport-hash.ts
 packages/api/src/lib/passport-identifiers.ts
 packages/api/src/lib/queue.ts
+packages/api/src/lib/session-cookie.test.ts
+packages/api/src/lib/session-cookie.ts
 packages/api/src/lib/storage.ts
 packages/api/src/lib/wallet.test.ts
 packages/api/src/lib/wallet.ts
@@ -114,6 +116,8 @@ packages/api/src/middleware/auth.ts
 packages/api/src/middleware/deployment-profile.test.ts
 packages/api/src/middleware/deployment-profile.ts
 packages/api/src/middleware/error-handler.ts
+packages/api/src/middleware/same-origin.test.ts
+packages/api/src/middleware/same-origin.ts
 packages/api/src/middleware/tenant.ts
 packages/api/src/modules/access-request/access-request.routes.ts
 packages/api/src/modules/access-request/access-request.service.ts
@@ -122,6 +126,8 @@ packages/api/src/modules/audit/audit.routes.ts
 packages/api/src/modules/auth/auth.routes.ts
 packages/api/src/modules/auth/auth.service.ts
 packages/api/src/modules/auth/auth.test.ts
+packages/api/src/modules/auth/login-backoff.test.ts
+packages/api/src/modules/auth/login-backoff.ts
 packages/api/src/modules/blockchain/blockchain.routes.ts
 packages/api/src/modules/feedback/feedback.routes.ts
 packages/api/src/modules/feedback/feedback.service.ts
@@ -171,6 +177,7 @@ packages/core/src/constants/dates.test.ts
 packages/core/src/constants/dates.ts
 packages/core/src/constants/demo-catalogue.ts
 packages/core/src/constants/demo-personas.ts
+packages/core/src/constants/session.ts
 packages/core/src/constants/uploads.ts
 packages/core/src/errors.ts
 packages/core/src/index.ts
@@ -212,6 +219,7 @@ packages/db/migrations/0011_inspection_role.sql
 packages/db/migrations/0012_order_lifecycle.sql
 packages/db/migrations/0013_stored_objects.sql
 packages/db/migrations/0014_passport_origin.sql
+packages/db/migrations/0015_session_revocation.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json
@@ -374,6 +382,7 @@ packages/web/src/components/ui/use-toast.ts
 packages/web/src/lib/admin-overview.test.ts
 packages/web/src/lib/admin-overview.ts
 packages/web/src/lib/analytics.ts
+packages/web/src/lib/api-client.test.ts
 packages/web/src/lib/api-client.ts
 packages/web/src/lib/api-errors.test.ts
 packages/web/src/lib/api-errors.ts
@@ -402,6 +411,8 @@ packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
 packages/web/src/lib/register-wizard.test.ts
 packages/web/src/lib/register-wizard.ts
+packages/web/src/lib/session.test.ts
+packages/web/src/lib/session.tsx
 packages/web/src/lib/trust-mode.test.ts
 packages/web/src/lib/trust-mode.ts
 packages/web/src/lib/use-orders-summary.ts

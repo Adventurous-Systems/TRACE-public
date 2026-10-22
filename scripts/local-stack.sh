@@ -87,8 +87,10 @@ write_api_env() {
     "STORAGE_DIR=$STATE/objects"
     "STORAGE_SERVE=true"
     "STORAGE_PUBLIC_URL=http://localhost:$API_PORT/minio"
-    # One rehearsal makes more requests in a minute than a visitor's limit.
+    # One rehearsal makes more requests, and sign-ins, in a minute than a
+    # visitor's limits allow.
     "RATE_LIMIT_MAX=5000"
+    "LOGIN_RATE_LIMIT_MAX=5000"
     "API_PORT=$API_PORT"
     "WEB_URL=http://localhost:$WEB_PORT"
     "API_URL=http://localhost:$API_PORT"

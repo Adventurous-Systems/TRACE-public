@@ -21,7 +21,33 @@ Rules:
 - self-signup always creates role `buyer`
 - callers cannot choose their own role
 - callers cannot assign their own `organisationId`
-- successful signup returns the same auth payload as login: `token` plus `user`
+- successful signup signs the account in, as login does: it sets the session cookie and returns `token` plus `user`
+
+## Sessions
+
+A browser's session is an httpOnly cookie that login and signup set, so no
+script on the page can read it:
+
+- `__Host-trace_session` (Secure, host-only) when `WEB_URL` is https, and
+  `trace_session` without Secure on http, as the local stack and CI run
+- `SameSite=Lax`, path `/`, living as long as the token (`JWT_EXPIRY`)
+- the web asks `GET /api/v1/auth/session` who is signed in, on every page it
+  opens: the user, or `null` for an anonymous visitor, never a 401
+
+Scripts and probes send `Authorization: Bearer <token>` instead, with the
+`token` that login returns; a Bearer header wins over the cookie.
+
+Every request reads the account's role and organisation from the database,
+so an approval, a reassignment or a revocation below applies on the user's
+next request, without signing in again; the web asks again on every page
+the user opens, so its menus follow. Each token carries the account's
+`token_version`; raising it ends every session the account holds (a new
+password does this). `POST /api/v1/auth/logout` clears this browser's cookie
+only.
+
+A write (anything but GET, HEAD and OPTIONS) that carries the session cookie
+must have an `Origin` equal to `WEB_URL`'s origin, or it is refused with 403.
+Writes without the cookie are not checked.
 
 ## Buyer Access Request Flow
 
@@ -118,6 +144,8 @@ Organisation rename updates:
 Relevant routes:
 
 - `POST /api/v1/auth/register`
+- `GET /api/v1/auth/session`
+- `POST /api/v1/auth/logout`
 - `POST /api/v1/access-requests`
 - `GET /api/v1/access-requests/mine`
 - `GET /api/v1/access-requests`

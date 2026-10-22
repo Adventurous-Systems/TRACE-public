@@ -1,32 +1,27 @@
+import { sessionCookieName } from '@trace/core/constants/session';
+
 /**
- * The browser state of a logged-in user. The web app authenticates from
- * `localStorage` (trace_token / trace_user) plus a `trace_auth` cookie used by
- * the Next.js middleware, so a session needs both.
+ * The browser state of a signed-in user: the session cookie the API sets at
+ * sign-in, holding a token from a real sign-in (global-setup, the rehearsal
+ * harness). It is httpOnly, as the API sets it; host-only, so on localhost it
+ * reaches the API's port as well as the web's. Nothing is in localStorage.
  */
-export function buildStorageState(token: string, user: unknown, baseUrl: string) {
+export function buildStorageState(token: string, baseUrl: string) {
   const url = new URL(baseUrl);
   return {
     cookies: [
       {
-        name: 'trace_auth',
+        name: sessionCookieName(baseUrl),
         value: token,
         domain: url.hostname,
         path: '/',
         expires: -1,
-        httpOnly: false,
+        httpOnly: true,
         secure: url.protocol === 'https:',
-        sameSite: 'Strict' as const,
+        sameSite: 'Lax' as const,
       },
     ],
-    origins: [
-      {
-        origin: url.origin,
-        localStorage: [
-          { name: 'trace_token', value: token },
-          { name: 'trace_user', value: JSON.stringify(user) },
-        ],
-      },
-    ],
+    origins: [],
   };
 }
 

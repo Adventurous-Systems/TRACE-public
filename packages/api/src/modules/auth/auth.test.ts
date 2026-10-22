@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { eq, sql } from 'drizzle-orm';
+import { db, users } from '@trace/db';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
 // Uses credentials created by: pnpm db:seed
@@ -157,6 +159,237 @@ describe('POST /api/v1/auth/register', () => {
     expect(body.success).toBe(true);
     expect(body.data.user.role).toBe('buyer');
     expect(body.data.user.organisationId).toBeNull();
+  });
+});
+
+describe('the session cookie', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('login sets an httpOnly, Lax, host-only cookie that lives as long as the token', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: SEEDED_ADMIN,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const cookie = res.cookies.find((c) => c.name === 'trace_session');
+    expect(cookie).toBeDefined();
+    expect(cookie!.value).toBe(res.json<{ data: { token: string } }>().data.token);
+    expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 3600 });
+    // WEB_URL is http in the tests, so no Secure (D1); never a Domain.
+    expect(cookie!.secure).toBeFalsy();
+    expect(cookie!.domain).toBeUndefined();
+  });
+
+  it('register sets the cookie too', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: {
+        email: `test-cookie-${Date.now()}@example.com`,
+        password: 'SecurePass1!',
+        name: 'Cookie Registrant',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.cookies.some((c) => c.name === 'trace_session' && c.httpOnly)).toBe(true);
+  });
+
+  it('the cookie alone authenticates a request', async () => {
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: SEEDED_ADMIN,
+    });
+    const token = login.json<{ data: { token: string } }>().data.token;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      cookies: { trace_session: token },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: { email: string } }>().data.email).toBe(SEEDED_ADMIN.email);
+  });
+
+  it('a bad cookie is a 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      cookies: { trace_session: 'not.a.valid.jwt' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('revocation', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // Each test signs up its own account: bumping a seeded persona would end the
+  // sessions of the other test files running alongside.
+  async function signUp(label: string): Promise<{ id: string; token: string }> {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: {
+        email: `test-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`,
+        password: 'SecurePass1!',
+        name: 'Revocation Test',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ data: { token: string; user: { id: string } } }>();
+    return { id: body.data.user.id, token: body.data.token };
+  }
+
+  const me = (token: string) =>
+    app.inject({ method: 'GET', url: '/api/v1/auth/me', cookies: { trace_session: token } });
+
+  it("a token carries the user's token version", async () => {
+    const { token } = await signUp('tv');
+    expect(app.jwt.decode<{ tv?: number }>(token)?.tv).toBe(0);
+  });
+
+  it('raising token_version ends the session at once, cookie or Bearer', async () => {
+    const { id, token } = await signUp('bump');
+    expect((await me(token)).statusCode).toBe(200);
+
+    await db
+      .update(users)
+      .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
+      .where(eq(users.id, id));
+
+    expect((await me(token)).statusCode).toBe(401);
+    const bearer = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(bearer.statusCode).toBe(401);
+  });
+
+  it('refuses a validly signed token without a version (one issued before 0015)', async () => {
+    const { id } = await signUp('no-tv');
+    const legacy = app.jwt.sign({ sub: id, email: 'legacy@example.com', role: 'buyer' });
+    expect((await me(legacy)).statusCode).toBe(401);
+  });
+
+  it('refuses a token for a user that no longer exists', async () => {
+    const ghost = app.jwt.sign({
+      sub: '00000000-0000-4000-8000-000000000000',
+      email: 'ghost@example.com',
+      role: 'platform_admin',
+      tv: 0,
+    });
+    expect((await me(ghost)).statusCode).toBe(401);
+  });
+
+  it('reads role and organisation from the database, not the token', async () => {
+    const { id, token } = await signUp('role');
+    await db.update(users).set({ role: 'hub_staff' }).where(eq(users.id, id));
+
+    const res = await me(token);
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: { role: string } }>().data.role).toBe('hub_staff');
+  });
+
+  it('a database failure is a 500, never a signed-out 401', async () => {
+    const { token } = await signUp('db-down');
+    const failing = vi
+      .spyOn(db.query.users, 'findFirst')
+      .mockRejectedValue(new Error('connection terminated'));
+    try {
+      expect((await me(token)).statusCode).toBe(500);
+      const session = await app.inject({
+        method: 'GET',
+        url: '/api/v1/auth/session',
+        cookies: { trace_session: token },
+      });
+      expect(session.statusCode).toBe(500);
+    } finally {
+      failing.mockRestore();
+    }
+    expect((await me(token)).statusCode).toBe(200);
+  });
+
+  it('logout clears the session cookie, with or without a session', async () => {
+    const { token } = await signUp('logout');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/logout',
+      cookies: { trace_session: token },
+      headers: { origin: 'http://localhost:3000' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const cleared = res.cookies.find((c) => c.name === 'trace_session');
+    expect(cleared).toMatchObject({ value: '', path: '/', httpOnly: true, sameSite: 'Lax' });
+    expect(cleared!.expires!.getTime()).toBeLessThanOrEqual(Date.now());
+
+    const anonymous = await app.inject({ method: 'POST', url: '/api/v1/auth/logout' });
+    expect(anonymous.statusCode).toBe(200);
+  });
+});
+
+describe('GET /api/v1/auth/session', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('is the signed-in user for a valid session cookie', async () => {
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: SEEDED_ADMIN,
+    });
+    const token = login.json<{ data: { token: string } }>().data.token;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      cookies: { trace_session: token },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: { email: string; role: string } }>().data).toMatchObject({
+      email: SEEDED_ADMIN.email,
+      role: 'hub_admin',
+    });
+  });
+
+  it('is null, not a 401, for anyone without one', async () => {
+    for (const cookies of [{}, { trace_session: 'not.a.valid.jwt' }]) {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/auth/session', cookies });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ success: boolean; data: unknown }>()).toEqual({
+        success: true,
+        data: null,
+      });
+    }
   });
 });
 
