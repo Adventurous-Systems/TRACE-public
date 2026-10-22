@@ -3,7 +3,7 @@
 import { OriginBadge } from '@/components/passport/OriginBadge';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { clearSession, getUser, type StoredUser } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { track } from '@/lib/analytics';
 import { marketplace, type ListingSummary } from '@/lib/api-client';
 import { formatPrice } from '@/lib/format';
@@ -35,7 +35,7 @@ export default function MarketplacePage() {
   const [categoryL1, setCategoryL1] = useState('');
   const [conditionGrade, setConditionGrade] = useState('');
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user, signOut } = useSession();
   const [stats, setStats] = useState<{ totalCarbonSavedKg: number; activeCount: number } | null>(
     null,
   );
@@ -48,7 +48,6 @@ export default function MarketplacePage() {
   const searchTrackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setUser(getUser());
     marketplace
       .stats()
       .then(setStats)
@@ -98,8 +97,7 @@ export default function MarketplacePage() {
   const hasActiveFilters = Boolean(q || categoryL1 || conditionGrade || page > 1);
 
   function handleSignOut() {
-    clearSession();
-    setUser(null);
+    void signOut();
   }
 
   return (

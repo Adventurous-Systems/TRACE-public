@@ -8,14 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { LoadFailure } from '@/components/ui/load-state';
 import { passports, ApiError, type PassportSummary } from '@/lib/api-client';
-import {
-  getToken,
-  getUser,
-  canRegisterMaterial,
-  canCreateListing,
-  hasOrganisation,
-  type StoredUser,
-} from '@/lib/auth';
+import { canRegisterMaterial, canCreateListing, hasOrganisation } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
 import { formatDate } from '@/lib/format';
@@ -43,32 +37,16 @@ export default function PassportsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
-  // Effect-based to avoid the hydration mismatch a render-time getUser()
-  // call produces (it returns null on the server).
-  const [user, setUser] = useState<StoredUser | null>(null);
-
-  useEffect(() => {
-    setUser(getUser());
-  }, []);
+  // Null until the session is known; DashboardLayout sends a signed-out
+  // visitor to /login.
+  const { user } = useSession();
 
   function fetchPassports() {
+    if (!user) return;
     // Same as the dashboard: an account with no organisation holds no
     // materials, so don't make a request that can only fail with a 400 (T4).
-    const current = getUser();
-    if (current && !hasOrganisation(current)) {
+    if (!hasOrganisation(user)) {
       setLoad({ phase: 'no-org' });
-      return;
-    }
-    const token = getToken();
-    if (!token) {
-      // See dashboard/page.tsx's identical comment — middleware already
-      // guards this route; a missing token here is a narrow staleness
-      // window, not the common case. J-14: this used to leave `loading`
-      // true forever instead of resolving.
-      setLoad({
-        phase: 'error',
-        message: 'Your session could not be verified. Please sign in again.',
-      });
       return;
     }
     setLoad({ phase: 'loading' });
@@ -77,7 +55,7 @@ export default function PassportsPage() {
     if (status) params.set('status', status);
 
     passports
-      .list(params, token)
+      .list(params)
       .then((res) => setLoad({ phase: 'ready', items: res.data ?? [], total: res.total ?? 0 }))
       .catch((e: unknown) => {
         if (e instanceof ApiError && e.code === 'NO_ORGANISATION') {
@@ -88,7 +66,7 @@ export default function PassportsPage() {
       });
   }
 
-  useEffect(fetchPassports, [page, search, status]);
+  useEffect(fetchPassports, [user, page, search, status]);
 
   const total = load.phase === 'ready' ? load.total : 0;
   const items = load.phase === 'ready' ? load.items : [];

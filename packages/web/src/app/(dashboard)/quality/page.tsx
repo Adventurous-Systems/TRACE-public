@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +10,8 @@ import { NoAccess } from '@/components/ui/load-state';
 import { quality, type OwnQualityReport } from '@/lib/api-client';
 import { categoryLabel } from '@/lib/categories';
 import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
-import { getToken, getUser, canViewQuality, type StoredUser } from '@/lib/auth';
+import { canViewQuality } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { getErrorMessage } from '@/lib/api-errors';
 import { formatDate } from '@/lib/format';
 
@@ -34,24 +34,15 @@ function GradeBadge({ grade }: { grade: string | null }) {
 }
 
 export default function QualityReportsPage() {
-  const router = useRouter();
   // J-12: this page had no role guard — a buyer landed on
   // "Role 'buyer' is not permitted. Required: inspector, hub_admin,
   // platform_admin" rendered raw into the red error box (also J-10).
-  // Effect-based user read to avoid a hydration mismatch.
-  const [user, setUser] = useState<StoredUser | null>(null);
+  // Null until the session is known; DashboardLayout sends a signed-out
+  // visitor to /login.
+  const { user } = useSession();
   const [reports, setReports] = useState<OwnQualityReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      router.replace('/login');
-      return;
-    }
-    setUser(getUser());
-  }, [router]);
 
   useEffect(() => {
     if (!user) return;
@@ -59,10 +50,8 @@ export default function QualityReportsPage() {
       setLoading(false);
       return;
     }
-    const token = getToken();
-    if (!token) return;
     quality
-      .myReports(token)
+      .myReports()
       .then(setReports)
       .catch((e) => setError(getErrorMessage(e, 'load your quality reports')))
       .finally(() => setLoading(false));

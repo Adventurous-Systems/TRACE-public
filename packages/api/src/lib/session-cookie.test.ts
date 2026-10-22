@@ -10,12 +10,21 @@ describe('sessionCookie (D1)', () => {
   });
 
   it('is plain and not Secure on http, whatever NODE_ENV says', () => {
-    expect(sessionCookie('http://localhost:3000')).toEqual({ name: 'trace_session', secure: false });
+    expect(sessionCookie('http://localhost:3000')).toEqual({
+      name: 'trace_session',
+      secure: false,
+    });
   });
 
   it('is httpOnly, Lax and host-only on path /', () => {
     const options = sessionCookieOptions(sessionCookie('https://demo.example'), 600);
-    expect(options).toEqual({ httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 600 });
+    expect(options).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 600,
+    });
     expect(options).not.toHaveProperty('domain');
   });
 });

@@ -379,6 +379,7 @@ packages/web/src/components/ui/use-toast.ts
 packages/web/src/lib/admin-overview.test.ts
 packages/web/src/lib/admin-overview.ts
 packages/web/src/lib/analytics.ts
+packages/web/src/lib/api-client.test.ts
 packages/web/src/lib/api-client.ts
 packages/web/src/lib/api-errors.test.ts
 packages/web/src/lib/api-errors.ts
@@ -407,6 +408,7 @@ packages/web/src/lib/passport-link.test.ts
 packages/web/src/lib/passport-link.ts
 packages/web/src/lib/register-wizard.test.ts
 packages/web/src/lib/register-wizard.ts
+packages/web/src/lib/session.tsx
 packages/web/src/lib/trust-mode.test.ts
 packages/web/src/lib/trust-mode.ts
 packages/web/src/lib/use-orders-summary.ts

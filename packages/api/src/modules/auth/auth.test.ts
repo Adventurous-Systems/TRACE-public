@@ -264,7 +264,7 @@ describe('revocation', () => {
   const me = (token: string) =>
     app.inject({ method: 'GET', url: '/api/v1/auth/me', cookies: { trace_session: token } });
 
-  it('a token carries the user\'s token version', async () => {
+  it("a token carries the user's token version", async () => {
     const { token } = await signUp('tv');
     expect(app.jwt.decode<{ tv?: number }>(token)?.tv).toBe(0);
   });
@@ -328,6 +328,49 @@ describe('revocation', () => {
 
     const anonymous = await app.inject({ method: 'POST', url: '/api/v1/auth/logout' });
     expect(anonymous.statusCode).toBe(200);
+  });
+});
+
+describe('GET /api/v1/auth/session', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('is the signed-in user for a valid session cookie', async () => {
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: SEEDED_ADMIN,
+    });
+    const token = login.json<{ data: { token: string } }>().data.token;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      cookies: { trace_session: token },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: { email: string; role: string } }>().data).toMatchObject({
+      email: SEEDED_ADMIN.email,
+      role: 'hub_admin',
+    });
+  });
+
+  it('is null, not a 401, for anyone without one', async () => {
+    for (const cookies of [undefined, { trace_session: 'not.a.valid.jwt' }]) {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/auth/session', cookies });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ success: boolean; data: unknown }>()).toEqual({
+        success: true,
+        data: null,
+      });
+    }
   });
 });
 

@@ -11,6 +11,11 @@ const PROTECTED_PREFIXES = [
   '/access-request',
 ];
 
+// The session cookie the API sets (M3a, D1): `__Host-trace_session` over https,
+// `trace_session` over http (the local stack and CI). It is httpOnly, which
+// hides it from scripts, not from this server.
+const SESSION_COOKIES = ['__Host-trace_session', 'trace_session'];
+
 function isJwtExpired(token: string): boolean {
   try {
     const base64 = token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/');
@@ -27,7 +32,9 @@ export function middleware(request: NextRequest): NextResponse {
 
   if (!isProtected) return NextResponse.next();
 
-  const token = request.cookies.get('trace_auth')?.value;
+  // Only a quick, unverified look: the API checks the signature and the
+  // token version, and the page signs out if it refuses.
+  const token = SESSION_COOKIES.map((name) => request.cookies.get(name)?.value).find(Boolean);
 
   if (!token || isJwtExpired(token)) {
     const loginUrl = request.nextUrl.clone();

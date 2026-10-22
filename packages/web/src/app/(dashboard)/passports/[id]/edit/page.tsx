@@ -21,7 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { passports, quality } from '@/lib/api-client';
 import { latestIndependent } from '@/lib/inspection';
 import { formatDate } from '@/lib/format';
-import { getToken, isHubStaff, isSupplier, getUser } from '@/lib/auth';
+import { isHubStaff, isSupplier } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { toast } from '@/components/ui/use-toast';
 import { getErrorMessage } from '@/lib/api-errors';
 
@@ -63,6 +64,7 @@ function num(v: string): number | undefined {
 
 export default function EditPassportPage() {
   const router = useRouter();
+  const { user } = useSession();
   const { id } = useParams<{ id: string }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,12 +83,8 @@ export default function EditPassportPage() {
   const l2Options = MATERIAL_CATEGORIES.find((c) => c.slug === selectedL1)?.subcategories ?? [];
 
   useEffect(() => {
-    const token = getToken();
-    const user = getUser();
-    if (!token) {
-      router.push('/login');
-      return;
-    }
+    // DashboardLayout sends a signed-out visitor to /login.
+    if (!user) return;
     if (!(isHubStaff(user) || isSupplier(user))) {
       router.push(`/passports/${id}`);
       return;
@@ -101,7 +99,7 @@ export default function EditPassportPage() {
       .catch(() => undefined);
 
     passports
-      .get(id, token)
+      .get(id)
       .then((p) => {
         if (!EDITABLE_STATUSES.includes(p.status)) {
           setError(
@@ -137,11 +135,10 @@ export default function EditPassportPage() {
       })
       .catch((e: unknown) => setError(getErrorMessage(e, 'load this material')))
       .finally(() => setLoading(false));
-  }, [id, router, reset]);
+  }, [id, router, reset, user]);
 
   async function onSubmit(data: EditForm) {
-    const token = getToken();
-    if (!token) {
+    if (!user) {
       router.push('/login');
       return;
     }
@@ -176,7 +173,7 @@ export default function EditPassportPage() {
         : undefined,
     };
     try {
-      await passports.update(id, payload, token);
+      await passports.update(id, payload);
       toast({
         title: 'Material updated',
         description: 'Your changes are saved and the integrity fingerprint was regenerated.',

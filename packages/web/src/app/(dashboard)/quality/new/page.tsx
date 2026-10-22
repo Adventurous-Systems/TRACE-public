@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { quality, type InspectionMaterial } from '@/lib/api-client';
-import { canViewQuality, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { canViewQuality } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { NoAccess } from '@/components/ui/load-state';
 import { MaterialPicker } from '@/components/quality/MaterialPicker';
 import { MaterialUnderInspection } from '@/components/quality/MaterialUnderInspection';
@@ -28,28 +29,23 @@ export default function SubmitQualityReportPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const passportId = searchParams.get('passportId') ?? '';
-  const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user } = useSession();
   const [material, setMaterial] = useState<InspectionMaterial | null>(null);
   const [notFound, setNotFound] = useState(false);
 
   // Arriving from a material's page or the work queue (?passportId=…) starts
   // with that material already chosen.
   useEffect(() => {
-    const current = getToken();
-    const currentUser = getUser();
-    setToken(current);
-    setUser(currentUser);
-    if (!current || !passportId || !canViewQuality(currentUser)) return;
+    if (!passportId || !canViewQuality(user)) return;
     quality
-      .materials({ q: passportId, limit: 5 }, current)
+      .materials({ q: passportId, limit: 5 })
       .then((res) => {
         const found = res.data.find((m) => m.id === passportId) ?? null;
         setMaterial(found);
         setNotFound(!found);
       })
       .catch(() => setNotFound(true));
-  }, [passportId]);
+  }, [passportId, user]);
 
   // A hub's report is its own check of its own material, and the passport
   // says so. Only an inspector's report is an independent inspection.
@@ -77,7 +73,7 @@ export default function SubmitQualityReportPage() {
     setError(null);
     setSubmitting(true);
 
-    if (!token) {
+    if (!user) {
       router.push('/login');
       return;
     }
@@ -105,7 +101,7 @@ export default function SubmitQualityReportPage() {
       if (form.environmentalScore)
         payload.environmentalScore = parseInt(form.environmentalScore, 10);
 
-      await quality.submit(payload, token);
+      await quality.submit(payload);
       router.push('/quality');
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'submit this report'));
@@ -179,9 +175,8 @@ export default function SubmitQualityReportPage() {
               )}
               {material ? (
                 <MaterialUnderInspection material={material} onChange={() => setMaterial(null)} />
-              ) : token ? (
+              ) : user ? (
                 <MaterialPicker
-                  token={token}
                   onSelect={setMaterial}
                   actionLabel={ownCheck ? 'Check' : 'Inspect'}
                 />

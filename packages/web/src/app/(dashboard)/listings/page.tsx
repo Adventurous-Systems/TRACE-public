@@ -9,7 +9,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { NoAccess } from '@/components/ui/load-state';
 import { toast } from '@/components/ui/use-toast';
 import { marketplace, type ListingSummary } from '@/lib/api-client';
-import { getToken, getUser, canCreateListing, hasOrganisation, type StoredUser } from '@/lib/auth';
+import { canCreateListing, hasOrganisation } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
 import { formatDate, formatPrice, formatUkDay } from '@/lib/format';
@@ -52,23 +53,16 @@ export default function ListingsPage() {
   // J-12: a buyer navigating here directly saw "No listings yet." with a
   // dead "List your first material" link — the 403 from hubListings() was
   // swallowed by `.catch(console.error)` and rendered indistinguishably from
-  // a genuinely empty catalogue. Effect-based user read to avoid a
-  // hydration mismatch.
-  const [user, setUser] = useState<StoredUser | null>(null);
+  // a genuinely empty catalogue. Null until the session is known.
+  const { user } = useSession();
   const [items, setItems] = useState<ListingSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
-  useEffect(() => {
-    setUser(getUser());
-  }, []);
-
   function load() {
-    const token = getToken();
-    if (!token) return;
     setLoading(true);
     marketplace
-      .hubListings(token)
+      .hubListings()
       .then(setItems)
       .catch((e) =>
         toast({
@@ -90,11 +84,9 @@ export default function ListingsPage() {
   }, [user]);
 
   async function handleCancel(id: string) {
-    const token = getToken();
-    if (!token) return;
     setCancelling(id);
     try {
-      await marketplace.cancelListing(id, token);
+      await marketplace.cancelListing(id);
       load();
     } catch (e) {
       // J-10: was a native alert() — the single most jarring failure mode on

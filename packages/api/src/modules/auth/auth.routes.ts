@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { LoginSchema, RegisterSchema, type JwtPayload } from '@trace/core';
-import { authenticate } from '../../middleware/auth.js';
+import { authenticate, optionalUser } from '../../middleware/auth.js';
 import { env } from '../../env.js';
 import { sessionCookie, sessionCookieOptions } from '../../lib/session-cookie.js';
 import { loginUser, registerUser } from './auth.service.js';
@@ -72,6 +72,24 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/logout', async (_request, reply) => {
     void reply.clearCookie(SESSION_COOKIE.name, sessionCookieOptions(SESSION_COOKIE));
     return reply.send({ success: true });
+  });
+
+  // GET /api/v1/auth/session
+  // The web's session check: the signed-in user, or null. Never a 401, so a
+  // page an anonymous visitor opens logs no error in their console.
+  app.get('/session', async (request, reply) => {
+    const user = await optionalUser(request);
+    return reply.send({
+      success: true,
+      data: user
+        ? {
+            id: user.sub,
+            email: user.email,
+            role: user.role,
+            organisationId: user.organisationId ?? null,
+          }
+        : null,
+    });
   });
 
   // GET /api/v1/auth/me

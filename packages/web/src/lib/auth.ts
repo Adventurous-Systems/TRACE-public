@@ -1,23 +1,21 @@
 'use client';
 
 /**
- * Client-side auth utilities.
- * Token is stored in localStorage (simple for now; use httpOnly cookie in prod).
+ * Client-side auth helpers. The session itself is an httpOnly cookie the API
+ * sets (M3a); no script can read it. Who is signed in comes from the session
+ * provider (lib/session.tsx), which asks the API.
  */
 
-const TOKEN_KEY = 'trace_token';
-const USER_KEY = 'trace_user';
+/** Where the token lived before M3a. Cleared once, on the first load after the upgrade (D4). */
+const LEGACY_TOKEN_KEY = 'trace_token';
+const LEGACY_USER_KEY = 'trace_user';
+const LEGACY_COOKIE = 'trace_auth';
 
 export interface StoredUser {
   id: string;
   email: string;
   role: string;
   organisationId: string | null;
-}
-
-export interface SessionState {
-  token: string | null;
-  user: StoredUser | null;
 }
 
 export function getPostAuthRedirect(user: StoredUser): string {
@@ -49,57 +47,21 @@ export function isSupplier(user: StoredUser | null): boolean {
   return user?.role === 'supplier';
 }
 
-function isJwtExpired(token: string): boolean {
+/**
+ * Removes the pre-M3a session: the token and user in localStorage, and the
+ * script-written `trace_auth` cookie. They no longer sign anyone in; this
+ * just stops a readable token lingering in the browser.
+ */
+export function clearLegacySession(): void {
   try {
-    const payload = JSON.parse(
-      atob(token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')),
-    ) as { exp?: number };
-    return typeof payload.exp === 'number' && payload.exp * 1000 < Date.now();
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_USER_KEY);
   } catch {
-    return true;
+    // Storage blocked (private mode, settings): nothing was stored either.
   }
-}
-
-export function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) return null;
-  if (isJwtExpired(token)) {
-    clearSession();
-    return null;
+  if (document.cookie.includes(`${LEGACY_COOKIE}=`)) {
+    document.cookie = `${LEGACY_COOKIE}=; path=/; max-age=0`;
   }
-  return token;
-}
-
-export function getUser(): StoredUser | null {
-  if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(USER_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as StoredUser;
-  } catch {
-    return null;
-  }
-}
-
-export function getSession(): SessionState {
-  return {
-    token: getToken(),
-    user: getUser(),
-  };
-}
-
-export function saveSession(token: string, user: StoredUser): void {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  // Also persist to a cookie so Next.js middleware can enforce server-side auth
-  document.cookie = `trace_auth=${token}; path=/; SameSite=Strict`;
-}
-
-export function clearSession(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  document.cookie = 'trace_auth=; path=/; max-age=0';
 }
 
 export function isHubStaff(user: StoredUser | null): boolean {

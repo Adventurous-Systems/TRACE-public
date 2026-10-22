@@ -31,7 +31,9 @@ export async function refuseCrossSiteCookieWrites(
   _reply: FastifyReply,
 ): Promise<void> {
   const hasSessionCookie = Boolean(request.cookies[SESSION_COOKIE]);
-  if (isCrossSiteCookieWrite(request.method, hasSessionCookie, request.headers.origin, WEB_ORIGIN)) {
+  if (
+    isCrossSiteCookieWrite(request.method, hasSessionCookie, request.headers.origin, WEB_ORIGIN)
+  ) {
     throw new ForbiddenError('Cross-site request refused');
   }
 }

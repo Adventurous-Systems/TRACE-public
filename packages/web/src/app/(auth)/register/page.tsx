@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { auth } from '@/lib/api-client';
-import { getPostAuthRedirect, saveSession, safeNextPath } from '@/lib/auth';
+import { getPostAuthRedirect, safeNextPath } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { track } from '@/lib/analytics';
 
 const RegisterSchema = z
@@ -30,6 +31,7 @@ type RegisterForm = z.infer<typeof RegisterSchema>;
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { signedIn } = useSession();
   const searchParams = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
   const nextPath = searchParams.get('next');
@@ -49,7 +51,7 @@ export default function RegisterPage() {
         email: data.email,
         password: data.password,
       });
-      saveSession(result.token, result.user);
+      signedIn(result.user);
       track('signup', { role: result.user.role });
       router.push(nextTarget ?? getPostAuthRedirect(result.user));
     } catch (err) {
