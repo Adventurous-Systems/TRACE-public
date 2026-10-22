@@ -22,6 +22,8 @@ export interface JwtPayload {
   email: string;
   role: UserRole;
   organisationId?: string;
+  /** The user's token_version when the token was signed; a stale one is refused. */
+  tv?: number;
   iat?: number;
   exp?: number;
 }

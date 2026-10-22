@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { accessRequests, audit, feedback } from '@/lib/api-client';
 import { feedbackLine, gasPayerLine, waitingLine } from '@/lib/admin-overview';
-import { getToken, type StoredUser } from '@/lib/auth';
+import type { StoredUser } from '@/lib/auth';
 import { useOrdersSummary } from '@/lib/use-orders-summary';
 
 /** One card's line: loading, what it found, or that it could not find out. */
@@ -25,20 +25,18 @@ export function PlatformAdminOverview({ user }: { user: StoredUser }) {
   const [chain, setChain] = useState<Line & { tone?: string }>({ state: 'loading' });
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
     accessRequests
-      .list(token, 'pending')
+      .list('pending')
       .then((rows) =>
         setRequests({ state: 'ok', text: waitingLine(rows.length, 'request', 'requests') }),
       )
       .catch(() => setRequests({ state: 'failed' }));
     feedback
-      .list(token)
+      .list()
       .then((rows) => setNotes({ state: 'ok', text: feedbackLine(rows) }))
       .catch(() => setNotes({ state: 'failed' }));
     audit
-      .blockchainTransactions(token, 1)
+      .blockchainTransactions(1)
       .then((res) => {
         const line = gasPayerLine(res.summary.gasPayer.status);
         setChain({ state: 'ok', text: line.text, tone: line.tone });

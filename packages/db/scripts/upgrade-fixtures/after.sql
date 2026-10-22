@@ -3,33 +3,44 @@
 -- new schema. `pnpm stack upgrade` runs it after the migrations; an exception
 -- fails the rehearsal. Rewrite it with `before.sql`.
 --
--- One of each (M2): there is no migration, so everything must come through
--- as the live release left it. The rehearsal then runs this checkout's
--- post-deploy tools (demo:retire-spares, then the top-up restocking in place)
--- and prints any product still holding more than one passport: only Lintels
--- is expected there (its spare has an order). Every product is on sale after
--- the top-up, so the previous release's top-up creates nothing afterwards.
+-- Sessions (M3a): 0015 adds token_version and the login backoff to users.
+-- Every account, the fixture's and the seeded personas', starts at version 0
+-- with no failures and no backoff, and nothing else about it changes. Then the
+-- previous release signs a visitor up on the new schema, as its register does
+-- (naming none of the new columns), and the defaults fill them in.
 
 DO $$
+DECLARE
+  fresh users%ROWTYPE;
 BEGIN
-  IF (SELECT count(*) FROM material_passports
-      WHERE custom_attributes->>'seedSource' IS NOT NULL) <> 21 THEN
-    RAISE EXCEPTION 'expected 21 curated passports (7 lots and 14 spares) before the tools run';
+  IF EXISTS (SELECT 1 FROM users
+             WHERE token_version <> 0 OR failed_login_count <> 0
+                OR failed_login_at IS NOT NULL OR login_backoff_until IS NOT NULL) THEN
+    RAISE EXCEPTION 'an existing account did not start at version 0 with no backoff';
   END IF;
-  IF (SELECT count(*) FROM transactions WHERE notes LIKE 'upgrade fixture: %'
-        AND status = 'completed') <> 3 THEN
-    RAISE EXCEPTION 'the fixture''s three completed sales changed';
+  IF NOT EXISTS (SELECT 1 FROM users
+                 WHERE email = 'upgrade-fixture-visitor@example.com' AND role = 'buyer'
+                   AND organisation_id IS NULL AND orders_seen_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'the visitor''s account changed';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM listings l JOIN material_passports p ON p.id = l.passport_id
-                 WHERE p.custom_attributes->>'catalogueKey' = 'reclaimed-aerated-concrete-blocks'
-                   AND l.status = 'sold' AND p.status = 'sold') THEN
-    RAISE EXCEPTION 'the sold-out lot changed';
+  IF NOT EXISTS (SELECT 1 FROM users
+                 WHERE email = 'upgrade-fixture-seller@example.com' AND role = 'supplier'
+                   AND organisation_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'the promoted seller''s account changed';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM material_passports
-                 WHERE product_name = 'Upgrade Fixture Visitor Beam'
-                   AND deconstruction_method = 'selective' AND reclaimed_by = 'A visitor') THEN
-    RAISE EXCEPTION 'the visitor''s passport changed';
+
+  -- The previous release's sign-up, on the new schema.
+  INSERT INTO users (email, password_hash, name, role, organisation_id)
+    VALUES ('upgrade-fixture-late-visitor@example.com',
+            '$2b$10$02xnKRdR3biWegV7liWi7.Lwo5N9ozmh/MGhPxCfM/I2x6lmUpJMW',
+            'Upgrade Fixture Late Visitor', 'buyer', NULL)
+    RETURNING * INTO fresh;
+  IF fresh.token_version <> 0 OR fresh.failed_login_count <> 0
+     OR fresh.failed_login_at IS NOT NULL OR fresh.login_backoff_until IS NOT NULL THEN
+    RAISE EXCEPTION 'the previous release''s sign-up did not get the defaults';
   END IF;
 END $$;
 
-SELECT 'no migration: 21 curated passports, the three sales, the sold-out lot and the visitor passport unchanged';
+SELECT 'accounts: ' || count(*) || ', all at token version 0 with no backoff; '
+       || 'the previous release signs up on the new schema'
+  FROM users;

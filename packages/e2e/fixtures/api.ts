@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, type APIRequestContext } from '@playwright/test';
+import { SESSION_COOKIE_NAMES } from '@trace/core/constants/session';
 import { API_URL, statePath, type Role } from './accounts';
 import { PNG_1x1 } from './test-helpers';
 
@@ -12,7 +13,8 @@ export function sessionToken(role: Role): string {
   const state = JSON.parse(readFileSync(statePath(role), 'utf8')) as {
     cookies: Array<{ name: string; value: string }>;
   };
-  const token = state.cookies.find((cookie) => cookie.name === 'trace_auth')?.value;
+  const names: readonly string[] = SESSION_COOKIE_NAMES;
+  const token = state.cookies.find((cookie) => names.includes(cookie.name))?.value;
   if (!token) throw new Error(`no saved session for "${role}"; did global-setup run?`);
   return token;
 }

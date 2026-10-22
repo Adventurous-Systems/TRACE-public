@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { marketplace, type MarketplaceTransaction } from '@/lib/api-client';
-import { getToken, getUser } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { track } from '@/lib/analytics';
 import { toast } from '@/components/ui/use-toast';
 import { getErrorMessage } from '@/lib/api-errors';
@@ -50,7 +50,6 @@ const ACTIONS: Array<{ action: string; label: string; busy: string; primary?: bo
 const MIN_REASON = 5;
 
 function ActionButtons({ tx, onUpdate }: { tx: MarketplaceTransaction; onUpdate: () => void }) {
-  const token = getToken()!;
   const [loading, setLoading] = useState<string | null>(null);
   // Reporting a problem asks what is wrong before it is sent.
   const [reporting, setReporting] = useState(false);
@@ -59,7 +58,7 @@ function ActionButtons({ tx, onUpdate }: { tx: MarketplaceTransaction; onUpdate:
   async function act(action: string, notes?: string) {
     setLoading(action);
     try {
-      await marketplace.updateTransaction(tx.id, action, token, notes ? { notes } : {});
+      await marketplace.updateTransaction(tx.id, action, notes ? { notes } : {});
       track('transaction-update', {
         transactionAction: action,
         isBuyer: tx.viewerSide === 'buyer',
@@ -200,20 +199,19 @@ function History({ tx }: { tx: MarketplaceTransaction }) {
 export default function TransactionsPage() {
   const [items, setItems] = useState<MarketplaceTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const user = getUser();
+  const { user } = useSession();
 
   function load() {
-    const token = getToken();
-    if (!token) return;
+    if (!user) return;
     setLoading(true);
     marketplace
-      .transactions(token)
+      .transactions()
       .then((orders) => {
         setItems(orders);
         // What is on screen now has been seen; "New" marks only what changes
         // after this visit. Then the counts in the navigation follow.
         void marketplace
-          .markOrdersSeen(token)
+          .markOrdersSeen()
           .catch(() => undefined)
           .then(announceOrdersChanged);
       })
@@ -221,7 +219,7 @@ export default function TransactionsPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, []);
+  useEffect(load, [user]);
 
   return (
     <DashboardLayout>

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { Analytics } from '@/components/Analytics';
+import { SessionProvider } from '@/lib/session';
 
 export const metadata: Metadata = {
   title: 'TRACE — Material Passport Platform',
@@ -54,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Public buyer demo — marketplace data is synthetic; use a fictitious email and a password
           you do not use elsewhere.
         </div>
-        {children}
+        <SessionProvider>{children}</SessionProvider>
         <Toaster />
         {umamiEnabled && umamiWebsiteId ? <Analytics websiteId={umamiWebsiteId} /> : null}
       </body>

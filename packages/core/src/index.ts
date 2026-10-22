@@ -165,6 +165,7 @@ export {
   ForbiddenError,
   ValidationError,
   ConflictError,
+  TooManyRequestsError,
   BlockchainError,
   InternalError,
   isTraceError,

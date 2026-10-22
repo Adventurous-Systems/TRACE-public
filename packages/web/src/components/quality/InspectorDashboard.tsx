@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadFailure } from '@/components/ui/load-state';
 import { quality, type InspectionMaterial } from '@/lib/api-client';
-import { getToken } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
 import { ListingPhoto } from '@/components/marketplace/ListingPhoto';
@@ -29,10 +28,8 @@ export function InspectorDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   function load() {
-    const token = getToken();
-    if (!token) return;
     setError(null);
-    Promise.all([quality.summary(token), quality.materials({ limit: 6 }, token)])
+    Promise.all([quality.summary(), quality.materials({ limit: 6 })])
       .then(([counts, materials]) => {
         setSummary(counts);
         setQueue(materials.data);

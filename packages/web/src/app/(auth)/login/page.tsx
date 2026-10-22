@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { auth } from '@/lib/api-client';
-import { getPostAuthRedirect, saveSession, safeNextPath } from '@/lib/auth';
+import { getPostAuthRedirect, safeNextPath } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 
 const LoginSchema = z.object({
   email: z.string().email('Enter a valid email'),
@@ -22,6 +23,7 @@ type LoginForm = z.infer<typeof LoginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const { signedIn } = useSession();
   const searchParams = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
   const nextPath = searchParams.get('next');
@@ -37,7 +39,7 @@ export default function LoginPage() {
     setServerError(null);
     try {
       const result = await auth.login(data.email, data.password);
-      saveSession(result.token, result.user);
+      signedIn(result.user);
       router.push(nextTarget ?? getPostAuthRedirect(result.user));
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Login failed');

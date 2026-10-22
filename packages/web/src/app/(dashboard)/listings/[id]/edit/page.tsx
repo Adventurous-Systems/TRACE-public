@@ -10,7 +10,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { LoadFailure, NoAccess } from '@/components/ui/load-state';
 import { toast } from '@/components/ui/use-toast';
 import { ApiError, marketplace, type ListingSummary } from '@/lib/api-client';
-import { canCreateListing, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { canCreateListing } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { getErrorMessage } from '@/lib/api-errors';
 import { categoryLabel } from '@/lib/categories';
 import { listingStatus } from '@/lib/orders';
@@ -37,7 +38,7 @@ function stillExpired(terms: ListingTerms): boolean {
 export default function EditListingPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user } = useSession();
   const [listing, setListing] = useState<ListingSummary | null>(null);
   // The terms as loaded, so only what the seller changes is sent.
   const [initial, setInitial] = useState<ListingTerms | null>(null);
@@ -45,10 +46,6 @@ export default function EditListingPage() {
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setUser(getUser());
-  }, []);
 
   function load() {
     setLoadError('');
@@ -102,8 +99,7 @@ export default function EditListingPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const token = getToken();
-    if (!token || !listing || !initial || !terms) return;
+    if (!user || !listing || !initial || !terms) return;
 
     const quantity = parseInt(terms.quantity, 10) || 1;
     const minimum = parseInt(terms.minOrderQuantity, 10) || 1;
@@ -132,7 +128,7 @@ export default function EditListingPage() {
     setSaving(true);
     setError('');
     try {
-      const saved = await marketplace.updateListing(listing.id, body, token);
+      const saved = await marketplace.updateListing(listing.id, body);
       const back = listingStatus(listing) !== 'active' && listingStatus(saved) === 'active';
       toast({
         title: back ? 'Back on the marketplace' : 'Listing updated',

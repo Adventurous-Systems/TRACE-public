@@ -293,7 +293,14 @@ async function main() {
               : orgResolution.kind === 'none'
                 ? { organisationId: null }
                 : {}),
-            ...(passwordOk ? {} : { passwordHash: await bcrypt.hash(personaPassword, 10) }),
+            // A new password ends the persona's sessions (M3a). A role or
+            // organisation fix needs no bump: each request reads them afresh.
+            ...(passwordOk
+              ? {}
+              : {
+                  passwordHash: await bcrypt.hash(personaPassword, 10),
+                  tokenVersion: dsql`${schema.users.tokenVersion} + 1`,
+                }),
           })
           .where(eq(schema.users.id, existing.id));
       } else {

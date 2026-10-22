@@ -24,7 +24,8 @@ import {
   PHOTO_UPLOAD_MAX_BYTES,
 } from '@trace/core';
 import { reportedBy } from '@/lib/inspection';
-import { getToken, isHubStaff, isSupplier, getUser } from '@/lib/auth';
+import { isHubStaff, isSupplier } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { categoryLabel } from '@/lib/categories';
 import { getErrorMessage } from '@/lib/api-errors';
 import { toast } from '@/components/ui/use-toast';
@@ -53,12 +54,12 @@ export default function PassportDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const user = getUser();
+  const { user } = useSession();
   const canEdit = isHubStaff(user) || isSupplier(user);
 
   useEffect(() => {
-    const token = getToken();
-    Promise.all([passports.get(id, token ?? undefined), quality.getForPassport(id).catch(() => [])])
+    // The session cookie goes with the request, so a signed-in reader sees more.
+    Promise.all([passports.get(id), quality.getForPassport(id).catch(() => [])])
       .then(([p, qr]) => {
         setPassport(p);
         setQualityReports(qr as QualityReportSummary[]);
@@ -95,8 +96,7 @@ export default function PassportDetailPage() {
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const token = getToken();
-    if (!token) return;
+    if (!user) return;
     if (file.size > PHOTO_UPLOAD_MAX_BYTES) {
       setUploadError(`Photos can be at most ${formatMegabytes(PHOTO_UPLOAD_MAX_BYTES)}`);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -105,7 +105,7 @@ export default function PassportDetailPage() {
     setUploading(true);
     setUploadError(null);
     try {
-      const updated = await passports.uploadPhoto(id, file, token);
+      const updated = await passports.uploadPhoto(id, file);
       setPassport(updated);
       toast({ title: 'Photo added', variant: 'success' });
     } catch (err) {

@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { marketplace, passports, type PassportSummary } from '@/lib/api-client';
-import { canCreateListing, getToken, getUser, type StoredUser } from '@/lib/auth';
+import { canCreateListing } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { NoAccess } from '@/components/ui/load-state';
 import { track } from '@/lib/analytics';
 import { toast } from '@/components/ui/use-toast';
@@ -37,17 +38,14 @@ export default function NewListingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user } = useSession();
 
   useEffect(() => {
-    const token = getToken();
-    const currentUser = getUser();
-    setUser(currentUser);
-    if (!token || !canCreateListing(currentUser)) return;
+    if (!canCreateListing(user)) return;
     const params = new URLSearchParams({ status: 'active', limit: '100' });
     // Only materials with at least one photo can be listed (enforced server-side too).
     passports
-      .list(params, token)
+      .list(params)
       .then((res) => {
         const hasPhoto = (p: PassportSummary) => (p.conditionPhotos?.length ?? 0) > 0;
         setAvailablePassports(res.data.filter(hasPhoto));
@@ -55,12 +53,11 @@ export default function NewListingPage() {
       })
       .catch(console.error)
       .finally(() => setPassportsLoaded(true));
-  }, []);
+  }, [user]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const token = getToken();
-    if (!token) return;
+    if (!user) return;
 
     if (!passportId) {
       setError('Select a passport');
@@ -85,7 +82,7 @@ export default function NewListingPage() {
     setLoading(true);
     setError('');
     try {
-      await marketplace.createListing(payload, token);
+      await marketplace.createListing(payload);
       track('listing-create', {
         materialCategory:
           availablePassports.find((p) => p.id === passportId)?.categoryL1 ?? 'unknown',

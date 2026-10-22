@@ -36,26 +36,36 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit & { token?: string } = {},
-): Promise<T> {
-  const { token, ...fetchOptions } = options;
+/**
+ * Fired on `window` when the API refuses a request for want of a session
+ * (expired, revoked, or signed out in another tab). The session provider
+ * listens and checks again (lib/session.tsx).
+ */
+export const SESSION_ENDED_EVENT = 'trace:session-ended';
 
+function noteSessionEnded(path: string, status: number): void {
+  // A wrong password on the sign-in form is a 401 too, but no session ended.
+  if (status !== 401 || path.startsWith('/api/v1/auth/')) return;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+}
+
+// The browser's session is an httpOnly cookie (M3a), sent with every call:
+// `credentials: 'include'` covers the local stack too, where the API is on
+// another port. No script can read the token.
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // JSON only when there is a body: Fastify refuses an empty body labelled
+  // JSON (400), which is how sign-out once never reached the API.
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(fetchOptions.headers as Record<string, string>),
+    ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers as Record<string, string>),
   };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
   let res: Response;
   try {
     res = await fetch(`${getApiUrl()}${path}`, {
-      ...fetchOptions,
+      ...options,
       headers,
+      credentials: 'include',
     });
   } catch {
     throw new ApiError(
@@ -81,6 +91,7 @@ async function request<T>(
   }
 
   if (payload.success === false) {
+    noteSessionEnded(path, res.status);
     throw new ApiError(
       payload.error.code ?? 'API_ERROR',
       payload.error.message ?? 'Request failed',
@@ -165,33 +176,32 @@ export const auth = {
       body: JSON.stringify(data),
     }),
 
-  me: (token: string) => request<AuthResponse['user']>('/api/v1/auth/me', { token }),
+  me: () => request<AuthResponse['user']>('/api/v1/auth/me'),
+
+  /** The signed-in user, or null: never a 401, so anonymous pages log no error. */
+  session: () => request<AuthResponse['user'] | null>('/api/v1/auth/session'),
+
+  logout: () => request<null>('/api/v1/auth/logout', { method: 'POST' }),
 };
 
 export const accessRequests = {
-  submit: (
-    data: {
-      requestedRole: 'hub_staff' | 'hub_admin';
-      organisationName: string;
-      notes?: string | undefined;
-    },
-    token: string,
-  ) =>
+  submit: (data: {
+    requestedRole: 'hub_staff' | 'hub_admin';
+    organisationName: string;
+    notes?: string | undefined;
+  }) =>
     request<AccessRequest>('/api/v1/access-requests', {
       method: 'POST',
       body: JSON.stringify(data),
-      token,
     }),
 
-  mine: (token: string) => request<AccessRequest[]>('/api/v1/access-requests/mine', { token }),
+  mine: () => request<AccessRequest[]>('/api/v1/access-requests/mine'),
 
-  list: (token: string, status?: 'pending' | 'approved' | 'rejected') =>
-    request<AccessRequestReview[]>(`/api/v1/access-requests${status ? `?status=${status}` : ''}`, {
-      token,
-    }),
+  list: (status?: 'pending' | 'approved' | 'rejected') =>
+    request<AccessRequestReview[]>(`/api/v1/access-requests${status ? `?status=${status}` : ''}`),
 
-  organisations: (token: string) =>
-    request<AccessRequestOrganisation[]>('/api/v1/access-requests/organisations', { token }),
+  organisations: () =>
+    request<AccessRequestOrganisation[]>('/api/v1/access-requests/organisations'),
 
   approve: (
     id: string,
@@ -201,12 +211,10 @@ export const accessRequests = {
       organisationName?: string | undefined;
       reviewNotes?: string | undefined;
     },
-    token: string,
   ) =>
     request<AccessRequestReview>(`/api/v1/access-requests/${id}/approve`, {
       method: 'POST',
       body: JSON.stringify(data),
-      token,
     }),
 
   reject: (
@@ -214,12 +222,10 @@ export const accessRequests = {
     data: {
       reviewNotes?: string | undefined;
     },
-    token: string,
   ) =>
     request<AccessRequest>(`/api/v1/access-requests/${id}/reject`, {
       method: 'POST',
       body: JSON.stringify(data),
-      token,
     }),
 
   updatePending: (
@@ -230,12 +236,10 @@ export const accessRequests = {
       notes?: string | undefined;
       reviewNotes?: string | undefined;
     },
-    token: string,
   ) =>
     request<AccessRequestReview>(`/api/v1/access-requests/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-      token,
     }),
 
   updateApprovedUser: (
@@ -246,12 +250,10 @@ export const accessRequests = {
       organisationName?: string | undefined;
       reviewNotes?: string | undefined;
     },
-    token: string,
   ) =>
     request<AccessRequestReview>(`/api/v1/access-requests/${id}/approved-user`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-      token,
     }),
 
   updateOrganisation: (
@@ -260,12 +262,10 @@ export const accessRequests = {
       name: string;
       verified: boolean;
     },
-    token: string,
   ) =>
     request<AccessRequestOrganisation>(`/api/v1/access-requests/organisations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-      token,
     }),
 };
 
@@ -559,81 +559,66 @@ export const marketplace = {
   facets: () =>
     request<{ categoryL1: string[]; conditionGrade: string[] }>('/api/v1/marketplace/facets'),
 
-  hubListings: (token: string) =>
-    request<ListingSummary[]>('/api/v1/marketplace/listings/hub', { token }),
+  hubListings: () => request<ListingSummary[]>('/api/v1/marketplace/listings/hub'),
 
   getListing: (id: string) => request<ListingSummary>(`/api/v1/marketplace/listings/${id}`),
 
-  createListing: (data: unknown, token: string) =>
+  createListing: (data: unknown) =>
     request<ListingSummary>('/api/v1/marketplace/listings', {
       method: 'POST',
       body: JSON.stringify(data),
-      token,
     }),
 
   /** Change a lot's terms; send only the fields that changed. */
-  updateListing: (id: string, data: Record<string, unknown>, token: string) =>
+  updateListing: (id: string, data: Record<string, unknown>) =>
     request<ListingSummary>(`/api/v1/marketplace/listings/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-      token,
     }),
 
-  cancelListing: (id: string, token: string) =>
+  cancelListing: (id: string) =>
     request<ListingSummary>(`/api/v1/marketplace/listings/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ action: 'cancel' }),
-      token,
     }),
 
-  makeOffer: (data: { listingId: string; quantity?: number; notes?: string }, token: string) =>
+  makeOffer: (data: { listingId: string; quantity?: number; notes?: string }) =>
     request<MarketplaceTransaction>('/api/v1/marketplace/offers', {
       method: 'POST',
       body: JSON.stringify(data),
-      token,
     }),
 
-  transactions: (token: string) =>
-    request<MarketplaceTransaction[]>('/api/v1/marketplace/transactions', { token }),
+  transactions: () => request<MarketplaceTransaction[]>('/api/v1/marketplace/transactions'),
 
   updateTransaction: (
     id: string,
     action: string,
-    token: string,
     extra: { notes?: string; outcome?: 'sale_stands' | 'cancel_order' } = {},
   ) =>
     request<MarketplaceTransaction>(`/api/v1/marketplace/transactions/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ action, ...extra }),
-      token,
     }),
 
-  ordersSummary: (token: string) =>
-    request<OrdersSummary>('/api/v1/marketplace/transactions/summary', { token }),
+  ordersSummary: () => request<OrdersSummary>('/api/v1/marketplace/transactions/summary'),
 
   /** The person has opened their orders: what is there now is no longer new. */
-  markOrdersSeen: (token: string) =>
+  markOrdersSeen: () =>
     request<null>('/api/v1/marketplace/transactions/seen', {
       method: 'POST',
       // A JSON request with no body at all is refused before it reaches the route.
       body: '{}',
-      token,
     }),
 
   /** Platform admin: flagged orders, waiting first, then those resolved. */
-  flaggedOrders: (token: string) =>
-    request<FlaggedOrder[]>('/api/v1/marketplace/transactions/flagged', { token }),
+  flaggedOrders: () => request<FlaggedOrder[]>('/api/v1/marketplace/transactions/flagged'),
 };
 
 export const audit = {
-  events: (token: string, limit = 50) =>
-    request<AuditEvent[]>(`/api/v1/audit/events?limit=${limit}`, { token }),
+  events: (limit = 50) => request<AuditEvent[]>(`/api/v1/audit/events?limit=${limit}`),
 
-  blockchainTransactions: (token: string, limit = 50) =>
-    request<BlockchainTransactionsResponse>(
-      `/api/v1/audit/blockchain-transactions?limit=${limit}`,
-      { token },
-    ),
+  blockchainTransactions: (limit = 50) =>
+    request<BlockchainTransactionsResponse>(`/api/v1/audit/blockchain-transactions?limit=${limit}`),
 };
 
 export interface BlockchainTransactionDetail {
@@ -719,20 +704,16 @@ export const quality = {
 
   getReport: (id: string) => request<QualityReportSummary>(`/api/v1/quality/reports/${id}`),
 
-  myReports: (token: string) =>
-    request<OwnQualityReport[]>('/api/v1/quality/reports/mine', { token }),
+  myReports: () => request<OwnQualityReport[]>('/api/v1/quality/reports/mine'),
 
   /** Materials to inspect, least recently inspected first. */
-  materials: (
-    params: {
-      q?: string;
-      categoryL1?: string;
-      uninspected?: boolean;
-      page?: number;
-      limit?: number;
-    },
-    token: string,
-  ) => {
+  materials: (params: {
+    q?: string;
+    categoryL1?: string;
+    uninspected?: boolean;
+    page?: number;
+    limit?: number;
+  }) => {
     const query = new URLSearchParams();
     if (params.q) query.set('q', params.q);
     if (params.categoryL1) query.set('categoryL1', params.categoryL1);
@@ -741,47 +722,39 @@ export const quality = {
     if (params.limit) query.set('limit', String(params.limit));
     return request<{ data: InspectionMaterial[]; total: number; page: number; limit: number }>(
       `/api/v1/quality/materials?${query.toString()}`,
-      { token },
     );
   },
 
-  summary: (token: string) =>
+  summary: () =>
     request<{ materials: number; notIndependentlyInspected: number; myReports: number }>(
       '/api/v1/quality/summary',
-      { token },
     ),
 
-  submit: (
-    data: {
-      passportId: string;
-      structuralScore?: number;
-      aestheticScore?: number;
-      environmentalScore?: number;
-      overallGrade: 'A' | 'B' | 'C' | 'D';
-      reportNotes?: string;
-      photoUrls?: string[];
-    },
-    token: string,
-  ) =>
+  submit: (data: {
+    passportId: string;
+    structuralScore?: number;
+    aestheticScore?: number;
+    environmentalScore?: number;
+    overallGrade: 'A' | 'B' | 'C' | 'D';
+    reportNotes?: string;
+    photoUrls?: string[];
+  }) =>
     request<OwnQualityReport>('/api/v1/quality/reports', {
       method: 'POST',
       body: JSON.stringify(data),
-      token,
     }),
 
-  dispute: (reportId: string, token: string) =>
+  dispute: (reportId: string) =>
     request<OwnQualityReport>(`/api/v1/quality/reports/${reportId}/dispute`, {
       method: 'POST',
-      token,
     }),
 };
 
 export const passports = {
-  list: (params: URLSearchParams, token: string) =>
-    request<PassportListResponse>(`/api/v1/passports?${params.toString()}`, { token }),
+  list: (params: URLSearchParams) =>
+    request<PassportListResponse>(`/api/v1/passports?${params.toString()}`),
 
-  get: (id: string, token?: string) =>
-    request<PassportDetail>(`/api/v1/passports/${id}`, token ? { token } : {}),
+  get: (id: string) => request<PassportDetail>(`/api/v1/passports/${id}`),
 
   verify: (id: string) =>
     request<PassportDetail & { verified: boolean; onchainVerified: boolean | null }>(
@@ -798,43 +771,43 @@ export const passports = {
       storedHash: string | null;
     }>(`/api/v1/passports/${id}/verify-integrity`),
 
-  create: (data: unknown, token: string) =>
+  create: (data: unknown) =>
     request<PassportDetail>('/api/v1/passports', {
       method: 'POST',
       body: JSON.stringify(data),
-      token,
     }),
 
-  update: (id: string, data: unknown, token: string) =>
+  update: (id: string, data: unknown) =>
     request<PassportDetail>(`/api/v1/passports/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-      token,
     }),
 
   /** Newest first. The public view has no actors, buyers or amounts. */
   history: (id: string) => request<PassportEvent[]>(`/api/v1/passports/${id}/history`),
 
   /** Counts over all of the organisation's passports, for the dashboard. */
-  stats: (token: string) =>
+  stats: () =>
     request<{
       total: number;
       byStatus: Record<string, number>;
       anchored: number;
       awaitingAnchor: number;
-    }>('/api/v1/passports/stats', { token }),
+    }>('/api/v1/passports/stats'),
 
-  uploadPhoto: async (id: string, file: File, token: string): Promise<PassportDetail> => {
+  uploadPhoto: async (id: string, file: File): Promise<PassportDetail> => {
     const formData = new FormData();
     formData.append('file', file);
     // The same base as every other call. This used to fall back to '' (the web
     // server's own origin), which only works behind a reverse proxy.
-    const response = await fetch(`${getApiUrl()}/api/v1/passports/${id}/photos`, {
+    const path = `/api/v1/passports/${id}/photos`;
+    const response = await fetch(`${getApiUrl()}${path}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
       body: formData,
     });
     if (!response.ok) {
+      noteSessionEnded(path, response.status);
       const err = (await response
         .json()
         .catch(() => ({ error: { message: 'Upload failed' } }))) as {
@@ -867,5 +840,5 @@ export const feedback = {
       body: JSON.stringify(data),
     }),
 
-  list: (token: string) => request<FeedbackEntry[]>('/api/v1/feedback', { token }),
+  list: () => request<FeedbackEntry[]>('/api/v1/feedback'),
 };

@@ -47,6 +47,16 @@ export class ConflictError extends TraceError {
   }
 }
 
+/** Wait before trying again; `retryAfterSeconds` becomes the Retry-After header. */
+export class TooManyRequestsError extends TraceError {
+  public readonly retryAfterSeconds?: number;
+
+  constructor(message: string, retryAfterSeconds?: number) {
+    super(message, 'TOO_MANY_REQUESTS', 429);
+    if (retryAfterSeconds !== undefined) this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 export class BlockchainError extends TraceError {
   public readonly txHash?: string;
 

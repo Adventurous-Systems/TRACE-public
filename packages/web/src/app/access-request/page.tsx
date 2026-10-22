@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { accessRequests } from '@/lib/api-client';
-import { clearSession, getSession, type StoredUser } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { getErrorMessage } from '@/lib/api-errors';
 import { track } from '@/lib/analytics';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,9 +37,7 @@ function formatStatus(status: string) {
 
 export default function AccessRequestPage() {
   const router = useRouter();
-  const [user, setUser] = useState<StoredUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [sessionReady, setSessionReady] = useState(false);
+  const { user, status, signOut } = useSession();
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [pendingRequest, setPendingRequest] = useState<AccessRequestSummary | null>(null);
@@ -63,18 +61,11 @@ export default function AccessRequestPage() {
   });
 
   useEffect(() => {
-    const session = getSession();
-    setToken(session.token);
-    setUser(session.user);
-    setSessionReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!sessionReady) {
+    if (status === 'loading') {
       return;
     }
 
-    if (!token || !user) {
+    if (!user) {
       router.replace('/login?next=%2Faccess-request');
       return;
     }
@@ -86,7 +77,7 @@ export default function AccessRequestPage() {
 
     let cancelled = false;
     accessRequests
-      .mine(token)
+      .mine()
       .then((requests) => {
         if (cancelled) return;
 
@@ -119,7 +110,7 @@ export default function AccessRequestPage() {
     return () => {
       cancelled = true;
     };
-  }, [router, sessionReady, token, user]);
+  }, [router, status, user]);
 
   const reviewedMessage = useMemo(() => {
     if (!latestReviewedRequest) return null;
@@ -138,20 +129,17 @@ export default function AccessRequestPage() {
   async function onSubmit(data: AccessRequestForm) {
     setServerError(null);
     setSuccessMessage(null);
-    if (!token) {
+    if (!user) {
       router.replace('/login');
       return;
     }
 
     try {
-      const created = await accessRequests.submit(
-        {
-          requestedRole: data.requestedRole,
-          organisationName: data.organisationName,
-          ...(data.notes?.trim() ? { notes: data.notes.trim() } : {}),
-        },
-        token,
-      );
+      const created = await accessRequests.submit({
+        requestedRole: data.requestedRole,
+        organisationName: data.organisationName,
+        ...(data.notes?.trim() ? { notes: data.notes.trim() } : {}),
+      });
       track('access-request', {
         requestedRole: data.requestedRole,
         hasNotes: Boolean(data.notes?.trim()),
@@ -164,7 +152,7 @@ export default function AccessRequestPage() {
       });
       setLatestReviewedRequest(null);
       setSuccessMessage(
-        'Request submitted. Once approved, sign out and sign back in to refresh your access.',
+        'Request submitted. Once it is approved, your new access applies the next time you open a page.',
       );
       reset({
         requestedRole: 'hub_staff',
@@ -176,12 +164,12 @@ export default function AccessRequestPage() {
     }
   }
 
-  function handleSignOut() {
-    clearSession();
+  async function handleSignOut() {
+    await signOut();
     router.push('/login');
   }
 
-  if (!sessionReady || !user) {
+  if (!user) {
     return null;
   }
 

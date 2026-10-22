@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { getUser, clearSession, type StoredUser } from '@/lib/auth';
+import { useSession } from '@/lib/session';
 import { navBreakpoint, navLinksFor, type NavLink } from '@/lib/nav';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/Logo';
@@ -36,26 +36,23 @@ interface Props {
 export default function DashboardLayout({ children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<StoredUser | null>(null);
+  const { user, status, signOut } = useSession();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const orders = useOrdersSummary(user);
 
   useEffect(() => {
-    const u = getUser();
-    if (!u) {
+    if (status === 'signed-out') {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-    } else {
-      setUser(u);
     }
-  }, [router, pathname]);
+  }, [status, router, pathname]);
 
   // Close the mobile menu on navigation.
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
 
-  function handleLogout() {
-    clearSession();
+  async function handleLogout() {
+    await signOut();
     router.push('/login');
   }
 
