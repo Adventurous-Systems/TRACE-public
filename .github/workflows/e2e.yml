@@ -56,6 +56,8 @@ jobs:
       # Parallel browser journeys share loopback IPs in CI. Keep rate limiting
       # enabled, with enough headroom that this suite is not an accidental load test.
       RATE_LIMIT_MAX: '1000'
+      # The journeys sign in for real (M3a), many times a minute from one address.
+      LOGIN_RATE_LIMIT_MAX: '1000'
       WEB_URL: http://localhost:3000
       API_URL: http://localhost:3001
       NEXT_PUBLIC_API_URL: http://localhost:3001

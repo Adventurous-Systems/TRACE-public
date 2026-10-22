@@ -40,8 +40,8 @@ async function mintState(account: Account, apiUrl: string, storagePath: string):
         '  Locally:   pnpm --filter @trace/db seed',
     );
   }
-  const { data } = (await res.json()) as { data: { token: string; user: unknown } };
-  const state = buildStorageState(data.token, data.user, BASE_URL);
+  const { data } = (await res.json()) as { data: { token: string } };
+  const state = buildStorageState(data.token, BASE_URL);
 
   await writeFile(storagePath, JSON.stringify(state, null, 2));
   await ctx.dispose();

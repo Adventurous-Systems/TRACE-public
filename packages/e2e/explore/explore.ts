@@ -19,6 +19,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ACCOUNTS, API_URL } from '../fixtures/accounts';
+import { buildStorageState } from '../fixtures/session';
 
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
 const OUT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -181,22 +182,8 @@ async function sessionOf(role: 'supplier' | 'inspector') {
   return data;
 }
 
-async function applyAuth(ctx: BrowserContext, token: string, user: unknown) {
-  const url = new URL(BASE_URL);
-  await ctx.addCookies([
-    {
-      name: 'trace_auth',
-      value: token,
-      domain: url.hostname,
-      path: '/',
-      secure: url.protocol === 'https:',
-      sameSite: 'Strict',
-    },
-  ]);
-  await ctx.addInitScript(
-    `localStorage.setItem('trace_token', ${JSON.stringify(token)});` +
-      `localStorage.setItem('trace_user', ${JSON.stringify(JSON.stringify(user))});`,
-  );
+async function applyAuth(ctx: BrowserContext, token: string) {
+  await ctx.addCookies(buildStorageState(token, BASE_URL).cookies);
 }
 
 function dedupe(items: Finding[]): Array<Finding & { count: number }> {
@@ -267,12 +254,12 @@ async function main() {
   await pub.close();
 
   // Authed — desktop
-  const { token, user } = await sessionOf('supplier');
+  const { token } = await sessionOf('supplier');
   const authed = await browser.newContext({
     baseURL: BASE_URL,
     viewport: { width: 1280, height: 800 },
   });
-  await applyAuth(authed, token, user);
+  await applyAuth(authed, token);
   for (const r of authedRoutes) await visit(authed, r, 'desktop');
   await authed.close();
 
@@ -283,7 +270,7 @@ async function main() {
     isMobile: true,
     hasTouch: true,
   });
-  await applyAuth(mob, token, user);
+  await applyAuth(mob, token);
   for (const r of [...publicRoutes, ...authedRoutes]) await visit(mob, r, 'mobile');
   await mob.close();
 
@@ -298,7 +285,7 @@ async function main() {
       viewport,
       ...(mode === 'mobile' ? { isMobile: true, hasTouch: true } : {}),
     });
-    await applyAuth(ctx, inspector.token, inspector.user);
+    await applyAuth(ctx, inspector.token);
     for (const r of INSPECTOR_ROUTES) await visit(ctx, r, mode);
     await ctx.close();
   }

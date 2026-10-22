@@ -126,6 +126,8 @@ packages/api/src/modules/audit/audit.routes.ts
 packages/api/src/modules/auth/auth.routes.ts
 packages/api/src/modules/auth/auth.service.ts
 packages/api/src/modules/auth/auth.test.ts
+packages/api/src/modules/auth/login-backoff.test.ts
+packages/api/src/modules/auth/login-backoff.ts
 packages/api/src/modules/blockchain/blockchain.routes.ts
 packages/api/src/modules/feedback/feedback.routes.ts
 packages/api/src/modules/feedback/feedback.service.ts

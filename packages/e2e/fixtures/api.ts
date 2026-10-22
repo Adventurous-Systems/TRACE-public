@@ -12,7 +12,8 @@ export function sessionToken(role: Role): string {
   const state = JSON.parse(readFileSync(statePath(role), 'utf8')) as {
     cookies: Array<{ name: string; value: string }>;
   };
-  const token = state.cookies.find((cookie) => cookie.name === 'trace_auth')?.value;
+  const names = ['__Host-trace_session', 'trace_session'];
+  const token = state.cookies.find((cookie) => names.includes(cookie.name))?.value;
   if (!token) throw new Error(`no saved session for "${role}"; did global-setup run?`);
   return token;
 }

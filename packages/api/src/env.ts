@@ -11,6 +11,10 @@ const envSchema = z.object({
   // Server
   API_PORT: z.coerce.number().int().default(3001),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(100),
+  // Sign-in attempts per IP address per minute (C8). The local stack and CI
+  // raise it: their journeys sign in for real, many times a minute, from one
+  // address.
+  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().max(10_000).default(10),
   WEB_URL: z.string().url().default('http://localhost:3000'),
   API_URL: z.string().url().default('http://localhost:3001'),
   ANCHOR_WORKER_ENABLED: z

@@ -5,7 +5,7 @@ import { env } from '../../env.js';
 import { sessionCookie, sessionCookieOptions } from '../../lib/session-cookie.js';
 import { loginUser, registerUser } from './auth.service.js';
 
-const LOGIN_RATE_LIMIT = { max: 10, timeWindow: '1 minute' } as const;
+const LOGIN_RATE_LIMIT = { max: env.LOGIN_RATE_LIMIT_MAX, timeWindow: '1 minute' } as const;
 const REGISTER_RATE_LIMIT = { max: 20, timeWindow: '1 hour' } as const;
 const SESSION_COOKIE = sessionCookie(env.WEB_URL);
 
