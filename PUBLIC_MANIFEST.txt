@@ -214,6 +214,7 @@ packages/db/migrations/0011_inspection_role.sql
 packages/db/migrations/0012_order_lifecycle.sql
 packages/db/migrations/0013_stored_objects.sql
 packages/db/migrations/0014_passport_origin.sql
+packages/db/migrations/0015_session_revocation.sql
 packages/db/migrations/meta/0000_snapshot.json
 packages/db/migrations/meta/0002_snapshot.json
 packages/db/migrations/meta/0003_snapshot.json

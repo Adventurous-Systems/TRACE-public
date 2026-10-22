@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { eq, sql } from 'drizzle-orm';
+import { db, users } from '@trace/db';
 import { createTestApp, getAuthHeader, getTestPersona, type TestApp } from '../../test-utils.js';
 
 // Uses credentials created by: pnpm db:seed
@@ -228,6 +230,104 @@ describe('the session cookie', () => {
       cookies: { trace_session: 'not.a.valid.jwt' },
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('revocation', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // Each test signs up its own account: bumping a seeded persona would end the
+  // sessions of the other test files running alongside.
+  async function signUp(label: string): Promise<{ id: string; token: string }> {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: {
+        email: `test-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`,
+        password: 'SecurePass1!',
+        name: 'Revocation Test',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ data: { token: string; user: { id: string } } }>();
+    return { id: body.data.user.id, token: body.data.token };
+  }
+
+  const me = (token: string) =>
+    app.inject({ method: 'GET', url: '/api/v1/auth/me', cookies: { trace_session: token } });
+
+  it('a token carries the user\'s token version', async () => {
+    const { token } = await signUp('tv');
+    expect(app.jwt.decode<{ tv?: number }>(token)?.tv).toBe(0);
+  });
+
+  it('raising token_version ends the session at once, cookie or Bearer', async () => {
+    const { id, token } = await signUp('bump');
+    expect((await me(token)).statusCode).toBe(200);
+
+    await db
+      .update(users)
+      .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
+      .where(eq(users.id, id));
+
+    expect((await me(token)).statusCode).toBe(401);
+    const bearer = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(bearer.statusCode).toBe(401);
+  });
+
+  it('refuses a validly signed token without a version (one issued before 0015)', async () => {
+    const { id } = await signUp('no-tv');
+    const legacy = app.jwt.sign({ sub: id, email: 'legacy@example.com', role: 'buyer' });
+    expect((await me(legacy)).statusCode).toBe(401);
+  });
+
+  it('refuses a token for a user that no longer exists', async () => {
+    const ghost = app.jwt.sign({
+      sub: '00000000-0000-4000-8000-000000000000',
+      email: 'ghost@example.com',
+      role: 'platform_admin',
+      tv: 0,
+    });
+    expect((await me(ghost)).statusCode).toBe(401);
+  });
+
+  it('reads role and organisation from the database, not the token', async () => {
+    const { id, token } = await signUp('role');
+    await db.update(users).set({ role: 'hub_staff' }).where(eq(users.id, id));
+
+    const res = await me(token);
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ data: { role: string } }>().data.role).toBe('hub_staff');
+  });
+
+  it('logout clears the session cookie, with or without a session', async () => {
+    const { token } = await signUp('logout');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/logout',
+      cookies: { trace_session: token },
+      headers: { origin: 'http://localhost:3000' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const cleared = res.cookies.find((c) => c.name === 'trace_session');
+    expect(cleared).toMatchObject({ value: '', path: '/', httpOnly: true, sameSite: 'Lax' });
+    expect(cleared!.expires!.getTime()).toBeLessThanOrEqual(Date.now());
+
+    const anonymous = await app.inject({ method: 'POST', url: '/api/v1/auth/logout' });
+    expect(anonymous.statusCode).toBe(200);
   });
 });
 

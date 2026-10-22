@@ -21,6 +21,7 @@ export const JwtPayloadSchema = z.object({
   email: z.string().email(),
   role: z.enum(USER_ROLES),
   organisationId: z.string().uuid().optional(),
+  tv: z.number().int().nonnegative().optional(),
   iat: z.number().optional(),
   exp: z.number().optional(),
 });

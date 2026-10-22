@@ -64,6 +64,16 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // POST /api/v1/auth/logout
+  // Ends this browser's session only (D3): clears the cookie. It needs no
+  // valid session, so signing out always works. Ending every session a user
+  // holds is a token_version bump (credential changes; "sign out everywhere"
+  // comes with M4a).
+  app.post('/logout', async (_request, reply) => {
+    void reply.clearCookie(SESSION_COOKIE.name, sessionCookieOptions(SESSION_COOKIE));
+    return reply.send({ success: true });
+  });
+
   // GET /api/v1/auth/me
   app.get('/me', { preHandler: [authenticate] }, async (request, reply) => {
     return reply.send({

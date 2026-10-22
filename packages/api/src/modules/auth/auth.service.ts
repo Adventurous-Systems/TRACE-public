@@ -53,16 +53,18 @@ export async function registerUser(input: RegisterInput): Promise<JwtPayload> {
   return buildPayload(user!);
 }
 
-function buildPayload(user: {
+export function buildPayload(user: {
   id: string;
   email: string;
   role: string;
   organisationId: string | null;
+  tokenVersion: number;
 }): JwtPayload {
   return {
     sub: user.id,
     email: user.email,
     role: user.role as UserRole,
     ...(user.organisationId !== null ? { organisationId: user.organisationId } : {}),
+    tv: user.tokenVersion,
   };
 }

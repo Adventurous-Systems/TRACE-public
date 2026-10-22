@@ -1,27 +1,59 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { eq } from 'drizzle-orm';
+import { db, users } from '@trace/db';
 import { UnauthorizedError, ForbiddenError } from '@trace/core';
 import type { JwtPayload, UserRole } from '@trace/core';
 
 /**
- * Verifies the JWT and populates request.user.
+ * The session behind a request (M3a). Verifies the token (the Authorization
+ * header, else the session cookie), then reads the user's row: a token whose
+ * `tv` is missing or older than the row's token_version has been revoked.
+ * Role and organisation come from the row, not the token, so a change to
+ * either applies on the user's next request. Throws on any failure.
+ */
+async function loadSession(request: FastifyRequest): Promise<JwtPayload> {
+  await request.jwtVerify();
+  const claims = request.user;
+  if (typeof claims.tv !== 'number') throw new UnauthorizedError('Invalid or expired token');
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, claims.sub),
+    columns: { email: true, role: true, organisationId: true, tokenVersion: true },
+  });
+  if (!user || user.tokenVersion !== claims.tv) {
+    throw new UnauthorizedError('Invalid or expired token');
+  }
+
+  const session: JwtPayload = {
+    ...claims,
+    email: user.email,
+    role: user.role as UserRole,
+  };
+  if (user.organisationId !== null) session.organisationId = user.organisationId;
+  else delete session.organisationId;
+  request.user = session;
+  return session;
+}
+
+/**
+ * Verifies the session and populates request.user.
  * Use as a preHandler on routes that require authentication.
  */
 export async function authenticate(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
   try {
-    await request.jwtVerify();
+    await loadSession(request);
   } catch {
     throw new UnauthorizedError('Invalid or expired token');
   }
 }
 
 /**
- * The signed-in user, if the request carries a valid token; undefined for
+ * The signed-in user, if the request carries a valid session; undefined for
  * anyone else. For public routes that show more to some readers.
  */
 export async function optionalUser(request: FastifyRequest): Promise<JwtPayload | undefined> {
   try {
-    await request.jwtVerify();
-    return request.user;
+    return await loadSession(request);
   } catch {
     return undefined;
   }
