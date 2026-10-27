@@ -87,6 +87,7 @@ ops/test-write-status.sh
 ops/write_status.sh
 package.json
 packages/api/package.json
+packages/api/src/env.test.ts
 packages/api/src/env.ts
 packages/api/src/index.ts
 packages/api/src/lib/anchor-decision.test.ts
@@ -115,6 +116,7 @@ packages/api/src/lib/wallet.ts
 packages/api/src/middleware/auth.ts
 packages/api/src/middleware/deployment-profile.test.ts
 packages/api/src/middleware/deployment-profile.ts
+packages/api/src/middleware/error-handler.test.ts
 packages/api/src/middleware/error-handler.ts
 packages/api/src/middleware/same-origin.test.ts
 packages/api/src/middleware/same-origin.ts
@@ -190,6 +192,7 @@ packages/core/src/types/quality.ts
 packages/core/src/types/user.ts
 packages/core/src/validators/access-request.schema.ts
 packages/core/src/validators/auth.schema.ts
+packages/core/src/validators/compatibility.test.ts
 packages/core/src/validators/listing.schema.ts
 packages/core/src/validators/passport.schema.ts
 packages/core/src/validators/quality.schema.ts

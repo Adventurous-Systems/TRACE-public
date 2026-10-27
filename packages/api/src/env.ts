@@ -4,7 +4,7 @@ import { PASSPORT_PHOTOS_MAX, PHOTO_UPLOAD_MAX_BYTES } from '@trace/core';
 /** An empty value, as an env file writes `KEY=`, means "not set". */
 const unsetIfEmpty = (value: unknown) => (value === '' ? undefined : value);
 
-const envSchema = z.object({
+export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
 
@@ -20,7 +20,7 @@ const envSchema = z.object({
   ANCHOR_WORKER_ENABLED: z
     .string()
     .transform((v) => v === 'true')
-    .default('true'),
+    .prefault('true'),
   TRACE_DEPLOYMENT_PROFILE: z
     .enum(['self_hosted', 'public_showcase', 'public_buyer_demo', 'public_sandbox'])
     .default('self_hosted'),
@@ -95,13 +95,13 @@ const envSchema = z.object({
   FEE_DELEGATION_REQUIRED: z
     .string()
     .transform((v) => v === 'true')
-    .default('false'),
+    .prefault('false'),
   // Demo/showcase: when true, passports get a real keccak256 fingerprint marked
   // "trust layer prepared" instead of a real on-chain VeChain transaction. Use only with synthetic demo data; never describe it as an on-chain anchor.
   DEMO_SIMULATE_ANCHOR: z
     .string()
     .transform((v) => v === 'true')
-    .default('false'),
+    .prefault('false'),
   VTHO_WARNING_THRESHOLD_WEI: z.string().default('10000000000000000000'),
   VTHO_CRITICAL_THRESHOLD_WEI: z.string().default('1000000000000000000'),
 
@@ -115,7 +115,7 @@ const envSchema = z.object({
   STORAGE_SERVE: z
     .string()
     .transform((v) => v === 'true')
-    .default('false'),
+    .prefault('false'),
   MINIO_PUBLIC_URL: z.preprocess(unsetIfEmpty, z.string().url().optional()),
   // Upload limits (owner, 2026-10-07): per file, photos per passport, bytes
   // stored per organisation, and the free disk below which uploads stop.

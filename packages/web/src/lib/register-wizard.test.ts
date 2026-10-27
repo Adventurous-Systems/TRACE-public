@@ -44,7 +44,7 @@ describe('WizardSchema', () => {
     expect(errorsOf({ dimensionWidth: '-1' }).dimensionWidth).toMatch(/greater than 0/);
     expect(errorsOf({ recycledContent: '140' }).recycledContent).toMatch(/0 to 100/);
     expect(errorsOf({ carbonSavingsVsNew: '-3' }).carbonSavingsVsNew).toMatch(/0 or more/);
-    expect(errorsOf({ gwpTotal: 'lots' }).gwpTotal).toMatch(/number/);
+    expect(errorsOf({ gwpTotal: 'lots' }).gwpTotal).toBe('Enter a number.');
   });
 });
 

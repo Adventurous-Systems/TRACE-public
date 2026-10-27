@@ -44,7 +44,7 @@ export const CreatePassportSchema = z.object({
   serialNumber: z.string().trim().min(1).max(100).optional(),
   materialComposition: z.array(MaterialComponentSchema).optional(),
   dimensions: DimensionsSchema.optional(),
-  technicalSpecs: z.record(z.unknown()).optional(),
+  technicalSpecs: z.record(z.string(), z.unknown()).optional(),
 
   // Manufacturer
   manufacturerName: z.string().max(255).optional(),
@@ -79,7 +79,7 @@ export const CreatePassportSchema = z.object({
   hazardousSubstances: z.array(HazardousSubstanceSchema).optional(),
 
   // Flexible
-  customAttributes: z.record(z.unknown()).optional(),
+  customAttributes: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type CreatePassportInput = z.infer<typeof CreatePassportSchema>;
