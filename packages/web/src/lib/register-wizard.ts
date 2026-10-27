@@ -21,7 +21,7 @@ const optionalNumber = (rule: z.ZodNumber) =>
     return given === undefined ? undefined : Number(given);
   }, rule.optional());
 
-const number = () => z.number({ invalid_type_error: 'Enter a number.' });
+const number = () => z.number({ error: 'Enter a number.' });
 const dimension = () => optionalNumber(number().positive('Enter a number greater than 0.'));
 const carbon = () => optionalNumber(number().nonnegative('Enter 0 or more.'));
 

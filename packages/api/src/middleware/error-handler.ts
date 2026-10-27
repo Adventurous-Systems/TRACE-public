@@ -26,7 +26,7 @@ export function errorHandler(
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Request validation failed',
-        issues: error.errors,
+        issues: error.issues,
       },
     });
     return;
