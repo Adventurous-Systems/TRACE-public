@@ -43,6 +43,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up patched Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+
       - name: Validate release ancestry
         shell: bash
         run: |
@@ -108,6 +113,8 @@ jobs:
             image="$repository@$digest"
 
             docker pull "$image"
+            actual_node="$(docker run --rm --network none --entrypoint node "$image" --version)"
+            node scripts/check-node-runtime.mjs "$actual_node"
             revision="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
             user="$(docker image inspect "$image" --format '{{.Config.User}}')"
             test "$revision" = "$RELEASE_SHA"
