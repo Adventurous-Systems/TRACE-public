@@ -10,6 +10,12 @@ test.use({ storageState: statePath('supplier') });
  */
 test('hamburger menu navigates and screens do not overflow', async ({ page }) => {
   await page.goto('/passports');
+  const logo = page.getByRole('img', { name: 'TRACE', exact: true }).first();
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveJSProperty('complete', true);
+  await expect
+    .poll(() => logo.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0);
   await expectNoHorizontalOverflow(page);
 
   // Build-agnostic selectors (work before and after the data-testid ships):

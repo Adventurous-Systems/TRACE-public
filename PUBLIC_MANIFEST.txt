@@ -427,6 +427,8 @@ packages/web/tsconfig.json
 pnpm-lock.yaml
 pnpm-workspace.yaml
 scripts/auth-smoke.sh
+scripts/check-node-runtime.mjs
+scripts/check-node-runtime.test.mjs
 scripts/check-public-boundary.mjs
 scripts/init-local-env.mjs
 scripts/local-stack.sh

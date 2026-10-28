@@ -133,7 +133,8 @@ packages/sdk/         → TypeScript SDK for external consumers
 
 ## Quick Start
 
-Prerequisites: Docker with Compose, Node.js 24, and pnpm 9.
+Prerequisites: Docker with Compose, Node.js >=24.22.1 <25, and pnpm 9.15.9.
+Run `nvm use` and `node scripts/check-node-runtime.mjs` before installing.
 
 ```bash
 pnpm env:init
