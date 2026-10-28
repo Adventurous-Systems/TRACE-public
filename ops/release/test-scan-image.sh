@@ -26,14 +26,20 @@ mkdir -p "$fake_bin"
 } > "$fake_bin/docker"
 chmod 755 "$fake_bin/docker"
 
+# The fake database starts stale (2026-09-15) and the first scan refreshes it
+# (2026-09-16), as Trivy does: the receipt must record the refreshed one.
+refreshed="$TEST_ROOT/db-refreshed"
 {
   printf '%s\n' '#!/usr/bin/env bash'
   printf '%s\n' 'set -euo pipefail'
+  printf 'refreshed=%q\n' "$refreshed"
   printf '%s\n' 'if [[ "${1:-}" == version ]]; then'
   printf '%s\n' '  [[ "${HOME:-}" == /root ]] || { printf "{\"Version\":\"0.74.0\"}\n"; exit 0; }'
-  printf '%s\n' '  printf "{\"Version\":\"0.74.0\",\"VulnerabilityDB\":{\"UpdatedAt\":\"2026-09-15T00:00:00Z\"}}\n"'
+  printf '%s\n' '  day=15; [[ -e "$refreshed" ]] && day=16'
+  printf '%s\n' '  printf "{\"Version\":\"0.74.0\",\"VulnerabilityDB\":{\"UpdatedAt\":\"2026-09-${day}T00:00:00Z\"}}\n"'
   printf '%s\n' '  exit 0'
   printf '%s\n' 'fi'
+  printf '%s\n' 'touch "$refreshed"'
   printf '%s\n' 'output=""; format=""'
   printf '%s\n' 'while [[ "$#" -gt 0 ]]; do'
   printf '%s\n' '  case "$1" in'
@@ -56,5 +62,5 @@ env -u HOME PATH="$fake_bin:$PATH" TRACE_TRIVY_BIN="$fake_bin/trivy" \
   "$SCAN" trace-demo-api:test "sha256:$(printf '%064d' 1)" "$output_dir"
 
 test "$(awk -F= '$1 == "TRACE_SCANNER_DB_UPDATED_AT" {print $2}' "$output_dir/metadata.env")" = \
-  2026-09-15T00:00:00Z
+  2026-09-16T00:00:00Z
 echo 'All scan-image tests passed.'

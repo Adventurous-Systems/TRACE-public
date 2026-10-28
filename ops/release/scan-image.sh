@@ -43,6 +43,13 @@ metadata="$OUTPUT_DIR/metadata.env"
 $TRIVY_BIN image --scanners vuln --format cyclonedx --output "$sbom" "$IMAGE"
 $TRIVY_BIN image --scanners vuln --format json --output "$report" "$IMAGE"
 
+# The first scan refreshes a stale database, so the receipt names the database
+# read back after scanning: the one these reports were made with. Reading it
+# only beforehand let two components of one release record different dates.
+db_updated_at="$(jq -r '.VulnerabilityDB.UpdatedAt // empty' <<<"$($TRIVY_BIN version --format json)")"
+[[ "$db_updated_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] \
+  || fail 'Trivy vulnerability database timestamp is missing after scanning'
+
 finding_count="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH" or .Severity == "CRITICAL")] | length' "$report")"
 [[ "$finding_count" == 0 ]] || fail "$IMAGE has $finding_count HIGH/CRITICAL vulnerability finding(s)"
 
